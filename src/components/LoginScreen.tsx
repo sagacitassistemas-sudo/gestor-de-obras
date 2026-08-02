@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { MFAModal } from './MFAModal';
 import { AuthSession } from '../types';
 import { auth } from '../lib/firebase';
-import { signInWithPopup, GoogleAuthProvider, OAuthProvider } from 'firebase/auth';
+import { signInWithPopup, GoogleAuthProvider, OAuthProvider, signInWithEmailAndPassword } from 'firebase/auth';
 
 interface LoginScreenProps {
   onLoginSuccess: (session: AuthSession) => void;
@@ -36,10 +36,15 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     setErrorMessage('');
 
     try {
+      // 1. Autenticação Primária no Firebase
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
+
+      // 2. Validação de Permissões no Backend (Supabase) + MFA
       const res = await fetch('/api/auth/login-mfa-step1', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password })
+        body: JSON.stringify({ uid: user.uid, email: user.email, password })
       });
 
       const data = await res.json();
@@ -50,14 +55,19 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
         setOtpCodeDemo(data.otpCodeDemo);
         setMfaModalOpen(true);
       } else if (!res.ok) {
-        setErrorMessage(data.error || 'Erro na autenticação.');
+        // Sign out from Firebase if backend rejects (e.g. not in Supabase)
+        auth.signOut();
+        setErrorMessage(data.error || 'Erro na verificação de permissões do sistema.');
       }
-    } catch (err) {
+    } catch (err: any) {
       setIsLoading(false);
-      // Fallback for prototype offline or quick demo
-      setMfaTicket(`mfa_demo_${Date.now()}`);
-      setOtpCodeDemo('849201');
-      setMfaModalOpen(true);
+      
+      // Captura erros específicos do Firebase Auth
+      if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
+        setErrorMessage('E-mail ou senha incorretos.');
+      } else {
+        setErrorMessage(err.message || 'Erro na autenticação. Verifique sua conexão.');
+      }
     }
   };
 

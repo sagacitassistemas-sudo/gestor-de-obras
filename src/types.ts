@@ -1,4 +1,4 @@
-export type NavigationTab = 'login' | 'dashboard' | 'financeiro' | 'contratos' | 'alertas' | 'onboarding' | 'auth-debug' | 'empresas' | 'entidades' | 'matriz-acesso' | 'usuarios' | 'projetos_eap';
+export type NavigationTab = 'login' | 'dashboard' | 'financeiro' | 'contratos' | 'alertas' | 'onboarding' | 'auth-debug' | 'empresas' | 'entidades' | 'matriz-acesso' | 'usuarios' | 'projetos_eap' | 'contratos_obra';
 
 // Re-exports dos tipos modularizados para manter compatibilidade com o frontend
 export type { FirebaseCustomClaims as CustomClaims } from './types/firebase.types';

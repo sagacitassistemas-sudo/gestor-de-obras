@@ -38,6 +38,7 @@ import { EmpresasView } from './components/EmpresasView';
 import { EntidadesView } from './components/EntidadesView';
 import { UsuariosView } from './components/UsuariosView';
 import { MatrizAcessosView } from './components/MatrizAcessosView';
+import { ContratosObraView } from './components/ContratosObraView';
 
 import { NovoChamadoModal } from './components/NovoChamadoModal';
 import { ProcessamentoNotasDrawer } from './components/ProcessamentoNotasDrawer';
@@ -311,6 +312,10 @@ export default function App() {
 
           {activeTab === 'projetos_eap' && (
             <ProjetosEapView />
+          )}
+
+          {activeTab === 'contratos_obra' && (
+            <ContratosObraView />
           )}
 
           {activeTab === 'alertas' && (

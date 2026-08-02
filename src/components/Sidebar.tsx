@@ -94,7 +94,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
             >
               description
             </span>
-            <span className="font-label-bold text-label-bold">Contratos</span>
+            <span className="font-label-bold text-label-bold">Contratos (Legado)</span>
+          </button>
+
+          <button
+            onClick={() => handleNavClick('contratos_obra')}
+            className={`w-full text-left ${navItemClass('contratos_obra')}`}
+          >
+            <span
+              className="material-symbols-outlined"
+              style={{ fontVariationSettings: activeTab === 'contratos_obra' ? "'FILL' 1" : "'FILL' 0" }}
+            >
+              handshake
+            </span>
+            <span className="font-label-bold text-label-bold">Contratos Obra</span>
           </button>
 
           <button

@@ -1,15 +1,52 @@
-export interface CerneUserPermissions {
-  id: string;
+export interface PermissoesBase {
+  empresas_criar: boolean;
+  empresas_ler: boolean;
+  empresas_editar: boolean;
+  empresas_excluir: boolean;
+  projetos_criar: boolean;
+  projetos_ler: boolean;
+  projetos_editar: boolean;
+  projetos_excluir: boolean;
+  medicoes_criar: boolean;
+  medicoes_ler: boolean;
+  medicoes_editar: boolean;
+  medicoes_excluir: boolean;
+  financeiro_criar: boolean;
+  financeiro_ler: boolean;
+  financeiro_editar: boolean;
+  financeiro_excluir: boolean;
+  relatorios_ler: boolean;
+  usuarios_criar: boolean;
+  usuarios_ler: boolean;
+  usuarios_editar: boolean;
+  usuarios_excluir: boolean;
+}
+
+export interface PermissoesContratante extends PermissoesBase {
+  id?: string;
   contrato_id: string;
-  perfil: 'FINANCEIRO' | 'FORNECEDOR' | 'GESTOR' | 'ADMIN';
-  pode_ver_dre: boolean;
-  pode_editar_pagamento: boolean;
-  pode_aprovar_medicao: boolean;
-  pode_cadastrar_empresa: boolean;
-  pode_exportar_relatorio: boolean;
-  pode_gerenciar_usuarios: boolean;
-  created_at?: string;
-  updated_at?: string;
+}
+
+export interface PermissoesEmpresa extends PermissoesBase {
+  id?: string;
+  contrato_id: string;
+  empresa_id: string;
+}
+
+export interface PermissoesUsuario extends PermissoesBase {
+  id?: string;
+  usuario_uid: string;
+  contrato_id: string;
+  empresa_id: string | null;
+}
+
+export interface PermissoesEfetivas extends PermissoesBase {
+  usuario_uid: string;
+  contrato_id: string;
+  empresa_id: string | null;
+  email: string;
+  nome: string;
+  perfil: string;
 }
 
 export interface CerneEmpresa {
@@ -49,4 +86,37 @@ export interface CerneLancamento {
   data_vencimento: string;
   criado_por: string;
   createdAt: string;
+}
+
+export interface ContratoObra {
+  id: string;
+  tenant_id: string;
+  fornecedor_id: string;
+  projeto_id: string;
+  numero_contrato: string;
+  objeto: string | null;
+  valor_global: number;
+  data_assinatura: string | null;
+  data_vigencia: string | null;
+  status: 'RASCUNHO' | 'VIGENTE' | 'ENCERRADO' | 'RESCINDIDO' | 'ADITIVO';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ContratoObraResumo {
+  contrato_obra_id: string;
+  tenant_id: string;
+  numero_contrato: string;
+  objeto: string | null;
+  valor_global: number;
+  data_assinatura: string | null;
+  data_vigencia: string | null;
+  contrato_status: string;
+  fornecedor_nome: string;
+  fornecedor_cnpj: string;
+  projeto_id: string;
+  nome_projeto: string;
+  total_medicoes: number;
+  medicao_valor_acumulado: number;
+  percentual_executado: number;
 }

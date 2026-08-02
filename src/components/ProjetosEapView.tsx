@@ -84,7 +84,7 @@ export const ProjetosEapView: React.FC = () => {
                 onClick={() => handleProjetoClick(proj.id)}
                 className={`p-3 rounded-lg cursor-pointer transition-colors ${selectedProjetoId === proj.id ? 'bg-[#d4e3ff] border border-[#005daa]/20' : 'hover:bg-[#f7f9fb] border border-transparent'}`}
               >
-                <p className="text-[11px] text-[#005daa] font-bold">{proj.codigo_contrato}</p>
+                <p className="text-[11px] text-[#005daa] font-bold">Projeto</p>
                 <p className="font-semibold text-body-sm mt-0.5 line-clamp-2 leading-tight">{proj.nome_projeto}</p>
                 <p className="text-[10px] text-[#707785] mt-2">Início: {new Date(proj.data_inicio).toLocaleDateString('pt-BR')}</p>
               </div>

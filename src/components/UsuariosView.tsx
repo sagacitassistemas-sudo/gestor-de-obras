@@ -424,7 +424,7 @@ export const UsuariosView: React.FC<UsuariosViewProps> = ({ authSession }) => {
 
           <div className="flex flex-wrap items-center gap-3">
             <div className="flex items-center gap-1.5">
-              <span className="text-xs font-bold text-slate-500">Perfil:</span>
+              <span className="text-xs font-bold text-slate-500">Rótulo (Perfil):</span>
               <select
                 value={filterPerfil}
                 onChange={(e) => setFilterPerfil(e.target.value)}
@@ -585,6 +585,15 @@ export const UsuariosView: React.FC<UsuariosViewProps> = ({ authSession }) => {
                           </span>
                         </button>
 
+                        {/* Manage Permissions */}
+                        <button
+                          onClick={() => alert(`Abrir aba de Permissões de Usuário para ${item.id} na MatrizAcessosView`)}
+                          className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-all cursor-pointer"
+                          title="Gerenciar Permissões (CRUD Granular)"
+                        >
+                          <span className="material-symbols-outlined text-base">admin_panel_settings</span>
+                        </button>
+
                         {/* Delete User */}
                         <button
                           onClick={() => setDeletingUser(item)}
@@ -649,7 +658,7 @@ export const UsuariosView: React.FC<UsuariosViewProps> = ({ authSession }) => {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">Perfil / Role *</label>
+                  <label className="block font-bold text-slate-700 mb-1">Rótulo / Role (Informativo) *</label>
                   <select
                     value={formData.perfil}
                     onChange={(e: any) => setFormData({ ...formData, perfil: e.target.value })}

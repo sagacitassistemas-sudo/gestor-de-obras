@@ -104,19 +104,7 @@ if (!getAdminApps().length) {
 
 // In-memory store for OTPs and Invites (fallback & state tracking)
 // Note: activeMFAChallenges was removed in favor of Stateless JWT verification for Vercel Serverless Functions.
-const activeInvites = new Map<string, { token: string; email: string; contrato_id: string; empresa_id: string; entidade_id: string; perfil: string; status: string; createdAt: string }>();
 
-// Seed default demo invite
-activeInvites.set("INV-DEMO-2026", {
-  token: "INV-DEMO-2026",
-  email: "novo.fornecedor@logistica.com.br",
-  contrato_id: "CTR-2026-SYS",
-  empresa_id: "SUP-9823-STORAGE",
-  entidade_id: "SUP-9823-STORAGE",
-  perfil: "FORNECEDOR",
-  status: "PENDENTE",
-  createdAt: new Date().toISOString()
-});
 
 function startServer() {
   const app = express();
@@ -136,15 +124,29 @@ function startServer() {
         return res.status(400).json({ error: "E-mail e senha são obrigatórios." });
       }
 
-      // Default demo tenant & supplier metadata for custom claims
-      let contrato_id = "CTR-2026-SYS";
-      let empresa_id = "SUP-9823-STORAGE";
-      let perfil: 'FINANCEIRO' | 'FORNECEDOR' | 'GESTOR' | 'ADMIN' = "FINANCEIRO";
-
-      if (email.includes("fornecedor")) {
-        perfil = "FORNECEDOR";
-        empresa_id = "SUP-4012-LOGISTICA";
+      if (!supabase) {
+        return res.status(500).json({ error: "Banco de dados indisponível." });
       }
+
+      // Check if user exists in Supabase
+      const { data: userData, error: userErr } = await supabase
+        .from('usuarios')
+        .select('*')
+        .eq('email', email)
+        .single();
+
+      if (userErr || !userData) {
+        return res.status(403).json({ error: "Usuário não autorizado. E-mail não encontrado no sistema." });
+      }
+
+      if (userData.status === 'BLOQUEADO' || userData.status === 'INATIVO') {
+        return res.status(403).json({ error: "Usuário bloqueado ou inativo. Contate o suporte." });
+      }
+
+      // Validated user metadata
+      let contrato_id = userData.contrato_id;
+      let perfil = userData.perfil;
+      let empresa_id = "SUP-9823-STORAGE"; // Temporary fallback or could be from db
 
       // Generate 6-digit OTP code for MFA validation
       const code = Math.floor(100000 + Math.random() * 900000).toString();
@@ -186,23 +188,41 @@ function startServer() {
         return res.status(500).json({ error: "Banco de dados indisponível." });
       }
 
-      // Check if user exists in Supabase (Service Role key bypasses RLS for this admin check)
+      // Check if user exists in Supabase
       const { data: userData, error: userErr } = await supabase
         .from('usuarios')
         .select('*')
         .eq('email', userEmail)
         .single();
 
+      // OAuth Flow: Allow even if not found in users table, but issue VISITANTE generic role
+      let contrato_id = "GENERIC-SSO";
+      let empresa_id = "GENERIC-SSO";
+      let perfil = "VISITANTE";
+      let entidade_id = "GENERIC-SSO";
+
       if (userErr || !userData) {
-        return res.status(403).json({ error: "Usuário não autorizado. O administrador deve cadastrá-lo previamente no sistema. Suporte: worksmanager.suporte@gmail.com" });
+        console.log(`[OAuth] User ${userEmail} not in DB, assigning VISITANTE.`);
+      } else {
+        if (userData.status === 'BLOQUEADO' || userData.status === 'INATIVO') {
+          return res.status(403).json({ error: "Usuário bloqueado ou inativo. Contate o suporte em worksmanager.suporte@gmail.com" });
+        }
+        contrato_id = userData.contrato_id;
+        perfil = userData.perfil;
       }
 
-      if (userData.status === 'BLOQUEADO' || userData.status === 'INATIVO') {
-        return res.status(403).json({ error: "Usuário bloqueado ou inativo. Contate o suporte em worksmanager.suporte@gmail.com" });
-      }
+      // Generate secure short-lived custom token with claims
+      const customClaims = {
+        contrato_id,
+        empresa_id,
+        entidade_id,
+        perfil,
+        mfa_verified: true,
+        auth_provider: `oauth_${provider}`
+      };
 
       // Update Supabase user with the latest info from OAuth if they match
-      if (userData.uid !== uid || userData.foto_url !== photoURL) {
+      if (userData && (userData.uid !== uid || userData.foto_url !== photoURL)) {
         await supabase
           .from('usuarios')
           .update({ uid: uid, nome: userDisplayName, foto_url: photoURL })
@@ -397,26 +417,30 @@ function startServer() {
         return res.status(400).json({ error: "Preencha todos os campos do convite." });
       }
 
-      const inviteToken = `INV-${Math.random().toString(36).substring(2, 9).toUpperCase()}`;
-      const inviteData = {
-        token: inviteToken,
+      if (!supabase) {
+        return res.status(500).json({ error: "Banco de dados indisponível." });
+      }
+
+      const { data, error } = await supabase.from('convites').insert({
         email,
         contrato_id,
         empresa_id: targetEmpresaId,
         entidade_id: targetEmpresaId,
         perfil,
-        status: "PENDENTE",
-        createdAt: new Date().toISOString()
-      };
+        status: "PENDENTE"
+      }).select('token, email, contrato_id, empresa_id, entidade_id, perfil, status, created_at').single();
 
-      activeInvites.set(inviteToken, inviteData);
+      if (error || !data) {
+        console.error("Supabase insert invite error:", error);
+        return res.status(500).json({ error: "Erro ao gerar convite no banco de dados." });
+      }
 
-      console.log(`[Onboarding Invite Generated]:`, inviteData);
+      console.log(`[Onboarding Invite Generated]:`, data);
 
       return res.json({
         success: true,
-        invite: inviteData,
-        inviteUrl: `/onboarding?token=${inviteToken}`,
+        invite: data,
+        inviteUrl: `/onboarding?token=${data.token}`,
         message: `Convite de onboarding gerado com sucesso para ${email}.`
       });
     } catch (err: any) {
@@ -425,12 +449,24 @@ function startServer() {
   });
 
   // 5. Verify Invitation Token
-  app.get("/api/auth/verify-invite-token", (req, res) => {
+  app.get("/api/auth/verify-invite-token", async (req, res) => {
     const token = req.query.token as string;
-    if (!token || !activeInvites.has(token)) {
-      return res.status(404).json({ error: "Convite inválido ou expirado." });
+    if (!token) {
+      return res.status(400).json({ error: "Token não fornecido." });
     }
-    const invite = activeInvites.get(token);
+
+    if (!supabase) return res.status(500).json({ error: "DB offline" });
+
+    const { data: invite, error } = await supabase
+      .from('convites')
+      .select('*')
+      .eq('token', token)
+      .single();
+
+    if (error || !invite || invite.status !== "PENDENTE") {
+      return res.status(404).json({ error: "Convite inválido, inexistente ou já expirado/usado." });
+    }
+    
     return res.json({ success: true, invite });
   });
 
@@ -438,10 +474,17 @@ function startServer() {
   app.post("/api/auth/confirm-onboarding", async (req, res) => {
     try {
       const { token, displayName, password } = req.body || {};
-      const invite = activeInvites.get(token);
+      
+      if (!supabase) return res.status(500).json({ error: "DB offline" });
 
-      if (!invite || invite.status !== "PENDENTE") {
-        return res.status(400).json({ error: "Convite inválido ou já utilizado." });
+      const { data: invite, error: inviteErr } = await supabase
+        .from('convites')
+        .select('*')
+        .eq('token', token)
+        .single();
+
+      if (inviteErr || !invite || invite.status !== "PENDENTE") {
+        return res.status(400).json({ error: "Convite inválido ou já utilizado no banco." });
       }
 
       let uid = `user_${invite.email.replace(/[^a-zA-Z0-9]/g, "_")}`;
@@ -456,6 +499,21 @@ function startServer() {
         uid = newUser.uid;
       } catch (e) {
         console.warn("User already exists or create warning:", e);
+      }
+
+      // Inserir na tabela usuarios (Supabase)
+      const { error: userInsertErr } = await supabase.from('usuarios').upsert({
+        uid: uid,
+        email: invite.email,
+        nome: displayName || invite.email.split("@")[0].toUpperCase(),
+        contrato_id: invite.contrato_id,
+        perfil: invite.perfil,
+        status: 'ATIVO'
+      }, { onConflict: 'uid' });
+
+      if (userInsertErr) {
+        console.error("Error inserting into usuarios:", userInsertErr);
+        return res.status(500).json({ error: "Erro ao registrar usuário no sistema (banco)." });
       }
 
       // Mandatory Custom Claims recorded on onboarding confirmation
@@ -474,12 +532,12 @@ function startServer() {
         console.warn("Set claims on onboarding warning:", e);
       }
 
-      invite.status = "ACEITO";
-      activeInvites.set(token, invite);
+      // Marcar convite como USADO
+      await supabase.from('convites').update({ status: 'USADO' }).eq('token', token);
 
       return res.json({
         success: true,
-        message: "Cadastro concluído e permissões gravadas no token Firebase com sucesso!",
+        message: "Cadastro concluído e permissões gravadas no token Firebase e Supabase com sucesso!",
         session: {
           uid,
           email: invite.email,
@@ -1184,7 +1242,282 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
     }
   });
 
+  // ==========================================
+  // PERMISSIONS (HIERARCHICAL DELEGATION)
+  // ==========================================
+
+  // 1. Contratante (Admin configs)
+  app.get("/api/permissoes/contratante", verifyFirebaseJWT, async (req: AuthenticatedRequest, res) => {
+    if (!req.decodedToken) return res.status(401).json({ error: "Acesso não autorizado." });
+    try {
+      const client = getSupabaseClient(req);
+      if (!client) return res.status(500).json({ error: "Supabase não configurado." });
+      
+      const { data, error } = await client
+        .from("permissoes_contratante")
+        .select("*")
+        .eq("contrato_id", req.decodedToken.contrato_id)
+        .maybeSingle();
+
+      if (error) return res.status(400).json({ error: error.message });
+      return res.json({ success: true, data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/permissoes/contratante", verifyFirebaseJWT, async (req: AuthenticatedRequest, res) => {
+    if (!req.decodedToken) return res.status(401).json({ error: "Acesso não autorizado." });
+    try {
+      const client = getSupabaseClient(req);
+      if (!client) return res.status(500).json({ error: "Supabase não configurado." });
+      
+      const payload = { ...req.body, contrato_id: req.decodedToken.contrato_id };
+      delete payload.id;
+      
+      const { data, error } = await client
+        .from("permissoes_contratante")
+        .upsert(payload, { onConflict: "contrato_id" })
+        .select();
+
+      if (error) return res.status(400).json({ error: error.message });
+      return res.json({ success: true, data: data?.[0] });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 2. Empresas
+  app.get("/api/permissoes/empresa", verifyFirebaseJWT, async (req: AuthenticatedRequest, res) => {
+    if (!req.decodedToken) return res.status(401).json({ error: "Acesso não autorizado." });
+    try {
+      const client = getSupabaseClient(req);
+      if (!client) return res.status(500).json({ error: "Supabase não configurado." });
+      
+      const { data, error } = await client
+        .from("permissoes_empresa")
+        .select("*")
+        .eq("contrato_id", req.decodedToken.contrato_id);
+
+      if (error) return res.status(400).json({ error: error.message });
+      return res.json({ success: true, data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/permissoes/empresa", verifyFirebaseJWT, async (req: AuthenticatedRequest, res) => {
+    if (!req.decodedToken) return res.status(401).json({ error: "Acesso não autorizado." });
+    try {
+      const client = getSupabaseClient(req);
+      if (!client) return res.status(500).json({ error: "Supabase não configurado." });
+      
+      const payload = { ...req.body, contrato_id: req.decodedToken.contrato_id };
+      delete payload.id;
+      
+      const { data, error } = await client
+        .from("permissoes_empresa")
+        .upsert(payload, { onConflict: "empresa_id, contrato_id" })
+        .select();
+
+      if (error) return res.status(400).json({ error: error.message });
+      return res.json({ success: true, data: data?.[0] });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 3. Usuários
+  app.get("/api/permissoes/usuario", verifyFirebaseJWT, async (req: AuthenticatedRequest, res) => {
+    if (!req.decodedToken) return res.status(401).json({ error: "Acesso não autorizado." });
+    try {
+      const client = getSupabaseClient(req);
+      if (!client) return res.status(500).json({ error: "Supabase não configurado." });
+      
+      let query = client.from("permissoes_usuario").select("*").eq("contrato_id", req.decodedToken.contrato_id);
+      
+      // Se for fornecedor, só vê permissões da própria empresa
+      if (req.decodedToken.perfil === "FORNECEDOR" && req.decodedToken.empresa_id) {
+        query = query.eq("empresa_id", req.decodedToken.empresa_id);
+      }
+
+      const { data, error } = await query;
+      if (error) return res.status(400).json({ error: error.message });
+      return res.json({ success: true, data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/permissoes/usuario", verifyFirebaseJWT, async (req: AuthenticatedRequest, res) => {
+    if (!req.decodedToken) return res.status(401).json({ error: "Acesso não autorizado." });
+    try {
+      const client = getSupabaseClient(req);
+      if (!client) return res.status(500).json({ error: "Supabase não configurado." });
+      
+      const payload = { ...req.body, contrato_id: req.decodedToken.contrato_id };
+      delete payload.id;
+      
+      const { data, error } = await client
+        .from("permissoes_usuario")
+        .upsert(payload, { onConflict: "usuario_uid, contrato_id" })
+        .select();
+
+      if (error) return res.status(400).json({ error: error.message });
+      return res.json({ success: true, data: data?.[0] });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 4. Permissões Efetivas
+  app.get("/api/permissoes/efetivas/:uid", verifyFirebaseJWT, async (req: AuthenticatedRequest, res) => {
+    if (!req.decodedToken) return res.status(401).json({ error: "Acesso não autorizado." });
+    try {
+      const client = getSupabaseClient(req);
+      if (!client) return res.status(500).json({ error: "Supabase não configurado." });
+      
+      const uid = req.params.uid;
+      const { data, error } = await client
+        .from("v_permissoes_efetivas")
+        .select("*")
+        .eq("usuario_uid", uid)
+        .maybeSingle();
+
+      if (error) return res.status(400).json({ error: error.message });
+      return res.json({ success: true, data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
   // Health check endpoint
+  // ==========================================
+  // CONTRATOS DE OBRA
+  // ==========================================
+
+  // GET /api/contratos-obra - List all contracts for the current tenant
+  app.get("/api/contratos-obra", verifyFirebaseJWT, async (req: AuthenticatedRequest, res) => {
+    try {
+      const client = getSupabaseClient(req);
+      if (!client) {
+        return res.status(401).json({ error: "Missing Supabase client / token" });
+      }
+
+      const { data, error } = await client
+        .from("v_contratos_obra_resumo")
+        .select("*")
+        .order("data_assinatura", { ascending: false });
+
+      if (error) {
+        console.error("GET /api/contratos-obra Supabase error:", error);
+        return res.status(500).json({ error: error.message });
+      }
+      return res.json({ contratos: data || [] });
+    } catch (err) {
+      console.error("GET /api/contratos-obra unexpected error:", err);
+      return res.status(500).json({ error: "Internal Server Error" });
+    }
+  });
+
+  // POST /api/contratos-obra - Create or update a contract
+  app.post("/api/contratos-obra", verifyFirebaseJWT, async (req: AuthenticatedRequest, res) => {
+    try {
+      const client = getSupabaseClient(req);
+      const tenantId = req.decodedToken?.contrato_id;
+      if (!client || !tenantId) {
+        return res.status(401).json({ error: "Missing Supabase client / token" });
+      }
+
+      const payload = req.body;
+      const { id, fornecedor_id, projeto_id, numero_contrato, objeto, valor_global, data_assinatura, data_vigencia, status } = payload;
+
+      if (!fornecedor_id || !projeto_id || !numero_contrato) {
+        return res.status(400).json({ error: "Missing required fields" });
+      }
+
+      const upsertData: any = {
+        tenant_id: tenantId,
+        fornecedor_id,
+        projeto_id,
+        numero_contrato,
+        objeto: objeto || null,
+        valor_global: valor_global || 0,
+        data_assinatura: data_assinatura || null,
+        data_vigencia: data_vigencia || null,
+        status: status || 'VIGENTE',
+        updated_at: new Date().toISOString()
+      };
+
+      if (id) {
+        upsertData.id = id;
+      }
+
+      const { data, error } = await client
+        .from("contratos_obra")
+        .upsert([upsertData], { onConflict: "id" })
+        .select()
+        .single();
+
+      if (error) {
+        console.error("POST /api/contratos-obra Supabase error:", error);
+        return res.status(500).json({ error: error.message });
+      }
+      return res.json({ contrato: data });
+    } catch (err) {
+      console.error("POST /api/contratos-obra unexpected error:", err);
+      return res.status(500).json({ error: "Internal Server Error" });
+    }
+  });
+
+  // DELETE /api/contratos-obra - Delete a contract
+  app.delete("/api/contratos-obra", verifyFirebaseJWT, async (req: AuthenticatedRequest, res) => {
+    try {
+      const client = getSupabaseClient(req);
+      if (!client) {
+        return res.status(401).json({ error: "Missing Supabase client / token" });
+      }
+
+      const { id } = req.body;
+      if (!id) {
+        return res.status(400).json({ error: "Missing contract ID" });
+      }
+
+      const { error } = await client
+        .from("contratos_obra")
+        .delete()
+        .eq("id", id);
+
+      if (error) {
+        console.error("DELETE /api/contratos-obra Supabase error:", error);
+        return res.status(500).json({ error: error.message });
+      }
+
+      return res.json({ success: true });
+    } catch (err) {
+      console.error("DELETE /api/contratos-obra unexpected error:", err);
+      return res.status(500).json({ error: "Internal Server Error" });
+    }
+  });
+
+  // GET /api/projetos - List all projects (now scoped by tenant)
+  app.get("/api/projetos", verifyFirebaseJWT, async (req: AuthenticatedRequest, res) => {
+    try {
+      const client = getSupabaseClient(req);
+      if (!client) return res.status(401).json({ error: "Unauthorized" });
+
+      const { data, error } = await client
+        .from("projetos")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json({ projetos: data || [] });
+    } catch (err) {
+      return res.status(500).json({ error: "Internal Error" });
+    }
+  });
+
   app.get("/api/health", (_req, res) => {
     res.json({ status: "ok" });
   });

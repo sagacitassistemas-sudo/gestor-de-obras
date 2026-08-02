@@ -139,7 +139,7 @@ FROM itens_eap e
 LEFT JOIN projetos p ON e.projeto_id = p.id
 LEFT JOIN agregacao_contrato ac ON e.id = ac.id
 LEFT JOIN agregacao_medicao am ON e.id = am.id
-ORDER BY e.projeto_id, string_to_array(e.eap_codigo, '.')::int[];
+ORDER BY e.projeto_id, string_to_array(regexp_replace(e.eap_codigo, '[^0-9\.]', '', 'g'), '.')::int[];
 
 -- ===================================================================
 -- GRANTS E RLS
