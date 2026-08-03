@@ -7,7 +7,7 @@ export interface DecodedFirebaseJWT {
   contrato_id: string;
   empresa_id: string;
   entidade_id?: string;
-  perfil: 'FINANCEIRO' | 'FORNECEDOR' | 'GESTOR' | 'ADMIN';
+  perfil: 'FINANCEIRO' | 'FORNECEDOR' | 'GESTOR' | 'ADMIN' | 'VISITANTE';
   mfa_verified?: boolean;
 }
 

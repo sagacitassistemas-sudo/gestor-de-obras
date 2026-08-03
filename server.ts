@@ -292,9 +292,29 @@ function startServer() {
           }
           console.log(`[First Login] Registered first user ${userEmail} as ADMIN.`);
         } else {
-          // Whitelist check fails: block access
-          console.log(`[OAuth Whitelist] Unauthorized email blocked: ${userEmail}`);
-          return res.status(403).json({ error: "Usuário não autorizado. Cadastre seu e-mail com o administrador." });
+          // Auto-register unregistered users as VISITANTE under CTR-2026-SYS
+          contrato_id = "CTR-2026-SYS";
+          empresa_id = "SEM-EMPRESA";
+          perfil = "VISITANTE";
+          entidade_id = "SEM-ENTIDADE";
+
+          const { error: insertErr } = await supabase
+            .from('usuarios')
+            .insert({
+              uid: uid,
+              email: userEmail,
+              nome: userDisplayName,
+              foto_url: photoURL || '',
+              contrato_id,
+              perfil,
+              status: 'ATIVO'
+            });
+
+          if (insertErr) {
+            console.error("Error auto-registering visitor user:", insertErr);
+            return res.status(500).json({ error: "Erro ao registrar o visitante." });
+          }
+          console.log(`[OAuth Auto-Register] Registered user ${userEmail} as VISITANTE.`);
         }
       } else {
         if (userData.status === 'BLOQUEADO' || userData.status === 'INATIVO') {

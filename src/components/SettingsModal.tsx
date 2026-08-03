@@ -102,21 +102,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </span>
             </div>
 
-            <div className="p-3 bg-slate-50 rounded-md border border-slate-200 flex items-center justify-between">
-              <div>
-                <p className="text-[10px] font-bold text-slate-500 uppercase">Repositório Git</p>
-                <p className="font-mono font-bold text-slate-800 text-xs">sagacitassistemas-sudo/gestor-de-Obras</p>
-              </div>
-              <a
-                href="https://github.com/sagacitassistemas-sudo/gestor-de-obras"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="px-2.5 py-1 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold text-[10px] rounded flex items-center gap-1 transition-colors"
-              >
-                <span>GitHub</span>
-                <span className="material-symbols-outlined text-[12px]">open_in_new</span>
-              </a>
-            </div>
+
 
             <div className="flex justify-end gap-3 pt-3 border-t border-[#e2e8f0]">
               <button

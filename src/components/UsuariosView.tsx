@@ -111,7 +111,7 @@ export const UsuariosView: React.FC<UsuariosViewProps> = ({ authSession }) => {
   const [formData, setFormData] = useState({
     displayName: '',
     email: '',
-    perfil: 'FINANCEIRO' as 'FINANCEIRO' | 'FORNECEDOR' | 'GESTOR' | 'ADMIN',
+    perfil: 'FINANCEIRO' as 'FINANCEIRO' | 'FORNECEDOR' | 'GESTOR' | 'ADMIN' | 'VISITANTE',
     selectedEmpresaOption: 'SEM_VINCULO',
     customEmpresaId: '',
     customEmpresaNome: '',
@@ -704,6 +704,7 @@ export const UsuariosView: React.FC<UsuariosViewProps> = ({ authSession }) => {
                     <option value="FORNECEDOR">Fornecedor</option>
                     <option value="GESTOR">Gestor</option>
                     <option value="ADMIN">Administrador</option>
+                    <option value="VISITANTE">Visitante</option>
                   </select>
                 </div>
 

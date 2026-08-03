@@ -14,18 +14,19 @@ async function runPipeline() {
   server.listen(PORT, async () => {
     console.log(`[Pipeline Server] Servidor ouvindo na porta ${PORT}...`);
     try {
-      // 1. Testar bloqueio de login não cadastrado (Whitelist Check)
-      console.log("\n[Passo 1] Testando rejeição de e-mail não autorizado (Whitelist)...");
+      // 1. Testar auto-registro de e-mail não cadastrado como VISITANTE
+      console.log("\n[Passo 1] Testando auto-registro de e-mail não cadastrado como VISITANTE...");
       const res1 = await fetch(`http://localhost:${PORT}/api/auth/oauth-login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ provider: "google", email: "unauthorized.user@test.com", displayName: "Nao Autorizado" })
       });
       console.log(`Status Recebido: ${res1.status}`);
-      if (res1.status === 403) {
-        console.log("✅ Whitelist: Login não-autorizado foi corretamente bloqueado com HTTP 403!");
+      const data1 = await res1.json();
+      if (res1.ok && data1.session && data1.session.customClaims.perfil === "VISITANTE") {
+        console.log("✅ Visitor Access: Login não-cadastrado foi corretamente permitido e registrado como VISITANTE!");
       } else {
-        console.error(`❌ Whitelist Falhou! Esperado 403, recebido ${res1.status}`);
+        console.error(`❌ Visitor Access Falhou! Esperado 200 com perfil VISITANTE, recebido ${res1.status} e perfil ${data1?.session?.customClaims?.perfil}`);
         process.exit(1);
       }
 
