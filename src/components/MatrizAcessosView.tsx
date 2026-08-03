@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { supabase } from '../lib/supabaseClient';
 import { AuthSession } from '../types';
 import { PermissoesContratante, PermissoesEmpresa, PermissoesUsuario } from '../types/cerne.types';
 
@@ -21,27 +22,23 @@ export const MatrizAcessosView: React.FC<MatrizAcessosViewProps> = ({ authSessio
   const isGestor = currentClaims?.perfil === 'GESTOR' || isAdmin;
   const tenantId = currentClaims?.contrato_id || 'CTR-2026-SYS';
 
-  const [activeTab, setActiveTab] = useState<'contratante' | 'empresas' | 'usuarios'>('contratante');
+  const [activeTab, setActiveTab] = useState<'contratante' | 'tipo' | 'empresas' | 'usuarios'>('contratante');
   const [notification, setNotification] = useState<{type: string, message: string} | null>(null);
 
   // States for Permissions
   const [permContratante, setPermContratante] = useState<PermissoesContratante | null>(null);
   
-  // Mocks for dropdowns
-  const empresasList = [
-    { id: 'SUP-9823-STORAGE', label: 'SUP-9823-STORAGE - Storage & Infraestrutura Ltda' },
-    { id: 'SUP-4012-LOGISTICA', label: 'SUP-4012-LOGISTICA - Transportes & Logística SP-RJ' }
-  ];
-  
-  const usuariosList = [
-    { uid: 'USR-8801', nome: 'Carlos Eduardo Silva', empresa_id: 'SUP-9823-STORAGE' },
-    { uid: 'USR-8803', nome: 'Mariana Alves', empresa_id: null }, // direto
-  ];
+  // Lists for dropdowns loaded from DB
+  const [empresasList, setEmpresasList] = useState<any[]>([]);
+  const [usuariosList, setUsuariosList] = useState<any[]>([]);
 
-  const [selectedEmpresaId, setSelectedEmpresaId] = useState(empresasList[0].id);
+  const [selectedTipo, setSelectedTipo] = useState<'ADMIN' | 'GESTOR' | 'FINANCEIRO' | 'FORNECEDOR' | 'VISITANTE'>('FINANCEIRO');
+  const [permTipo, setPermTipo] = useState<any | null>(null);
+
+  const [selectedEmpresaId, setSelectedEmpresaId] = useState('');
   const [permEmpresa, setPermEmpresa] = useState<PermissoesEmpresa | null>(null);
 
-  const [selectedUsuarioId, setSelectedUsuarioId] = useState(usuariosList[0].uid);
+  const [selectedUsuarioId, setSelectedUsuarioId] = useState('');
   const [permUsuario, setPermUsuario] = useState<PermissoesUsuario | null>(null);
 
   const showNotification = (type: 'success' | 'error' | 'info', message: string) => {
@@ -49,53 +46,292 @@ export const MatrizAcessosView: React.FC<MatrizAcessosViewProps> = ({ authSessio
     setTimeout(() => setNotification(null), 3000);
   };
 
-  // Carregar permissões da Contratante
+  const loadInitialData = async () => {
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      const token = session?.session?.access_token || authSession?.idToken;
+      if (!token) return;
+
+      // 1. Fetch empresas
+      const resEmp = await fetch('/api/empresas', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (resEmp.ok) {
+        const json = await resEmp.json();
+        if (json.data) {
+          const list = json.data.map((e: any) => ({
+            id: e.id,
+            label: `${e.id} - ${e.nome}`
+          }));
+          setEmpresasList(list);
+          if (list.length > 0) {
+            setSelectedEmpresaId(list[0].id);
+          }
+        }
+      }
+
+      // 2. Fetch usuarios
+      const resUsr = await fetch('/api/usuarios', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (resUsr.ok) {
+        const json = await resUsr.json();
+        if (json.usuarios) {
+          const list = json.usuarios.map((u: any) => ({
+            uid: u.uid,
+            nome: u.nome,
+            empresa_id: u.empresa_id || null
+          }));
+          setUsuariosList(list);
+          if (list.length > 0) {
+            setSelectedUsuarioId(list[0].uid);
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Error loading matrix dropdown data:", err);
+    }
+  };
+
   useEffect(() => {
-    // Simulating fetch
-    setPermContratante({
-      contrato_id: tenantId,
-      empresas_criar: true, empresas_ler: true, empresas_editar: true, empresas_excluir: true,
-      projetos_criar: true, projetos_ler: true, projetos_editar: true, projetos_excluir: true,
-      medicoes_criar: true, medicoes_ler: true, medicoes_editar: true, medicoes_excluir: true,
-      financeiro_criar: true, financeiro_ler: true, financeiro_editar: true, financeiro_excluir: true,
-      relatorios_ler: true,
-      usuarios_criar: true, usuarios_ler: true, usuarios_editar: true, usuarios_excluir: true,
-    });
-  }, [tenantId]);
+    loadInitialData();
+  }, [authSession]);
+
+  // Carregar permissões da Contratante
+  const fetchPermContratante = async () => {
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      const token = session?.session?.access_token || authSession?.idToken;
+      if (!token) return;
+
+      const res = await fetch('/api/permissoes/contratante', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.data) {
+          setPermContratante(json.data);
+        } else {
+          // Default to all true if not initialized
+          setPermContratante({
+            contrato_id: tenantId,
+            empresas_criar: true, empresas_ler: true, empresas_editar: true, empresas_excluir: true,
+            projetos_criar: true, projetos_ler: true, projetos_editar: true, projetos_excluir: true,
+            medicoes_criar: true, medicoes_ler: true, medicoes_editar: true, medicoes_excluir: true,
+            financeiro_criar: true, financeiro_ler: true, financeiro_editar: true, financeiro_excluir: true,
+            relatorios_ler: true,
+            usuarios_criar: true, usuarios_ler: true, usuarios_editar: true, usuarios_excluir: true,
+          });
+        }
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  useEffect(() => {
+    fetchPermContratante();
+  }, [tenantId, authSession]);
+
+  // Carregar permissões por Tipo
+  const fetchPermTipo = async () => {
+    if (!selectedTipo) return;
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      const token = session?.session?.access_token || authSession?.idToken;
+      if (!token) return;
+
+      const res = await fetch('/api/permissoes/tipo', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const json = await res.json();
+        const found = json.data?.find((p: any) => p.perfil === selectedTipo);
+        if (found) {
+          setPermTipo(found);
+        } else {
+          // Default configs based on role type
+          setPermTipo({
+            contrato_id: tenantId,
+            perfil: selectedTipo,
+            empresas_criar: selectedTipo === 'ADMIN',
+            empresas_ler: true,
+            empresas_editar: selectedTipo === 'ADMIN',
+            empresas_excluir: selectedTipo === 'ADMIN',
+            projetos_criar: selectedTipo === 'ADMIN' || selectedTipo === 'GESTOR',
+            projetos_ler: true,
+            projetos_editar: selectedTipo === 'ADMIN' || selectedTipo === 'GESTOR',
+            projetos_excluir: selectedTipo === 'ADMIN' || selectedTipo === 'GESTOR',
+            medicoes_criar: selectedTipo === 'ADMIN' || selectedTipo === 'GESTOR',
+            medicoes_ler: true,
+            medicoes_editar: selectedTipo === 'ADMIN' || selectedTipo === 'GESTOR',
+            medicoes_excluir: selectedTipo === 'ADMIN' || selectedTipo === 'GESTOR',
+            financeiro_criar: selectedTipo === 'ADMIN' || selectedTipo === 'GESTOR' || selectedTipo === 'FINANCEIRO',
+            financeiro_ler: true,
+            financeiro_editar: selectedTipo === 'ADMIN' || selectedTipo === 'GESTOR' || selectedTipo === 'FINANCEIRO',
+            financeiro_excluir: selectedTipo === 'ADMIN' || selectedTipo === 'GESTOR' || selectedTipo === 'FINANCEIRO',
+            relatorios_ler: true,
+            usuarios_criar: selectedTipo === 'ADMIN',
+            usuarios_ler: selectedTipo === 'ADMIN' || selectedTipo === 'GESTOR',
+            usuarios_editar: selectedTipo === 'ADMIN',
+            usuarios_excluir: selectedTipo === 'ADMIN'
+          });
+        }
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  useEffect(() => {
+    fetchPermTipo();
+  }, [selectedTipo, tenantId, authSession]);
 
   // Carregar permissões da Empresa selecionada
+  const fetchPermEmpresa = async () => {
+    if (!selectedEmpresaId) return;
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      const token = session?.session?.access_token || authSession?.idToken;
+      if (!token) return;
+
+      const res = await fetch('/api/permissoes/empresa', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const json = await res.json();
+        const found = json.data?.find((p: any) => p.empresa_id === selectedEmpresaId);
+        if (found) {
+          setPermEmpresa(found);
+        } else {
+          // Default clean config
+          setPermEmpresa({
+            contrato_id: tenantId,
+            empresa_id: selectedEmpresaId,
+            empresas_criar: false, empresas_ler: true, empresas_editar: false, empresas_excluir: false,
+            projetos_criar: false, projetos_ler: true, projetos_editar: false, projetos_excluir: false,
+            medicoes_criar: false, medicoes_ler: true, medicoes_editar: false, medicoes_excluir: false,
+            financeiro_criar: false, financeiro_ler: true, financeiro_editar: false, financeiro_excluir: false,
+            relatorios_ler: true,
+            usuarios_criar: false, usuarios_ler: false, usuarios_editar: false, usuarios_excluir: false,
+          });
+        }
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   useEffect(() => {
-    setPermEmpresa({
-      contrato_id: tenantId,
-      empresa_id: selectedEmpresaId,
-      empresas_criar: false, empresas_ler: true, empresas_editar: false, empresas_excluir: false,
-      projetos_criar: false, projetos_ler: true, projetos_editar: false, projetos_excluir: false,
-      medicoes_criar: true, medicoes_ler: true, medicoes_editar: true, medicoes_excluir: false,
-      financeiro_criar: false, financeiro_ler: true, financeiro_editar: false, financeiro_excluir: false,
-      relatorios_ler: true,
-      usuarios_criar: false, usuarios_ler: true, usuarios_editar: false, usuarios_excluir: false,
-    });
-  }, [selectedEmpresaId, tenantId]);
+    fetchPermEmpresa();
+  }, [selectedEmpresaId, tenantId, authSession]);
 
   // Carregar permissões do Usuario selecionado
+  const fetchPermUsuario = async () => {
+    if (!selectedUsuarioId) return;
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      const token = session?.session?.access_token || authSession?.idToken;
+      if (!token) return;
+
+      const res = await fetch('/api/permissoes/usuario', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const json = await res.json();
+        const found = json.data?.find((p: any) => p.usuario_uid === selectedUsuarioId);
+        if (found) {
+          setPermUsuario(found);
+        } else {
+          const user = usuariosList.find(u => u.uid === selectedUsuarioId);
+          setPermUsuario({
+            usuario_uid: selectedUsuarioId,
+            contrato_id: tenantId,
+            empresa_id: user?.empresa_id || null,
+            empresas_criar: false, empresas_ler: true, empresas_editar: false, empresas_excluir: false,
+            projetos_criar: false, projetos_ler: true, projetos_editar: false, projetos_excluir: false,
+            medicoes_criar: false, medicoes_ler: true, medicoes_editar: false, medicoes_excluir: false,
+            financeiro_criar: false, financeiro_ler: true, financeiro_editar: false, financeiro_excluir: false,
+            relatorios_ler: true,
+            usuarios_criar: false, usuarios_ler: false, usuarios_editar: false, usuarios_excluir: false,
+          });
+        }
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   useEffect(() => {
-    const user = usuariosList.find(u => u.uid === selectedUsuarioId);
-    setPermUsuario({
-      usuario_uid: selectedUsuarioId,
-      contrato_id: tenantId,
-      empresa_id: user?.empresa_id || null,
-      empresas_criar: false, empresas_ler: true, empresas_editar: false, empresas_excluir: false,
-      projetos_criar: false, projetos_ler: true, projetos_editar: false, projetos_excluir: false,
-      medicoes_criar: false, medicoes_ler: true, medicoes_editar: false, medicoes_excluir: false,
-      financeiro_criar: false, financeiro_ler: true, financeiro_editar: false, financeiro_excluir: false,
-      relatorios_ler: true,
-      usuarios_criar: false, usuarios_ler: false, usuarios_editar: false, usuarios_excluir: false,
-    });
-  }, [selectedUsuarioId, tenantId]);
+    fetchPermUsuario();
+  }, [selectedUsuarioId, tenantId, authSession, usuariosList]);
 
+  const handleSave = async () => {
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      const token = session?.session?.access_token || authSession?.idToken;
+      if (!token) return;
 
-  const handleSave = () => {
-    showNotification('success', 'Permissões salvas com sucesso no banco de dados!');
+      if (activeTab === 'contratante' && permContratante) {
+        const res = await fetch('/api/permissoes/contratante', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify(permContratante)
+        });
+        if (res.ok) {
+          showNotification('success', 'Permissões do Tenant salvas com sucesso!');
+        } else {
+          showNotification('error', 'Erro ao salvar permissões do Tenant.');
+        }
+      } else if (activeTab === 'tipo' && permTipo) {
+        const res = await fetch('/api/permissoes/tipo', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify(permTipo)
+        });
+        if (res.ok) {
+          showNotification('success', 'Permissões do Tipo de Perfil salvas com sucesso!');
+        } else {
+          showNotification('error', 'Erro ao salvar permissões do Tipo.');
+        }
+      } else if (activeTab === 'empresas' && permEmpresa) {
+        const res = await fetch('/api/permissoes/empresa', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify(permEmpresa)
+        });
+        if (res.ok) {
+          showNotification('success', 'Permissões da Empresa salvas com sucesso!');
+        } else {
+          showNotification('error', 'Erro ao salvar permissões da Empresa.');
+        }
+      } else if (activeTab === 'usuarios' && permUsuario) {
+        const res = await fetch('/api/permissoes/usuario', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify(permUsuario)
+        });
+        if (res.ok) {
+          showNotification('success', 'Permissões do Usuário salvas com sucesso!');
+        } else {
+          showNotification('error', 'Erro ao salvar permissões do Usuário.');
+        }
+      }
+    } catch (err) {
+      showNotification('error', 'Erro ao salvar: ' + err);
+    }
   };
 
   const togglePermission = (stateObj: any, setter: any, key: string, maxLimitObj?: any) => {
@@ -224,12 +460,20 @@ export const MatrizAcessosView: React.FC<MatrizAcessosViewProps> = ({ authSessio
           1. Tenant (Contratante)
         </button>
         <button
+          onClick={() => setActiveTab('tipo')}
+          className={`py-3 px-6 text-sm font-bold border-b-2 transition-colors ${
+            activeTab === 'tipo' ? 'border-purple-500 text-purple-600' : 'border-transparent text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          2. Por Tipo
+        </button>
+        <button
           onClick={() => setActiveTab('empresas')}
           className={`py-3 px-6 text-sm font-bold border-b-2 transition-colors ${
             activeTab === 'empresas' ? 'border-amber-500 text-amber-600' : 'border-transparent text-slate-500 hover:text-slate-700'
           }`}
         >
-          2. Por Empresa
+          3. Por Empresa
         </button>
         <button
           onClick={() => setActiveTab('usuarios')}
@@ -237,7 +481,7 @@ export const MatrizAcessosView: React.FC<MatrizAcessosViewProps> = ({ authSessio
             activeTab === 'usuarios' ? 'border-emerald-500 text-emerald-600' : 'border-transparent text-slate-500 hover:text-slate-700'
           }`}
         >
-          3. Por Usuário
+          4. Por Usuário
         </button>
       </div>
 
@@ -261,6 +505,41 @@ export const MatrizAcessosView: React.FC<MatrizAcessosViewProps> = ({ authSessio
             ) : (
               <div className="p-4 bg-slate-50 text-slate-500 text-sm font-bold rounded-md border border-slate-200 text-center">
                 Acesso Restrito: Somente Administradores podem alterar o Teto Global.
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* TIPO TAB */}
+        {activeTab === 'tipo' && (
+          <div className="space-y-4 animate-in fade-in duration-300">
+            <div className="bg-purple-50 border border-purple-200 p-4 rounded-md flex justify-between items-center">
+              <div>
+                <h3 className="font-bold text-purple-800 text-sm flex items-center gap-2">
+                  <span className="material-symbols-outlined">badge</span>
+                  Template de Permissão por Tipo de Perfil
+                </h3>
+                <p className="text-xs text-purple-700 mt-1">
+                  Define o template de permissões iniciais herdado automaticamente no momento do cadastro de qualquer usuário desse tipo.
+                </p>
+              </div>
+              <select
+                value={selectedTipo}
+                onChange={(e: any) => setSelectedTipo(e.target.value)}
+                className="p-2 border border-purple-300 rounded-md text-xs font-bold bg-white text-purple-900 shadow-sm animate-in zoom-in-95"
+              >
+                <option value="ADMIN">Administrador</option>
+                <option value="GESTOR">Gestor</option>
+                <option value="FINANCEIRO">Financeiro</option>
+                <option value="FORNECEDOR">Fornecedor</option>
+                <option value="VISITANTE">Visitante</option>
+              </select>
+            </div>
+            {isGestor ? (
+              renderMatrix(permTipo, setPermTipo, permContratante)
+            ) : (
+              <div className="p-4 bg-slate-50 text-slate-500 text-sm font-bold rounded-md border border-slate-200 text-center">
+                Acesso Restrito: Apenas Gestores e Admins podem configurar templates por tipo.
               </div>
             )}
           </div>

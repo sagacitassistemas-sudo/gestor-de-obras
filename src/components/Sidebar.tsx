@@ -9,6 +9,8 @@ interface SidebarProps {
   alertCount?: number;
   mobileOpen?: boolean;
   onCloseMobile?: () => void;
+  permissions?: Record<string, boolean> | null;
+  userRole?: string;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -18,8 +20,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onLogout,
   alertCount = 4,
   mobileOpen = false,
-  onCloseMobile
+  onCloseMobile,
+  permissions,
+  userRole
 }) => {
+  const isAdmin = userRole === 'ADMIN';
+  const hasAccess = (key: string) => isAdmin || (permissions && permissions[key]);
+  
   const handleNavClick = (tab: NavigationTab) => {
     onSelectTab(tab);
     if (onCloseMobile) onCloseMobile();
@@ -84,57 +91,65 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <span className="font-label-bold text-label-bold">Dashboard</span>
           </button>
 
-          <button
-            onClick={() => handleNavClick('contratos')}
-            className={`w-full text-left ${navItemClass('contratos')}`}
-          >
-            <span
-              className="material-symbols-outlined"
-              style={{ fontVariationSettings: activeTab === 'contratos' ? "'FILL' 1" : "'FILL' 0" }}
+          {hasAccess('projetos_ler') && (
+            <button
+              onClick={() => handleNavClick('projetos_eap')}
+              className={`w-full text-left ${navItemClass('projetos_eap')}`}
             >
-              description
-            </span>
-            <span className="font-label-bold text-label-bold">Contratos (Legado)</span>
-          </button>
+              <span
+                className="material-symbols-outlined"
+                style={{ fontVariationSettings: activeTab === 'projetos_eap' ? "'FILL' 1" : "'FILL' 0" }}
+              >
+                account_tree
+              </span>
+              <span className="font-label-bold text-label-bold">Projetos (EAP)</span>
+            </button>
+          )}
 
-          <button
-            onClick={() => handleNavClick('contratos_obra')}
-            className={`w-full text-left ${navItemClass('contratos_obra')}`}
-          >
-            <span
-              className="material-symbols-outlined"
-              style={{ fontVariationSettings: activeTab === 'contratos_obra' ? "'FILL' 1" : "'FILL' 0" }}
+          {hasAccess('medicoes_ler') && (
+            <button
+              onClick={() => handleNavClick('contratos_obra')}
+              className={`w-full text-left ${navItemClass('contratos_obra')}`}
             >
-              handshake
-            </span>
-            <span className="font-label-bold text-label-bold">Contratos Obra</span>
-          </button>
+              <span
+                className="material-symbols-outlined"
+                style={{ fontVariationSettings: activeTab === 'contratos_obra' ? "'FILL' 1" : "'FILL' 0" }}
+              >
+                architecture
+              </span>
+              <span className="font-label-bold text-label-bold">Medições</span>
+            </button>
+          )}
 
-          <button
-            onClick={() => handleNavClick('projetos_eap')}
-            className={`w-full text-left ${navItemClass('projetos_eap')}`}
-          >
-            <span
-              className="material-symbols-outlined"
-              style={{ fontVariationSettings: activeTab === 'projetos_eap' ? "'FILL' 1" : "'FILL' 0" }}
+          {hasAccess('empresas_ler') && (
+            <button
+              onClick={() => handleNavClick('empresas')}
+              className={`w-full text-left ${navItemClass('empresas')}`}
             >
-              account_tree
-            </span>
-            <span className="font-label-bold text-label-bold">Projetos (EAP)</span>
-          </button>
+              <span
+                className="material-symbols-outlined"
+                style={{ fontVariationSettings: activeTab === 'empresas' ? "'FILL' 1" : "'FILL' 0" }}
+              >
+                store
+              </span>
+              <span className="font-label-bold text-label-bold">Empresas</span>
+            </button>
+          )}
 
-          <button
-            onClick={() => handleNavClick('financeiro')}
-            className={`w-full text-left ${navItemClass('financeiro')}`}
-          >
-            <span
-              className="material-symbols-outlined"
-              style={{ fontVariationSettings: activeTab === 'financeiro' ? "'FILL' 1" : "'FILL' 0" }}
+          {hasAccess('financeiro_ler') && (
+            <button
+              onClick={() => handleNavClick('financeiro')}
+              className={`w-full text-left ${navItemClass('financeiro')}`}
             >
-              payments
-            </span>
-            <span className="font-label-bold text-label-bold">Financeiro</span>
-          </button>
+              <span
+                className="material-symbols-outlined"
+                style={{ fontVariationSettings: activeTab === 'financeiro' ? "'FILL' 1" : "'FILL' 0" }}
+              >
+                account_balance_wallet
+              </span>
+              <span className="font-label-bold text-label-bold">Financeiro</span>
+            </button>
+          )}
 
           <button
             onClick={() => handleNavClick('alertas')}
@@ -160,63 +175,38 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </span>
           </div>
 
-          <button
-            onClick={() => handleNavClick('empresas')}
-            className={`w-full text-left ${navItemClass('empresas')}`}
-          >
-            <span
-              className="material-symbols-outlined"
-              style={{ fontVariationSettings: activeTab === 'empresas' ? "'FILL' 1" : "'FILL' 0" }}
+          {hasAccess('usuarios_ler') && (
+            <button
+              onClick={() => handleNavClick('usuarios')}
+              className={`w-full text-left ${navItemClass('usuarios')}`}
             >
-              domain
-            </span>
-            <span className="font-label-bold text-label-bold">Empresas</span>
-          </button>
+              <span
+                className="material-symbols-outlined"
+                style={{ fontVariationSettings: activeTab === 'usuarios' ? "'FILL' 1" : "'FILL' 0" }}
+              >
+                group
+              </span>
+              <span className="font-label-bold text-label-bold">Usuários</span>
+            </button>
+          )}
 
-          <button
-            onClick={() => handleNavClick('usuarios')}
-            className={`w-full text-left ${navItemClass('usuarios')}`}
-          >
-            <span
-              className="material-symbols-outlined"
-              style={{ fontVariationSettings: activeTab === 'usuarios' ? "'FILL' 1" : "'FILL' 0" }}
+          {(isAdmin || userRole === 'GESTOR') && (
+            <button
+              onClick={() => handleNavClick('matriz-acesso')}
+              className={`w-full text-left ${navItemClass('matriz-acesso')}`}
             >
-              group
-            </span>
-            <span className="font-label-bold text-label-bold">Usuários</span>
-          </button>
-
-          <button
-            onClick={() => handleNavClick('matriz-acesso')}
-            className={`w-full text-left ${navItemClass('matriz-acesso')}`}
-          >
-            <span
-              className="material-symbols-outlined"
-              style={{ fontVariationSettings: activeTab === 'matriz-acesso' ? "'FILL' 1" : "'FILL' 0" }}
-            >
-              security
-            </span>
-            <span className="font-label-bold text-label-bold">Matriz Acessos</span>
-          </button>
+              <span
+                className="material-symbols-outlined"
+                style={{ fontVariationSettings: activeTab === 'matriz-acesso' ? "'FILL' 1" : "'FILL' 0" }}
+              >
+                admin_panel_settings
+              </span>
+              <span className="font-label-bold text-label-bold">Matriz Acessos</span>
+            </button>
+          )}
         </nav>
 
-        {/* Footer Actions */}
-        <div className="mt-auto pt-4 border-t border-[#c0c7d6] space-y-1">
-          <a
-            href="https://github.com/sagacitassistemas-sudo/gestor-de-obras"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="w-full mb-2 p-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-700 text-[11px] font-mono font-bold flex items-center justify-between border border-slate-200 transition-colors"
-            title="Repositório GitHub: Sarge2024/Gestor-de-Obras"
-          >
-            <span className="flex items-center gap-1.5 truncate">
-              <span className="material-symbols-outlined text-sm text-slate-800">code</span>
-              <span className="truncate">Sagacitassistemas-sudo/Gestor-de-Obras</span>
-            </span>
-            <span className="material-symbols-outlined text-xs text-slate-500">open_in_new</span>
-          </a>
-
-          <button
+        <div className="mt-auto pt-4 border-t border-[#c0c7d6] space-y-1">          <button
             onClick={onOpenNovoChamado}
             className="w-full bg-[#005daa] text-white rounded-lg p-3 mb-3 font-label-bold flex items-center justify-center gap-2 hover:bg-[#0075d5] active:scale-[0.98] transition-all shadow-sm group"
           >

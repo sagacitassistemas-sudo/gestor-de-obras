@@ -290,6 +290,15 @@ function startServer() {
             console.error("Error registering first Admin user:", insertErr);
             return res.status(500).json({ error: "Erro ao registrar o primeiro administrador." });
           }
+          
+          // Seed permissions
+          const { data: tipoData } = await supabase.from("permissoes_tipo").select("*").eq("contrato_id", "CTR-2026-SYS").eq("perfil", "ADMIN").maybeSingle();
+          if (tipoData) {
+            const newPerms = { ...tipoData };
+            delete newPerms.id; delete newPerms.perfil; delete newPerms.created_at; delete newPerms.updated_at;
+            newPerms.usuario_uid = uid; newPerms.empresa_id = "GER-2026-SYS";
+            await supabase.from("permissoes_usuario").insert([newPerms]);
+          }
           console.log(`[First Login] Registered first user ${userEmail} as ADMIN.`);
         } else {
           // Auto-register unregistered users as VISITANTE under CTR-2026-SYS
@@ -313,6 +322,15 @@ function startServer() {
           if (insertErr) {
             console.error("Error auto-registering visitor user:", insertErr);
             return res.status(500).json({ error: "Erro ao registrar o visitante." });
+          }
+          
+          // Seed permissions
+          const { data: tipoData } = await supabase.from("permissoes_tipo").select("*").eq("contrato_id", "CTR-2026-SYS").eq("perfil", "VISITANTE").maybeSingle();
+          if (tipoData) {
+            const newPerms = { ...tipoData };
+            delete newPerms.id; delete newPerms.perfil; delete newPerms.created_at; delete newPerms.updated_at;
+            newPerms.usuario_uid = uid; newPerms.empresa_id = "SEM-EMPRESA";
+            await supabase.from("permissoes_usuario").insert([newPerms]);
           }
           console.log(`[OAuth Auto-Register] Registered user ${userEmail} as VISITANTE.`);
         }
@@ -1713,6 +1731,24 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
 
       const { data, error } = await saveRecord(client, "usuarios", upsertData, { idField: "uid", onConflict: "uid" });
       if (error) return res.status(500).json({ error: error.message });
+      
+      // Auto-assign permissions from "por Tipo" template if this is a new user
+      const userPerfil = perfil || 'FORNECEDOR';
+      const { data: existingPerms } = await client.from("permissoes_usuario").select("usuario_uid").eq("usuario_uid", uid).maybeSingle();
+      if (!existingPerms) {
+        const { data: tipoData } = await client.from("permissoes_tipo").select("*").eq("contrato_id", tenantId).eq("perfil", userPerfil).maybeSingle();
+        if (tipoData) {
+          const newPerms = { ...tipoData };
+          delete newPerms.id;
+          delete newPerms.perfil;
+          delete newPerms.created_at;
+          delete newPerms.updated_at;
+          newPerms.usuario_uid = uid;
+          newPerms.empresa_id = empresa_id || null;
+          await client.from("permissoes_usuario").insert([newPerms]);
+        }
+      }
+
       return res.json({ usuario: data });
     } catch (err) {
       return res.status(500).json({ error: "Internal Error" });
@@ -1837,6 +1873,71 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
   }
 
   return app;
+}
+
+// Helper to compute effective permissions with fallback
+async function getComputedPermissions(req: AuthenticatedRequest): Promise<Record<string, boolean>> {
+  if (!req.decodedToken) return {};
+
+  const perfil = req.decodedToken.perfil || 'VISITANTE';
+  const uid = req.decodedToken.uid;
+  const contrato_id = req.decodedToken.contrato_id;
+
+  const fallback: Record<string, boolean> = {
+    empresas_ler: true, projetos_ler: true, medicoes_ler: true, financeiro_ler: true, relatorios_ler: true, usuarios_ler: true,
+    empresas_criar: false, empresas_editar: false, empresas_excluir: false,
+    projetos_criar: false, projetos_editar: false, projetos_excluir: false,
+    medicoes_criar: false, medicoes_editar: false, medicoes_excluir: false,
+    financeiro_criar: false, financeiro_editar: false, financeiro_excluir: false,
+    usuarios_criar: false, usuarios_editar: false, usuarios_excluir: false
+  };
+
+  if (perfil === 'GESTOR') {
+    Object.keys(fallback).forEach(k => { if (!k.startsWith('usuarios_')) fallback[k] = true; });
+  } else if (perfil === 'FINANCEIRO') {
+    Object.keys(fallback).forEach(k => { if (k.startsWith('financeiro_')) fallback[k] = true; });
+  }
+
+  if (perfil === 'ADMIN') {
+    Object.keys(fallback).forEach(k => fallback[k] = true);
+    return fallback;
+  }
+
+  try {
+    const client = getSupabaseClient(req);
+    if (!client) return fallback;
+
+    const { data: effectiveData } = await client
+      .from("v_permissoes_efetivas")
+      .select("*")
+      .eq("usuario_uid", uid)
+      .maybeSingle();
+
+    if (effectiveData && effectiveData.empresas_ler !== undefined) {
+      return { ...fallback, ...effectiveData };
+    }
+
+    const { data: typeData } = await client
+      .from("permissoes_tipo")
+      .select("*")
+      .eq("perfil", perfil)
+      .eq("contrato_id", contrato_id)
+      .maybeSingle();
+
+    if (typeData && typeData.empresas_ler !== undefined) {
+      return { ...fallback, ...typeData };
+    }
+  } catch (err) {
+    console.error("Error computing permissions:", err);
+  }
+  return fallback;
+}
+
+// Helper for inline permission checks in endpoints
+async function checkPermission(req: AuthenticatedRequest, permissionKey: string): Promise<boolean> {
+  if (req.decodedToken?.perfil === 'ADMIN') return true;
+  const perms = await getComputedPermissions(req);
+  return !!perms[permissionKey];
 }
 
 const appInstance = startServer();

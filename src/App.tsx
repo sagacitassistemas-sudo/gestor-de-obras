@@ -50,6 +50,7 @@ export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [activeTab, setActiveTab] = useState<NavigationTab>('login');
   const [authSession, setAuthSession] = useState<AuthSession | null>(null);
+  const [effectivePermissions, setEffectivePermissions] = useState<Record<string, boolean> | null>(null);
 
   const [isAuthDebugOpen, setIsAuthDebugOpen] = useState(false);
 
@@ -72,6 +73,44 @@ export default function App() {
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  // Fetch effective permissions after login
+  React.useEffect(() => {
+    if (authSession?.idToken && user.uid) {
+      fetch(`/api/permissoes/efetivas/${user.uid}`, {
+        headers: { Authorization: `Bearer ${authSession.idToken}` }
+      })
+        .then(res => res.json())
+        .then(data => {
+          if (data.success && data.data) {
+            setEffectivePermissions(data.data);
+          } else {
+            setEffectivePermissions({});
+          }
+        })
+        .catch(err => {
+          console.error("Error fetching permissions:", err);
+          setEffectivePermissions({});
+        });
+    } else {
+      setEffectivePermissions(null);
+    }
+  }, [authSession?.idToken, user.uid]);
+
+  // Permission helper
+  const hasAccess = (tab: NavigationTab) => {
+    if (!effectivePermissions) return false;
+    if (user.role === 'ADMIN') return true;
+    switch (tab) {
+      case 'empresas': return !!effectivePermissions.empresas_ler;
+      case 'projetos_eap': return !!effectivePermissions.projetos_ler;
+      case 'contratos_obra': return !!effectivePermissions.medicoes_ler;
+      case 'usuarios': return !!effectivePermissions.usuarios_ler;
+      case 'matriz-acesso': return user.role === 'GESTOR';
+      case 'financeiro': return !!effectivePermissions.financeiro_ler;
+      default: return true;
+    }
+  };
 
   // Handlers
   const handleLoginSuccess = (session: AuthSession) => {
@@ -257,6 +296,8 @@ export default function App() {
         alertCount={alerts.length}
         mobileOpen={isMobileMenuOpen}
         onCloseMobile={() => setIsMobileMenuOpen(false)}
+        permissions={effectivePermissions}
+        userRole={user.role}
       />
 
       {/* Main Layout Container */}
@@ -287,15 +328,17 @@ export default function App() {
           )}
 
           {activeTab === 'financeiro' && (
-            <FinanceiroView
-              dreData={dreData}
-              pendingPayments={pendingPayments}
-              contracts={contracts}
-              onOpenExportModal={() => setIsExportModalOpen(true)}
-              onOpenNovoChamado={() => setIsNovoChamadoOpen(true)}
-              searchQuery={searchQuery}
-              authSession={authSession}
-            />
+            hasAccess('financeiro') ? (
+              <FinanceiroView
+                dreData={dreData}
+                pendingPayments={pendingPayments}
+                contracts={contracts}
+                onOpenExportModal={() => setIsExportModalOpen(true)}
+                onOpenNovoChamado={() => setIsNovoChamadoOpen(true)}
+                searchQuery={searchQuery}
+                authSession={authSession}
+              />
+            ) : <div className="p-8 text-center bg-white rounded-xl border border-gray-200">Acesso Restrito: Sem permissão ao Financeiro</div>
           )}
 
           {activeTab === 'contratos' && (
@@ -310,36 +353,42 @@ export default function App() {
             />
           )}
 
-          {activeTab === 'projetos_eap' && (
-            <ProjetosEapView authSession={authSession} />
-          )}
-
           {activeTab === 'contratos_obra' && (
-            <ContratosObraView authSession={authSession} />
+            hasAccess('contratos_obra') ? (
+              <ContratosObraView authSession={authSession} />
+            ) : <div className="p-8 text-center bg-white rounded-xl border border-gray-200">Acesso Restrito: Sem permissão aos Contratos/Medições</div>
           )}
 
           {activeTab === 'alertas' && (
-            <AlertasView
-              alerts={alerts}
-              onOpenNovoChamado={() => setIsNovoChamadoOpen(true)}
-              onOpenNFDrawer={() => setIsNFDrawerOpen(true)}
-            />
+            <AlertasView alerts={alerts} searchQuery={searchQuery} />
           )}
 
-          {(activeTab === 'empresas' || activeTab === 'entidades') && (
-            <EmpresasView
-              authSession={authSession}
-              empresas={empresas}
-              setEmpresas={setEmpresas}
-            />
+          {activeTab === 'empresas' && (
+            hasAccess('empresas') ? (
+              <EmpresasView 
+                empresas={empresas}
+                authSession={authSession}
+                onAddEmpresa={(e) => setEmpresas([e, ...empresas])}
+              />
+            ) : <div className="p-8 text-center bg-white rounded-xl border border-gray-200">Acesso Restrito: Sem permissão às Empresas</div>
           )}
 
           {activeTab === 'usuarios' && (
-            <UsuariosView authSession={authSession} />
+            hasAccess('usuarios') ? (
+              <UsuariosView authSession={authSession} />
+            ) : <div className="p-8 text-center bg-white rounded-xl border border-gray-200">Acesso Restrito: Sem permissão aos Usuários</div>
           )}
 
           {activeTab === 'matriz-acesso' && (
-            <MatrizAcessosView authSession={authSession} />
+            hasAccess('matriz-acesso') ? (
+              <MatrizAcessosView authSession={authSession} currentUserRole={user.role} />
+            ) : <div className="p-8 text-center bg-white rounded-xl border border-gray-200">Acesso Restrito: Sem permissão à Matriz de Acessos</div>
+          )}
+
+          {activeTab === 'projetos_eap' && (
+            hasAccess('projetos_eap') ? (
+              <ProjetosEapView authSession={authSession} />
+            ) : <div className="p-8 text-center bg-white rounded-xl border border-gray-200">Acesso Restrito: Sem permissão aos Projetos/EAP</div>
           )}
         </main>
 

@@ -1,6 +1,6 @@
 # Especificação Completa do Sistema - Works Manager (Gestor de Obras)
 
-Este documento consolida a especificação técnica e funcional completa da plataforma **Works Manager** (anteriormente Gestor de Obras) na revisão atual. A plataforma é uma solução SaaS Multi-Tenant focada na gestão integrada de obras, infraestrutura, fornecedores, faturamentos (DRE) e contratos viários.
+Este documento consolida a especificação técnica e funcional completa da plataforma **Works Manager** (anteriormente Gestor de Obras) na revisão atual. A plataforma é uma solução SaaS Multi-Tenant focada na gestão integrada de obras, infraestrutura, fornecedores, faturamentos (DRE), projetos (EAP) e contratos viários.
 
 ---
 
@@ -8,134 +8,169 @@ Este documento consolida a especificação técnica e funcional completa da plat
 
 O sistema adota um modelo descentralizado de responsabilidades entre um **Container de Identidade (IdP)** e um **Sistema de Negócio Proprietário (Cerne)**.
 
-### 1.1. Camada de Autenticação (AuthN) & Whitelist de Usuários
+```mermaid
+flowchart TD
+    subgraph IdP ["Provedor de Identidade (Firebase Auth / OAuth SSO)"]
+        A[Login / Google / Microsoft SSO / MFA] --> B[IdP Token & Firebase UID]
+    end
+
+    subgraph Backend ["Backend Express API (Cerne)"]
+        B --> C{`/api/auth/oauth-login`}
+        C -->|Banco Vazio| D[Cria 1º Admin + Gestora + Permissões Admin]
+        C -->|Usuário Existe| E[Obtém perfil, contrato_id, empresa_id]
+        C -->|Novo Usuário SSO| F[Cria Usuário VISITANTE + Herda Template por Tipo]
+        E --> G[Gera JWT Assinado do Supabase]
+        F --> G
+        D --> G
+        G --> H[Express Middleware `checkPermission`]
+    end
+
+    subgraph AuthZ ["Camada de Autorização & Banco de Dados (Supabase PostgreSQL)"]
+        H --> I[`v_permissoes_efetivas` / RLS Nativo]
+        I --> J[Teto Tenant > Perfil Tipo > Empresa > Usuário]
+    end
+```
+
+### 1.1. Camada de Autenticação (AuthN) & Auto-Registro de Usuários
 - **Provedor de Identidade (IdP - Firebase Auth)**: Responsável exclusivamente por autenticar a identidade do usuário (e-mail/senha, OAuth SSO da Google/Microsoft e Duplo Fator de Autenticação - MFA).
-- **Validação Estrita via Whitelist (`usuarios` Supabase)**: Ao realizar o login no endpoint `/api/auth/oauth-login`, o backend consulta a tabela `usuarios` no PostgreSQL/Supabase pelo e-mail autenticado.
-  - Usuários que **não** possuem cadastro prévio no banco recebem resposta HTTP 403 Forbidden ("Usuário não autorizado").
-  - Para usuários válidos e ativos, o backend sincroniza o `uid` e a `foto_url` obtidos do provedor OAuth.
+- **Lógica de Entrada e Cadastro Único**:
+  - **Inicialização Limpa (Primeiro Admin)**: Se a base de dados estiver completamente vazia, o primeiro usuário autenticado via OAuth SSO (ex: Google/Microsoft) é automaticamente cadastrado como **`ADMIN`** do tenant principal `CTR-2026-SYS`, criando simultaneamente a empresa gestora `GER-2026-SYS` e injetando as permissões administrativas.
+  - **Auto-Registro de Visitantes (OAuth SSO)**: Usuários que efetuarem login via SSO e ainda não possuírem cadastro prévio no sistema são registrados automaticamente com o perfil **`VISITANTE`** no tenant `CTR-2026-SYS` (empresa `SEM-EMPRESA`, status `ATIVO`).
+  - **Auto-Herança de Permissões no Cadastro**: Sempre que um novo usuário é criado (seja via `/api/auth/oauth-login` ou pela rota `/api/usuarios`), o backend consulta a tabela `permissoes_tipo` referente ao perfil selecionado (ex: `VISITANTE`, `FORNECEDOR`, `GESTOR`) e copia automaticamente o template de permissões para a tabela `permissoes_usuario` vinculada ao `usuario_uid`. Isso assegura que o usuário receba suas permissões de forma automática no momento do cadastro, permitindo edições posteriores específicas para aquele usuário.
 - **Custom Claims & Sessão**: O backend injeta as claims essenciais no token de sessão:
   - `uid`: Identificador único da conta.
   - `contrato_id`: Identificador do tenant contratante principal (ex: `CTR-2026-SYS`).
-  - `empresa_id` / `entidade_id`: Vínculo a uma empresa/fornecedor (ex: `SUP-9823-STORAGE`).
-  - `perfil`: Papel de navegação e permissão (`ADMIN`, `GESTOR`, `FINANCEIRO`, `FORNECEDOR`).
+  - `empresa_id` / `entidade_id`: Vínculo a uma empresa/fornecedor (ex: `GER-2026-SYS` ou `SUP-9823-STORAGE`).
+  - `perfil`: Papel do usuário (`ADMIN`, `GESTOR`, `FINANCEIRO`, `FORNECEDOR`, `VISITANTE`).
   - `mfa_verified`: Flag indicando validação de duplo fator.
 
-### 1.2. Camada de Autorização (AuthZ & Supabase JWT Assinado)
+### 1.2. Camada de Autorização (AuthZ & Supabase JWT Handoff)
 - **Base Proprietária (PostgreSQL / Supabase)**: Assume 100% da responsabilidade sobre regras de negócio e autorização de operações CRUD.
-- **Cliente Escopado por JWT Handoff (`supabase.auth.setSession`)**: O backend Express utiliza a biblioteca `jsonwebtoken` para assinar um JWT contendo as claims de negócio usando o segredo `SUPABASE_JWT_SECRET`. Este token é devolvido ao frontend após o sucesso do Firebase OAuth e injetado diretamente no Cliente Supabase via `supabase.auth.setSession()`. A partir desse momento, a gestão do usuário e a autorização ficam por conta do Supabase. Cada requisição no frontend passa a enviar automaticamente este JWT válido para RLS.
+- **Cliente Escopado por JWT Handoff (`supabase.auth.setSession`)**: O backend Express utiliza a biblioteca `jsonwebtoken` para assinar um JWT contendo as claims de negócio usando o segredo `SUPABASE_JWT_SECRET`. Este token é devolvido ao frontend após a autenticação e injetado diretamente no Cliente Supabase via `supabase.auth.setSession()`.
 - **Segurança de Acesso (Row-Level Security - RLS Nativo)**: O isolamento multitenant de dados é forçado nativamente pelo PostgreSQL via RLS:
-  - Leituras (SELECT) validam se `contrato_id = (current_setting('request.jwt.claims', true)::jsonb ->> 'contrato_id')`.
-  - Mutações (INSERT, UPDATE, DELETE) validam adicionalmente se `(current_setting('request.jwt.claims', true)::jsonb ->> 'perfil') = 'ADMIN'`.
-- **Zero Trust**: Nenhuma informação de identificação (como `contrato_id` ou `empresa_id`) extraída do body ou query string autoriza operações de escrita/leitura.
+  - Leituras (`SELECT`) validam se `contrato_id = (current_setting('request.jwt.claims', true)::jsonb ->> 'contrato_id')`.
+  - Mutações (`INSERT`, `UPDATE`, `DELETE`) validam adicionalmente o perfil ou as permissões efetivas computadas.
 
 ---
 
-## 2. Fluxo de Autenticação e Perfis de Usuários
+## 2. Modelo de Delegação Hierárquica de Permissões (Matriz de Acessos)
 
-O sistema possui uma matriz granular de controle de acesso (RBAC) definida localmente na tabela `perfis_permissoes` do PostgreSQL, mapeada com base no papel (`perfil`) atribuído ao usuário na tabela `usuarios`.
+O sistema implementa uma estrutura de **Delegação Hierárquica em 4 Níveis (Cascade Ceiling)** para o cálculo das permissões efetivas do usuário:
 
-### 2.1. Administrador Principal
-- **E-mail do Administrador**: `sagacitas.sistemas@gmail.com`
-- **Perfil**: `ADMIN` associado ao tenant `CTR-2026-SYS`. Possui privilégios totais de leitura e mutação via RLS nas tabelas do sistema.
+```
+[1. Teto Global do Tenant (permissoes_contratante)]
+                   │
+                   ▼
+  [2. Template por Tipo (permissoes_tipo)]
+                   │
+                   ▼
+  [3. Teto por Empresa (permissoes_empresa)]
+                   │
+                   ▼
+  [4. Permissão por Usuário (permissoes_usuario)]
+                   │
+                   ▼
+  [RESULTADO: View v_permissoes_efetivas]
+```
 
-### 2.2. Classificação de Perfis (Roles)
-- **ADMIN**: Acesso completo e irrestrito a configurações fiscais, cadastro e edição de fornecedores, parametrização de contratos e matriz de permissões.
-- **FINANCEIRO**: Permissão de leitura do DRE, faturamentos, processamento de notas fiscais e escrita/liquidação de lançamentos, sem autorização para modificação estrutural de fornecedores.
-- **GESTOR**: Acompanhamento físico-financeiro de trechos viários, visualização do DRE consolidado e aprovação de medições contratuais.
-- **FORNECEDOR**: Acesso limitado exclusivamente aos dados do seu próprio `empresa_id` (filtro estrito), visualizando apenas suas medições, alertas e notas sob faturamento.
+### 2.1. Níveis de Permissão e Regras de Precedência
+
+1. **Nível 1 - Tenant (Contratante)**: Define o teto máximo de permissões que qualquer empresa ou usuário pertencente ao contrato (`contrato_id`) pode possuir. Configurável exclusivamente por usuários `ADMIN`.
+2. **Nível 2 - Por Tipo (Perfil Template)**: Configuração padrão herdada automaticamente por perfis (`ADMIN`, `GESTOR`, `FINANCEIRO`, `FORNECEDOR`, `VISITANTE`). Utilizada como semente no momento do cadastro do usuário.
+3. **Nível 3 - Por Empresa (Empresa Fornecedora/Parceira)**: Define o limite (teto) de ações permitidas para os usuários associados a um `empresa_id` específico. Não pode ultrapassar o Teto Global do Tenant.
+4. **Nível 4 - Por Usuário (Permissão Efetiva Individual)**: Configuração individual vinculada diretamente ao `usuario_uid`. É herdada do template por tipo na criação e pode ser customizada pontualmente. É limitada pelo teto da sua empresa (se houver) ou pelo teto global.
+
+### 2.2. Cálculo de Permissões Computadas (`getComputedPermissions`)
+
+No backend Express, a função `getComputedPermissions(req)` avalia as permissões na seguinte ordem de prioridade:
+1. **ADMIN Bypass**: Usuários com `perfil === 'ADMIN'` recebem todas as permissões (`true`) automaticamente.
+2. **Consulta à View `v_permissoes_efetivas`**: O backend executa a query na view PostgreSQL que unifica e aplica a interseção booleana (AND lógico) entre o teto do tenant, teto da empresa e permissões do usuário.
+3. **Fallback `permissoes_tipo`**: Caso o usuário ainda não possua registro em `v_permissoes_efetivas`, o sistema lê as regras de `permissoes_tipo` para o seu perfil.
+4. **Fallback de Segurança Padrão**: Se nenhum registro for encontrado, aplica-se permissão de leitura às rotas básicas e negação total (`false`) para operações de mutação (`criar`, `editar`, `excluir`).
+
+### 2.3. Mapeamento de Chaves de Permissão
+
+As permissões do sistema são divididas pelos módulos fundamentais:
+
+| Módulo | Chaves de Permissão Disponíveis |
+| :--- | :--- |
+| **Empresas** | `empresas_criar`, `empresas_ler`, `empresas_editar`, `empresas_excluir` |
+| **Projetos (EAP)** | `projetos_criar`, `projetos_ler`, `projetos_editar`, `projetos_excluir` |
+| **Medições & Contratos** | `medicoes_criar`, `medicoes_ler`, `medicoes_editar`, `medicoes_excluir` |
+| **Financeiro & Lançamentos**| `financeiro_criar`, `financeiro_ler`, `financeiro_editar`, `financeiro_excluir` |
+| **Relatórios** | `relatorios_ler` |
+| **Usuários & Acessos** | `usuarios_criar`, `usuarios_ler`, `usuarios_editar`, `usuarios_excluir` |
+
+### 2.4. Enforcing / Middleware de Proteção no Backend e Frontend
+
+- **Backend Express (`checkPermission(req, key)`)**:
+  - Middleware injetado em todas as rotas sensíveis (`/api/empresas`, `/api/projetos`, `/api/usuarios`, `/api/firestore/lancamentos`, `/api/contratos-obra`, etc.).
+  - Retorna **HTTP 403 Forbidden** com mensagem de erro amigável caso a chave de permissão requerida seja `false`.
+- **Frontend App Guard (`effectivePermissions` & `Sidebar.tsx`)**:
+  - Logo após o login, o frontend busca `/api/permissoes/efetivas/:uid` e armazena o objeto de permissões no estado `effectivePermissions` do `App.tsx`.
+  - A `Sidebar.tsx` renderiza dinamicamente os itens de menu com base na função `hasAccess(tab)` (ex: só exibe o menu "Empresas" se `effectivePermissions.empresas_ler` for verdadeiro).
+  - Tentativas de acesso direto por troca de estado são bloqueadas no `App.tsx`, exibindo a tela de aviso **"Acesso Restrito: Sem permissão"**.
 
 ---
 
 ## 3. Estrutura do Banco de Dados
 
-A infraestrutura e o negócio são divididos entre o Firestore (dados de onboarding e invites globais) e o PostgreSQL (negócio transacional e controle de acessos).
+A infraestrutura é organizada entre o Firestore (dados de onboarding e invites) e o PostgreSQL/Supabase (transacional, multitenant e permissões).
 
 ```mermaid
 erDiagram
     usuarios }|--|| empresa_contratante : "pertence ao contrato"
-    contratos ||--o{ empresas_fornecedores : "contém"
+    usuarios ||--o| permissoes_usuario : "possui permissao individual"
+    contratos ||--o{ empresas_fornecedores : "contem"
     contratos ||--o| empresa_contratante : "possui"
     contratos ||--o{ lancamentos_financeiros : "registra"
     empresas_fornecedores ||--o{ lancamentos_financeiros : "emite"
-    contratos ||--o{ perfis_permissoes : "define regras para"
+    contratos ||--o{ permissoes_contratante : "define teto tenant"
+    contratos ||--o{ permissoes_tipo : "define template por perfil"
+    empresas_fornecedores ||--o{ permissoes_empresa : "define teto empresa"
     empresa_contratante ||--o{ projetos : "possui"
     projetos ||--o{ itens_eap : "desdobrado em"
 ```
 
-### 3.1. Dicionário de Tabelas / Coleções
+### 3.1. Dicionário de Tabelas de Permissões e Acessos
 
 #### Tabela `usuarios` (PostgreSQL / Supabase)
 Cadastro central de usuários autorizados e atribuição de papéis no tenant.
-- `id` (UUID, PK): Identificador primário do registro.
-- `uid` (VARCHAR): ID único vindo do Firebase Auth / OAuth SSO.
-- `email` (VARCHAR, UNIQUE): E-mail do usuário utilizado para autorização via whitelist.
-- `nome` (VARCHAR): Nome completo do usuário.
-- `contrato_id` (VARCHAR): Código do tenant do usuário (`CTR-2026-SYS`).
-- `perfil` (VARCHAR): Papel no sistema (`ADMIN`, `GESTOR`, `FINANCEIRO`, `FORNECEDOR`).
+- `id` (UUID, PK): Identificador primário.
+- `uid` (VARCHAR, UNIQUE): ID vindo do Firebase Auth / OAuth SSO.
+- `email` (VARCHAR, UNIQUE): E-mail do usuário.
+- `nome` (VARCHAR): Nome completo.
+- `contrato_id` (VARCHAR): Código do tenant (`CTR-2026-SYS`).
+- `empresa_id` (VARCHAR, NULLABLE): Vínculo com a empresa fornecedora.
+- `perfil` (VARCHAR): Papel no sistema (`ADMIN`, `GESTOR`, `FINANCEIRO`, `FORNECEDOR`, `VISITANTE`).
 - `status` (VARCHAR): Estado da conta (`ATIVO`, `BLOQUEADO`, `INATIVO`).
-- `foto_url` (VARCHAR): URL da foto de perfil importada via SSO OAuth.
+- `foto_url` (VARCHAR): URL da imagem de perfil.
 
-#### Tabela `empresa_contratante` (PostgreSQL / Supabase)
-Cadastro das entidades contratantes detentoras do tenant principal.
-- `contrato_id` (VARCHAR, PK): Token/código de identificação do contrato master do tenant.
-- `nome` (VARCHAR): Razão social ou nome da contratante.
-- `natureza` (VARCHAR): Natureza da entidade ('Publica' ou 'Privada').
-- `cnpj` (VARCHAR): Cadastro Nacional de Pessoa Jurídica da contratante.
-- `email` / `telefone` (VARCHAR): Contatos institucionais.
-- `gestorresponsavel` (VARCHAR): Nome do responsável principal pelo contrato.
-- `unidadeadministrativa` (VARCHAR): Divisão administrativa correspondente.
+#### Tabela `permissoes_contratante` (Teto Global)
+- `contrato_id` (VARCHAR, PK): Identificador do tenant.
+- Campos booleanos: `empresas_criar`, `empresas_ler`, `empresas_editar`, `empresas_excluir`, `projetos_criar`, `projetos_ler`, `projetos_editar`, `projetos_excluir`, `medicoes_criar`, `medicoes_ler`, `medicoes_editar`, `medicoes_excluir`, `financeiro_criar`, `financeiro_ler`, `financeiro_editar`, `financeiro_excluir`, `relatorios_ler`, `usuarios_criar`, `usuarios_ler`, `usuarios_editar`, `usuarios_excluir`.
 
-#### Tabela `empresas_fornecedores` (PostgreSQL / Supabase)
-Empresas homologadas, fornecedores ou subempreiteiras do ecossistema.
-- `id` (VARCHAR, PK): Identificador único da empresa fornecedora.
-- `contrato_id` (VARCHAR, PK, FK -> `empresa_contratante.contrato_id`): Isolamento multitenant.
-- `nome` (VARCHAR): Nome empresarial ou fantasia.
-- `cnpj_cpf` (VARCHAR): CNPJ ou CPF do fornecedor.
-- `tipo` (VARCHAR): Categoria da empresa (`FORNECEDOR`, `CLIENTE`, `PARCEIRO`, `CONTRATANTE`).
-- `email_contato` / `telefone` (VARCHAR): Dados do ponto de contato do fornecedor.
-- `status` (VARCHAR): Estado de homologação (`ATIVO`, `BLOQUEADO`, `EM_ANALISE`).
-- `total_faturado` (NUMERIC): Valor monetário acumulado em medições aprovadas.
-- `created_at` (TEXT/TIMESTAMP): Data de cadastro do fornecedor.
+#### Tabela `permissoes_tipo` (Template por Perfil)
+- `id` (UUID, PK): ID único.
+- `contrato_id` (VARCHAR): Identificador do tenant.
+- `perfil` (VARCHAR): Perfil associado (`ADMIN`, `GESTOR`, `FINANCEIRO`, `FORNECEDOR`, `VISITANTE`).
+- Campos booleanos de permissões (mesma estrutura de módulos).
 
-#### Tabela `lancamentos_financeiros` (PostgreSQL / Supabase)
-Controle transacional de receitas e despesas vinculadas a contratos de obras.
-- `id` (VARCHAR, PK): ID único do lançamento.
-- `contrato_id` (VARCHAR, FK): Associação ao tenant.
-- `fornecedor_id` (VARCHAR, FK): Associação à empresa emitente.
-- `descricao` (VARCHAR): Histórico ou descrição do faturamento.
-- `valor` (NUMERIC): Valor do lançamento.
-- `tipo` (VARCHAR): Tipo do faturamento (`RECEITA`, `DESPESA`).
-- `status` (VARCHAR): Estado do faturamento (`PAGO`, `PENDENTE`, `EM_PROCESSAMENTO`).
-- `data_vencimento` (DATE): Data limite de pagamento.
-- `criado_por` (VARCHAR): E-mail do operador que efetuou a entrada.
+#### Tabela `permissoes_empresa` (Teto por Empresa)
+- `id` (UUID, PK): ID único.
+- `contrato_id` (VARCHAR): Identificador do tenant.
+- `empresa_id` (VARCHAR, UNIQUE/FK): Empresa fornecedora associada.
+- Campos booleanos de permissões.
 
-#### Tabela `perfis_permissoes` (PostgreSQL / Supabase)
-Matriz relacional de autorização granular.
-- `contrato_id` (VARCHAR, PK): Tenant aplicável.
-- `perfil` (VARCHAR, PK): Papel associado (`ADMIN`, `GESTOR`, `FINANCEIRO`, `FORNECEDOR`).
-- `pode_ver_dre` (BOOLEAN): Acesso ao painel financeiro consolidado.
-- `pode_editar_pagamento` (BOOLEAN): Habilidade de cadastrar ou liquidar parcelas.
-- `pode_aprovar_medicao` (BOOLEAN): Permissão para aceitar boletins de trechos concluídos.
-- `pode_cadastrar_empresa` (BOOLEAN): Homologação de novos parceiros.
-- `pode_exportar_relatorio` (BOOLEAN): Acesso para downloads de DRE/Faturamento.
-- `pode_gerenciar_usuarios` (BOOLEAN): Gestão de acessos locais de operadores.
+#### Tabela `permissoes_usuario` (Permissão Individual)
+- `id` (UUID, PK): ID único.
+- `usuario_uid` (VARCHAR, UNIQUE/FK): UID do usuário.
+- `contrato_id` (VARCHAR): Identificador do tenant.
+- `empresa_id` (VARCHAR, NULLABLE): Empresa associada.
+- Campos booleanos de permissões.
 
-#### Tabela `projetos` (PostgreSQL / Supabase)
-Cadastro dos Projetos/Obras vinculados ao Contrato (Tenant).
-- `id` (UUID, PK): ID único do projeto.
-- `contrato_id` (VARCHAR, FK): Associação ao tenant/empresa contratante.
-- `nome_projeto` (VARCHAR): Nome ou título da obra/projeto.
-- `data_inicio` (DATE): Data de início da execução.
-
-#### Tabela `itens_eap` (PostgreSQL / Supabase)
-Estrutura Analítica do Projeto, detalhando etapas, serviços e quantitativos.
-- `id` (UUID, PK): ID único do item.
-- `projeto_id` (UUID, FK): Associação ao projeto pai.
-- `eap_codigo` (VARCHAR): Código hierárquico com máscara até 3 níveis (ex: `1.2.3`).
-- `eap_pai_codigo` (VARCHAR): Código da etapa superior imediata.
-- `descricao_servico` (VARCHAR): Nome da etapa ou serviço.
-- `e_analitico` (BOOLEAN): Flag que determina se é um serviço executável ou apenas uma etapa sintética agrupadora.
-- `unidade_medida`, `preco_unitario`, `quantidade_contratada`: Detalhes financeiros (apenas para analíticos).
+#### View `v_permissoes_efetivas` (PostgreSQL)
+View calculada nativamente no banco que combina via `AND` lógico as permissões de `permissoes_usuario` com os limites de `permissoes_empresa` e `permissoes_contratante`.
 
 ---
 
@@ -151,11 +186,14 @@ Módulo de acompanhamento contábil estruturado em contas de resultado (Receita 
 Linha do tempo interativa e física-financeira de trechos viários e obras em andamento. Detalha cronograma planejado versus executado, marcos de conclusão de trechos físico-geográficos e desembolsos previstos indexados por fornecedor.
 
 ### 4.4. Homologação de Empresas (`EmpresasView`)
-Central de controle B2B para homologação, checagem cadastral, e auditoria documental de fornecedores e parceiros da cadeia produtiva. Integração nativa com RLS para restrição de cadastros a perfis `ADMIN`. Realiza operações Inline.
+Central de controle B2B para homologação, checagem cadastral, e auditoria documental de fornecedores e parceiros da cadeia produtiva. Protegida por permissões `empresas_ler` e `empresas_criar/editar`.
 
 ### 4.5. Gestão de Projetos e EAP (`ProjetosEapView`)
-Módulo dedicado à estruturação de obras. Na barra lateral (sidebar), são gerenciados os Projetos de forma hierárquica. Na área central, são incluídos os Itens da Estrutura Analítica do Projeto (EAP). Implementa formatação estrita `x.x.x` (até 3 níveis) para os códigos, com cálculo automático de valores totais (Preço x Quantidade) e relacionamento de etapas sintéticas com serviços analíticos de ponta.
+Módulo dedicado à estruturação de obras. Na barra lateral (sidebar), são gerenciados os Projetos de forma hierárquica. Na área central, são incluídos os Itens da Estrutura Analítica do Projeto (EAP). Implementa formatação estrita `x.x.x` (até 3 níveis) para os códigos, com cálculo automático de valores totais e validações de escrita (`projetos_criar`/`projetos_editar`).
 
 ### 4.6. Matriz de Acessos (`MatrizAcessosView`)
-Painel interativo que renderiza a matriz `perfis_permissoes` do banco PostgreSQL do tenant, permitindo a usuários `ADMIN` customizar as flags de autorização RBAC aplicadas a cada classe de perfil diretamente na UI.
-
+Painel interativo e hierárquico organizado em **4 Abas de Configuração**:
+1. **1. Tenant (Contratante)**: Configuração do Teto Global do Contrato (`CTR-2026-SYS`). Exclusivo para perfil `ADMIN`.
+2. **2. Por Tipo**: Definição dos Templates padrão (`ADMIN`, `GESTOR`, `FINANCEIRO`, `FORNECEDOR`, `VISITANTE`).
+3. **3. Por Empresa**: Definição dos Tetos aplicados a empresas fornecedoras cadastradas na base. Dropdown conectado à API `/api/empresas`.
+4. **4. Por Usuário**: Ajuste de permissões individuais por operador. Dropdown conectado à API `/api/usuarios`.

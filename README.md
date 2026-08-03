@@ -5,11 +5,11 @@ Sistema moderno de Gestão de Obras, Infraestrutura, Fornecedores e Contratos (S
 ## 🚀 Funcionalidades Principais
 
 *   **Painel Operacional (Dashboard):** Visão unificada e em tempo real sobre cronogramas, custos e andamento dos projetos.
-*   **Autenticação e Whitelist de Usuários:** Autenticação via Google/Microsoft OAuth com verificação de autorização prévia na tabela `usuarios` do Supabase.
+*   **Autenticação e Auto-Registro de Usuários:** Autenticação via Google/Microsoft OAuth com inicialização limpa (primeiro usuário vira Admin), auto-registro de novos acessos como Visitante e vinculação a custom claims no token JWT do Supabase.
 *   **Gestão de Empresas & Fornecedores:** Controle de perfis, homologação, dados de contato e segmentação por tipo (Fornecedores, Clientes, Parceiros, Contratante), com autorização de escrita restrita a Administradores via RLS.
 *   **Demonstrativo do Resultado do Exercício (DRE):** Relatórios financeiros consolidados, fluxos de receitas e despesas com filtragem inteligente e insights impulsionados por **Gemini AI**.
 *   **Cronograma Viário & Fluxo Físico-Financeiro:** Linha do tempo visual detalhando o progresso físico e os aportes financeiros programados para cada trecho ou obra.
-*   **Matriz de Controle de Acesso (RBAC):** Gestão minuciosa de permissões de usuários por perfil (`ADMIN`, `GESTOR`, `FINANCEIRO`, `FORNECEDOR`) com isolamento por tenant (`contrato_id`).
+*   **Matriz de Delegação Hierárquica de Permissões (4 Níveis):** Controle em cascata (Tenant > Tipo/Template > Empresa > Permissões Efetivas do Usuário) com aplicação via middleware no backend e rotas dinâmicas no frontend.
 *   **Alertas Inteligentes:** Notificações de margem, vencimento de certidões e prazos contratuais.
 
 ## 🛠️ Tecnologias Utilizadas
