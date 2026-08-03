@@ -693,6 +693,44 @@ function startServer() {
     }
   });
 
+  // Synchronize User on Login (Ensures the user exists in 'usuarios' table)
+  app.post("/api/auth/sync-user", verifyFirebaseJWT, async (req: AuthenticatedRequest, res) => {
+    try {
+      const client = getSupabaseClient(req);
+      if (!client) return res.status(500).json({ error: "Supabase not configurado." });
+
+      const token = req.decodedToken;
+      if (!token || !token.uid) return res.status(401).json({ error: "Acesso não autorizado." });
+
+      const { nome, avatar_url } = req.body || {};
+
+      const upsertData = {
+        uid: token.uid,
+        email: token.email,
+        nome: nome || token.email,
+        avatar_url: avatar_url || null,
+        perfil: token.perfil || 'FORNECEDOR',
+        status: 'ATIVO',
+        contrato_id: token.contrato_id || null,
+        empresa_id: token.empresa_id || null,
+        updated_at: new Date().toISOString()
+      };
+
+      // Using saveRecord ensures INSERT or UPDATE on conflict
+      const { data, error } = await saveRecord(client, "usuarios", upsertData, { idField: "uid", onConflict: "uid" });
+      
+      if (error) {
+        console.error("[Sync User] Erro ao sincronizar usuário:", error);
+        return res.status(500).json({ error: error.message });
+      }
+
+      return res.json({ success: true, usuario: data });
+    } catch (err: any) {
+      console.error("[Sync User] Erro interno:", err);
+      return res.status(500).json({ error: "Internal Server Error" });
+    }
+  });
+
   // 7. Inspect Custom Claims (JWT Token Inspector)
   app.get("/api/auth/inspect-claims", async (req, res) => {
     const email = (req.query.email as string) || "fornecedor@storage.com.br";

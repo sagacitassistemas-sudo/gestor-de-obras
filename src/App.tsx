@@ -123,6 +123,20 @@ export default function App() {
       avatarUrl: session.photoURL || prev.avatarUrl,
       role: session.customClaims?.perfil || prev.role
     }));
+
+    // Auto-sync user to Supabase `usuarios` table
+    fetch('/api/auth/sync-user', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session.idToken}`
+      },
+      body: JSON.stringify({
+        nome: session.displayName || '',
+        avatar_url: session.photoURL || null
+      })
+    }).catch(err => console.error("[App] Erro ao sincronizar usuário:", err));
+
     setIsAuthenticated(true);
     setActiveTab('dashboard');
   };
