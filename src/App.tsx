@@ -99,8 +99,8 @@ export default function App() {
 
   // Permission helper
   const hasAccess = (tab: NavigationTab) => {
-    if (!effectivePermissions) return false;
     if (user.role === 'ADMIN') return true;
+    if (!effectivePermissions) return false;
     switch (tab) {
       case 'empresas': return !!effectivePermissions.empresas_ler;
       case 'projetos_eap': return !!effectivePermissions.projetos_ler;
@@ -117,6 +117,7 @@ export default function App() {
     setAuthSession(session);
     setUser((prev) => ({
       ...prev,
+      uid: session.uid,
       email: session.email,
       name: session.displayName || prev.name,
       avatarUrl: session.photoURL || prev.avatarUrl,

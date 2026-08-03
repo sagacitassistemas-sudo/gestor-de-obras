@@ -25,6 +25,7 @@ export interface UserRecord {
 
 
 export interface UserProfile {
+  uid?: string;
   name: string;
   role: string;
   company: string;

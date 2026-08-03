@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS itens_eap (
     preco_unitario NUMERIC(15,2) DEFAULT 0.00,
     quantidade_contratada NUMERIC(15,4) DEFAULT 0.0000,
     valor_total_contratado NUMERIC(15,2) DEFAULT 0.00, -- Armazenado para consistência
+    valor_desembolsado NUMERIC(15,2) DEFAULT 0.00,     -- Valor desembolsado efetivo
     e_analitico BOOLEAN NOT NULL DEFAULT FALSE,        -- TRUE se folha, FALSE se agrupador
     ordem INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
@@ -59,71 +60,36 @@ CREATE TABLE IF NOT EXISTS medicoes (
 CREATE TABLE IF NOT EXISTS itens_medicao_detalhe (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     medicao_id UUID NOT NULL REFERENCES medicoes(id) ON DELETE CASCADE,
-    item_eap_id UUID NOT NULL REFERENCES itens_eap(id) ON DELETE RESTRICT,
-    
-    -- Valores do Período Corrente (Mês atual)
-    quantidade_periodo NUMERIC(15,4) NOT NULL DEFAULT 0.0000,
-    valor_periodo NUMERIC(15,2) NOT NULL DEFAULT 0.00,
-    
-    -- Valores Acumulados (Até o mês atual)
-    quantidade_acumulada NUMERIC(15,4) NOT NULL DEFAULT 0.0000,
-    valor_acumulado NUMERIC(15,2) NOT NULL DEFAULT 0.00,
-    
-    -- Avanço Físico-Financeiro
-    percentual_executado_acumulado NUMERIC(8,4) NOT NULL DEFAULT 0.0000,
-    
+    item_eap_id UUID NOT NULL REFERENCES itens_eap(id) ON DELETE CASCADE,
+    quantidade_periodo NUMERIC(15,4) DEFAULT 0.0000,
+    valor_periodo NUMERIC(15,2) DEFAULT 0.00,
+    quantidade_acumulada NUMERIC(15,4) DEFAULT 0.0000,
+    valor_acumulado NUMERIC(15,2) DEFAULT 0.00,
+    percentual_executado_acumulado NUMERIC(5,2) DEFAULT 0.00,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     
     CONSTRAINT unique_item_por_medicao UNIQUE (medicao_id, item_eap_id)
 );
 
 -- ==============================================================================
--- 📊 VIEW DE CONSOLIDAÇÃO: RESUMO EAP E MEDIÇÃO
+-- 🔍 VIEWS DE APOIO PARA DASHBOARDS E FRONTEND
 -- ==============================================================================
 -- View que calcula subtotais para os itens Sintéticos (pai) rolando (rollup) os 
 -- valores dos itens Analíticos (filhos).
--- Nota: Esta versão usa uma Common Table Expression Recursiva para suportar N níveis de hierarquia.
 
 CREATE OR REPLACE VIEW v_resumo_eap_medicao AS
-WITH RECURSIVE hierarquia_eap AS (
-    -- Casos base: todos os itens
+WITH agregacao_contrato AS (
     SELECT 
-        id,
-        projeto_id,
-        eap_codigo,
-        eap_pai_codigo,
-        e_analitico,
-        id AS id_raiz,
-        eap_codigo as codigo_raiz
-    FROM itens_eap
-    
-    UNION ALL
-    
-    -- Passo recursivo: encontra os pais dos itens analíticos
-    SELECT 
-        e.id,
-        e.projeto_id,
-        e.eap_codigo,
-        e.eap_pai_codigo,
-        e.e_analitico,
-        h.id_raiz,
-        h.codigo_raiz
-    FROM itens_eap e
-    INNER JOIN hierarquia_eap h ON e.eap_codigo = h.eap_pai_codigo AND e.projeto_id = h.projeto_id
-),
-agregacao_contrato AS (
-    -- Soma os valores contratados dos itens analíticos para todos os nós acima deles
-    SELECT 
-        h.codigo_raiz as eap_codigo,
-        h.projeto_id,
-        SUM(e.valor_total_contratado) as total_contratado_calc
-    FROM hierarquia_eap h
-    JOIN itens_eap e ON h.id = e.id
-    WHERE e.e_analitico = TRUE
-    GROUP BY h.codigo_raiz, h.projeto_id
+        h1.id AS pai_id,
+        SUM(h2.valor_total_contratado) AS total_contratado_calc,
+        SUM(h2.valor_desembolsado) AS total_desembolsado_calc
+    FROM itens_eap h1
+    LEFT JOIN itens_eap h2 ON h2.projeto_id = h1.projeto_id 
+        AND (h2.eap_codigo LIKE h1.eap_codigo || '.%' OR h2.id = h1.id)
+        AND h2.e_analitico = TRUE
+    GROUP BY h1.id
 ),
 ultima_medicao AS (
-    -- Pega a medição mais recente de cada projeto para mostrar dados acumulados
     SELECT 
         projeto_id, 
         id as medicao_id,
@@ -131,55 +97,47 @@ ultima_medicao AS (
     FROM (
         SELECT 
             projeto_id, id, numero_medicao,
-            ROW_NUMBER() OVER(PARTITION BY projeto_id ORDER BY numero_medicao DESC) as rn
+            ROW_NUMBER() OVER (PARTITION BY projeto_id ORDER BY numero_medicao DESC) as rn
         FROM medicoes
-        WHERE status != 'RASCUNHO' -- Somente consolida aprovadas
+        WHERE status = 'APROVADO' OR status = 'PAGO'
     ) m
     WHERE rn = 1
 ),
 agregacao_medicao AS (
-    -- Soma os valores medidos dos itens analíticos para todos os nós acima deles
     SELECT 
-        h.codigo_raiz as eap_codigo,
-        h.projeto_id,
-        SUM(imd.valor_periodo) as total_periodo_calc,
-        SUM(imd.valor_acumulado) as total_acumulado_calc
-    FROM hierarquia_eap h
-    JOIN itens_eap e ON h.id = e.id
-    JOIN itens_medicao_detalhe imd ON imd.item_eap_id = e.id
-    JOIN ultima_medicao um ON um.medicao_id = imd.medicao_id
-    WHERE e.e_analitico = TRUE
-    GROUP BY h.codigo_raiz, h.projeto_id
+        h1.id as pai_id,
+        m.medicao_id,
+        SUM(COALESCE(imd.quantidade_periodo, 0)) as quantidade_medida_acumulada,
+        SUM(COALESCE(imd.valor_periodo, 0)) as valor_medido_acumulado
+    FROM itens_eap h1
+    LEFT JOIN itens_eap h2 ON h2.projeto_id = h1.projeto_id 
+        AND (h2.eap_codigo LIKE h1.eap_codigo || '.%' OR h2.id = h1.id)
+        AND h2.e_analitico = TRUE
+    JOIN ultima_medicao m ON m.projeto_id = h1.projeto_id
+    LEFT JOIN itens_medicao_detalhe imd ON imd.item_eap_id = h2.id AND imd.medicao_id = m.medicao_id
+    GROUP BY h1.id, m.medicao_id
 )
 SELECT 
-    e.projeto_id,
-    p.nome_projeto,
-    e.eap_codigo,
-    e.descricao_servico,
-    e.unidade_medida,
-    e.preco_unitario,
-    e.quantidade_contratada,
-    -- Usa o valor agregado para sintéticos, e o original para analíticos
+    h.id,
+    h.projeto_id,
+    h.eap_codigo,
+    h.eap_pai_codigo,
+    h.descricao_servico,
+    h.unidade_medida,
+    h.preco_unitario,
+    h.quantidade_contratada,
+    COALESCE(ac.total_contratado_calc, 0) as valor_total_contratado,
+    COALESCE(ac.total_desembolsado_calc, 0) as valor_desembolsado,
+    h.e_analitico,
+    (LENGTH(h.eap_codigo) - LENGTH(REPLACE(h.eap_codigo, '.', ''))) + 1 AS nivel,
+    h.ordem,
+    COALESCE(am.quantidade_medida_acumulada, 0) as medicao_acumulada_qtd,
+    COALESCE(am.valor_medido_acumulado, 0) as medicao_acumulada_valor_legacy,
     CASE 
-        WHEN e.e_analitico THEN e.valor_total_contratado 
-        ELSE COALESCE(ac.total_contratado_calc, 0) 
-    END AS valor_total_contratado,
-    e.e_analitico,
-    
-    -- Dados de medição
-    COALESCE(am.total_periodo_calc, 0) AS medicao_corrente_valor,
-    COALESCE(am.total_acumulado_calc, 0) AS medicao_acumulada_valor,
-    
-    -- Cálculo de percentual de avanço financeiro
-    CASE 
-        WHEN e.e_analitico THEN 
-            CASE WHEN e.valor_total_contratado > 0 THEN (COALESCE(am.total_acumulado_calc, 0) / e.valor_total_contratado) * 100 ELSE 0 END
-        ELSE 
-            CASE WHEN COALESCE(ac.total_contratado_calc, 0) > 0 THEN (COALESCE(am.total_acumulado_calc, 0) / ac.total_contratado_calc) * 100 ELSE 0 END
-    END AS percentual_executado_financeiro
-    
-FROM itens_eap e
-LEFT JOIN projetos p ON e.projeto_id = p.id
-LEFT JOIN agregacao_contrato ac ON e.eap_codigo = ac.eap_codigo AND e.projeto_id = ac.projeto_id
-LEFT JOIN agregacao_medicao am ON e.eap_codigo = am.eap_codigo AND e.projeto_id = am.projeto_id
-ORDER BY string_to_array(e.eap_codigo, '.')::int[]; -- Ordenação hierárquica natural
+        WHEN COALESCE(ac.total_contratado_calc, 0) > 0 
+        THEN (COALESCE(ac.total_desembolsado_calc, 0) / ac.total_contratado_calc) * 100
+        ELSE 0 
+    END as percentual_executado_financeiro
+FROM itens_eap h
+LEFT JOIN agregacao_contrato ac ON ac.pai_id = h.id
+LEFT JOIN agregacao_medicao am ON am.pai_id = h.id;

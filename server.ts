@@ -12,6 +12,7 @@ import jwt from "jsonwebtoken";
 import { verifyFirebaseJWT } from "./src/middleware/verifyFirebaseJWT";
 import { AuthenticatedRequest } from "./src/types/middleware.types";
 import { FirebaseCustomClaims } from "./src/types/firebase.types";
+import { parseEapMarkdown, simulateEapTestEnvironment, executeEapImport, compareEapCodes } from "./src/services/eapImporter.service";
 
 // Helper function to create a scoped Supabase client with a custom JWT
 function getSupabaseClient(req: AuthenticatedRequest): SupabaseClient | null {
@@ -1169,6 +1170,9 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
     if (!req.decodedToken) {
       return res.status(401).json({ error: "Acesso não autorizado." });
     }
+    if (!(await checkPermission(req, "empresas_ler"))) {
+      return res.status(403).json({ error: "Acesso negado: sem permissão para ler empresas." });
+    }
     const contrato_id = req.decodedToken.contrato_id;
     try {
       const client = getSupabaseClient(req);
@@ -1215,12 +1219,16 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
     if (!req.decodedToken) {
       return res.status(401).json({ error: "Acesso não autorizado." });
     }
+    if (!(await checkPermission(req, "empresas_criar"))) {
+      return res.status(403).json({ error: "Acesso negado: sem permissão para criar empresas." });
+    }
     const contrato_id = req.decodedToken.contrato_id;
     const empresa = req.body || {};
-    const { id, nome, cnpj_cpf, tipo, emailContato, telefone, status, totalFaturado } = empresa;
+    const { nome, cnpj_cpf, tipo, emailContato, telefone, status, totalFaturado } = empresa;
+    const id = empresa.id || `EMP-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 
-    if (!id || !contrato_id || !nome || !cnpj_cpf) {
-      return res.status(400).json({ error: "Campos id, contrato_id, nome e cnpj_cpf são obrigatórios." });
+    if (!contrato_id || !nome || !cnpj_cpf) {
+      return res.status(400).json({ error: "Campos contrato_id, nome e cnpj_cpf são obrigatórios." });
     }
 
     const payload = {
@@ -1690,6 +1698,9 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
   // GET /api/usuarios
   app.get("/api/usuarios", verifyFirebaseJWT, async (req: AuthenticatedRequest, res) => {
     try {
+      if (!(await checkPermission(req, "usuarios_ler"))) {
+        return res.status(403).json({ error: "Acesso negado: sem permissão para ler usuários." });
+      }
       const client = getSupabaseClient(req);
       const tenantId = req.decodedToken?.contrato_id;
       if (!client || !tenantId) return res.status(401).json({ error: "Unauthorized" });
@@ -1709,6 +1720,9 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
   // POST /api/usuarios
   app.post("/api/usuarios", verifyFirebaseJWT, async (req: AuthenticatedRequest, res) => {
     try {
+      if (!(await checkPermission(req, "usuarios_criar"))) {
+        return res.status(403).json({ error: "Acesso negado: sem permissão para criar usuários." });
+      }
       const client = getSupabaseClient(req);
       const tenantId = req.decodedToken?.contrato_id;
       if (!client || !tenantId) return res.status(401).json({ error: "Unauthorized" });
@@ -1772,42 +1786,123 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
     }
   });
 
-  // POST /api/itens-eap
+  // GET /api/itens-eap - List EAP items for a project
+  app.get("/api/itens-eap", verifyFirebaseJWT, async (req: AuthenticatedRequest, res) => {
+    try {
+      const client = getSupabaseClient(req);
+      if (!client) return res.status(401).json({ error: "Unauthorized" });
+
+      const projeto_id = req.query.projeto_id as string;
+      if (!projeto_id) {
+        return res.status(400).json({ error: "Parâmetro 'projeto_id' é obrigatório." });
+      }
+
+      const { data: viewData, error: viewErr } = await client
+        .from("v_resumo_eap_medicao")
+        .select("*")
+        .eq("projeto_id", projeto_id);
+
+      const { data: rawData, error: rawErr } = await client
+        .from("itens_eap")
+        .select("*")
+        .eq("projeto_id", projeto_id);
+
+      if (viewErr && rawErr) {
+        console.error("[GET /api/itens-eap] Error fetching items:", viewErr || rawErr);
+        return res.status(500).json({ error: (viewErr || rawErr)?.message });
+      }
+
+      const itemsList = (viewData && viewData.length > 0 ? viewData : (rawData || []))
+        .sort((a: any, b: any) => compareEapCodes(a.eap_codigo, b.eap_codigo));
+
+      const rawItemsList = (rawData || [])
+        .sort((a: any, b: any) => compareEapCodes(a.eap_codigo, b.eap_codigo));
+
+      return res.json({
+        success: true,
+        items: itemsList,
+        rawItems: rawItemsList
+      });
+    } catch (err: any) {
+      console.error("[GET /api/itens-eap] Unexpected error:", err);
+      return res.status(500).json({ error: "Internal Server Error" });
+    }
+  });
+
+  // POST /api/itens-eap - Create or update EAP item
   app.post("/api/itens-eap", verifyFirebaseJWT, async (req: AuthenticatedRequest, res) => {
     try {
       const client = getSupabaseClient(req);
       if (!client) return res.status(401).json({ error: "Unauthorized" });
 
-      const { id, projeto_id, eap_codigo, eap_pai_codigo, descricao_servico, unidade_medida, preco_unitario, quantidade_contratada, e_analitico, ordem } = req.body;
+      const { id, projeto_id, eap_codigo, eap_pai_codigo, descricao_servico, unidade_medida, preco_unitario, quantidade_contratada, valor_desembolsado, e_analitico, ordem } = req.body;
       if (!projeto_id || !eap_codigo || !descricao_servico) {
-        return res.status(400).json({ error: "Missing required fields" });
+        return res.status(400).json({ error: "Campos projeto_id, eap_codigo e descricao_servico são obrigatórios." });
       }
 
-      const valTotal = (parseFloat(preco_unitario || 0) * parseFloat(quantidade_contratada || 0));
+      const isAnalytic = !!e_analitico;
+      const cleanCode = String(eap_codigo).trim();
+
+      let cleanUnidade: string | null = null;
+      if (isAnalytic) {
+        cleanUnidade = (unidade_medida && String(unidade_medida).trim() !== '' && String(unidade_medida).toLowerCase() !== 'nan')
+          ? String(unidade_medida).trim()
+          : 'un';
+      }
+
+      let cleanPai: string | null = null;
+      if (eap_pai_codigo && String(eap_pai_codigo).trim() !== '' && String(eap_pai_codigo).toLowerCase() !== 'nan' && String(eap_pai_codigo).toLowerCase() !== 'null') {
+        cleanPai = String(eap_pai_codigo).trim();
+      }
+
+      const precoNum = isNaN(Number(preco_unitario)) ? 0 : Number(preco_unitario || 0);
+      const qtdNum = isNaN(Number(quantidade_contratada)) ? 0 : Number(quantidade_contratada || 0);
+      const desembolsadoNum = isNaN(Number(valor_desembolsado)) ? 0 : Number(valor_desembolsado || 0);
+      const valTotal = isAnalytic ? Math.round((precoNum * qtdNum) * 100) / 100 : 0;
 
       const upsertData: any = {
         projeto_id,
-        eap_codigo,
-        eap_pai_codigo: eap_pai_codigo || null,
-        descricao_servico,
-        unidade_medida: unidade_medida || null,
-        preco_unitario: parseFloat(preco_unitario || 0),
-        quantidade_contratada: parseFloat(quantidade_contratada || 0),
+        eap_codigo: cleanCode,
+        eap_pai_codigo: cleanPai,
+        descricao_servico: String(descricao_servico).trim(),
+        unidade_medida: cleanUnidade,
+        preco_unitario: precoNum,
+        quantidade_contratada: qtdNum,
         valor_total_contratado: valTotal,
-        e_analitico: !!e_analitico,
-        ordem: parseInt(ordem || 0, 10)
+        valor_desembolsado: desembolsadoNum,
+        e_analitico: isAnalytic,
+        ordem: isNaN(Number(ordem)) ? 0 : Number(ordem || 0)
       };
-      if (id) upsertData.id = id;
 
-      const { data, error } = await saveRecord(client, "itens_eap", upsertData);
+      // Resolve existing ID if not passed to prevent duplicate errors
+      let targetId = id;
+      if (!targetId) {
+        const { data: existing } = await client
+          .from("itens_eap")
+          .select("id")
+          .eq("projeto_id", projeto_id)
+          .eq("eap_codigo", cleanCode)
+          .maybeSingle();
+        if (existing?.id) {
+          targetId = existing.id;
+        }
+      }
+
+      if (targetId) {
+        upsertData.id = targetId;
+      }
+
+      const { data, error } = await saveRecord(client, "itens_eap", upsertData, { single: false });
 
       if (error) {
         console.error("[POST /api/itens-eap] Error saving item:", error);
         return res.status(500).json({ error: error.message });
       }
-      return res.json({ item: data });
-    } catch (err) {
-      return res.status(500).json({ error: "Internal Error" });
+
+      return res.json({ success: true, item: data?.[0] || upsertData });
+    } catch (err: any) {
+      console.error("[POST /api/itens-eap] Unexpected error:", err);
+      return res.status(500).json({ error: err.message || "Internal Server Error" });
     }
   });
 
@@ -1823,8 +1918,71 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
       const { error } = await client.from("itens_eap").delete().eq("id", id);
       if (error) return res.status(500).json({ error: error.message });
       return res.json({ success: true });
-    } catch (err) {
-      return res.status(500).json({ error: "Internal Error" });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || "Internal Error" });
+    }
+  });
+
+  // POST /api/eap/import/analyze - Pipeline Etapas 1, 2, 3 e 4 (Leitura, Alinhamento de BD em memória, Testes e Modelo Interpretado)
+  app.post("/api/eap/import/analyze", verifyFirebaseJWT, async (req: AuthenticatedRequest, res) => {
+    try {
+      const client = getSupabaseClient(req);
+      if (!client) return res.status(401).json({ error: "Unauthorized" });
+
+      const { projeto_id, md_content } = req.body;
+      if (!projeto_id || !md_content) {
+        return res.status(400).json({ error: "Parâmetros 'projeto_id' e 'md_content' são obrigatórios." });
+      }
+
+      // 1. Etapa 1: Leitura (.md)
+      const { items: parsedItems, rawHeaders } = parseEapMarkdown(md_content);
+
+      // Busca itens existentes no banco de dados para o projeto (se houver)
+      const { data: dbItems } = await client.from("itens_eap").select("*").eq("projeto_id", projeto_id);
+
+      // 2. Etapa 2, 3 e 4: Alinhamento BD em Memória, Simulação em Ambiente de Teste e Geração do Modelo Interpretado
+      const simulationResult = simulateEapTestEnvironment(projeto_id, parsedItems, rawHeaders, dbItems || []);
+
+      return res.json({
+        success: true,
+        simulation: simulationResult
+      });
+    } catch (err: any) {
+      console.error("[POST /api/eap/import/analyze] Error:", err);
+      return res.status(500).json({ error: err.message || "Internal Error" });
+    }
+  });
+
+  // POST /api/eap/import/execute - Pipeline Etapa 5 (Importação Persistente após Aprovação)
+  app.post("/api/eap/import/execute", verifyFirebaseJWT, async (req: AuthenticatedRequest, res) => {
+    try {
+      const client = getSupabaseClient(req);
+      if (!client) return res.status(401).json({ error: "Unauthorized" });
+
+      const { projeto_id, items } = req.body;
+      if (!projeto_id || !Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({ error: "Parâmetros 'projeto_id' e lista 'items' válidos são obrigatórios." });
+      }
+
+      // Etapa 5: Importação transacional no BD
+      const result = await executeEapImport(client, saveRecord, projeto_id, items);
+
+      if (!result.success) {
+        return res.status(500).json({
+          success: false,
+          error: "Falha durante a importação no banco de dados.",
+          details: result.errors
+        });
+      }
+
+      return res.json({
+        success: true,
+        importedCount: result.importedCount,
+        message: `${result.importedCount} etapas da EAP foram importadas com sucesso!`
+      });
+    } catch (err: any) {
+      console.error("[POST /api/eap/import/execute] Error:", err);
+      return res.status(500).json({ error: err.message || "Internal Error" });
     }
   });
 
