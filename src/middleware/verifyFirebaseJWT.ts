@@ -1,6 +1,7 @@
 import { Response, NextFunction } from 'express';
 import { getAuth } from 'firebase-admin/auth';
 import { AuthenticatedRequest } from '../types/middleware.types';
+import jwt from 'jsonwebtoken';
 
 export async function verifyFirebaseJWT(req: AuthenticatedRequest, res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
@@ -8,55 +9,33 @@ export async function verifyFirebaseJWT(req: AuthenticatedRequest, res: Response
     return res.status(401).json({ error: 'Token de autorização ausente ou malformado.' });
   }
 
-  const idToken = authHeader.split('Bearer ')[1];
+  const idToken = authHeader.split('Bearer ')[1]?.trim();
 
-  // Em ambiente de desenvolvimento local, permitimos bypass para tokens mockados
-  if (process.env.NODE_ENV !== 'production' && idToken.startsWith('mock_')) {
-    const isFornecedor = req.headers['x-mock-fornecedor'] === 'true' || req.query.perfil === 'FORNECEDOR';
-    
-    if (idToken.startsWith('mock_jwt_')) {
-      try {
-        const payloadBase64 = idToken.substring('mock_jwt_'.length);
-        const payload = JSON.parse(Buffer.from(payloadBase64, 'base64').toString('utf-8'));
-        req.decodedToken = {
-          uid: payload.uid || 'usr_demo_2026',
-          email: payload.email || 'financeiro@logisticsglobal.com.br',
-          contrato_id: payload.customClaims?.contrato_id || 'CTR-2026-SYS',
-          empresa_id: payload.customClaims?.empresa_id || 'SUP-9823-STORAGE',
-          entidade_id: payload.customClaims?.entidade_id || 'SUP-9823-STORAGE',
-          perfil: payload.customClaims?.perfil || 'FINANCEIRO',
-          mfa_verified: !!payload.customClaims?.mfa_verified
-        };
-        return next();
-      } catch (e) {
-        console.warn("[middleware.verifyFirebaseJWT] Falha ao decodificar token mock estruturado, usando fallback padrão.", e);
-      }
-    }
-
-    req.decodedToken = {
-      uid: 'usr_demo_2026',
-      email: isFornecedor ? 'fornecedor@logistica.com.br' : 'financeiro@logisticsglobal.com.br',
-      contrato_id: (req.query.contrato_id as string) || (req.body.contrato_id as string) || 'CTR-2026-SYS',
-      empresa_id: isFornecedor ? 'SUP-4012-LOGISTICA' : 'SUP-9823-STORAGE',
-      entidade_id: isFornecedor ? 'SUP-4012-LOGISTICA' : 'SUP-9823-STORAGE',
-      perfil: isFornecedor ? 'FORNECEDOR' : 'FINANCEIRO',
-      mfa_verified: true
-    };
-    return next();
+  if (!idToken) {
+    return res.status(401).json({ error: 'Token de autorização ausente ou malformado.' });
   }
 
+  // Log for token diagnosis
+  console.log(`[verifyFirebaseJWT] Received authorization token: "${idToken.substring(0, 15)}..." (Length: ${idToken.length})`);
+
   try {
-    // verifyIdToken realiza a validação stateless em memória com chaves públicas (JWKS)
-    // cacheando as chaves internamente e evitando round-trips por requisição.
-    const decodedToken = await getAuth().verifyIdToken(idToken);
+    let decodedToken: any;
+    try {
+      // Tenta Firebase Admin SDK primeiro
+      decodedToken = await getAuth().verifyIdToken(idToken);
+    } catch (e: any) {
+      // Se falhar (ex: app/no-app ou invalid signature), tenta validar via Supabase JWT Secret
+      const jwtSecret = process.env.SUPABASE_JWT_SECRET || "super-secret-jwt-token-with-at-least-32-characters-long";
+      decodedToken = jwt.verify(idToken, jwtSecret);
+    }
     
     req.decodedToken = {
-      uid: decodedToken.uid,
+      uid: decodedToken.uid || decodedToken.sub,
       email: decodedToken.email || '',
-      contrato_id: (decodedToken.contrato_id as string) || '',
-      empresa_id: (decodedToken.empresa_id as string) || '',
-      entidade_id: (decodedToken.entidade_id as string) || (decodedToken.empresa_id as string) || '',
-      perfil: (decodedToken.perfil as any) || 'FORNECEDOR',
+      contrato_id: (decodedToken.contrato_id as string) || (decodedToken.user_metadata?.contrato_id as string) || '',
+      empresa_id: (decodedToken.empresa_id as string) || (decodedToken.user_metadata?.empresa_id as string) || '',
+      entidade_id: (decodedToken.entidade_id as string) || (decodedToken.empresa_id as string) || (decodedToken.user_metadata?.empresa_id as string) || '',
+      perfil: (decodedToken.perfil as any) || (decodedToken.user_metadata?.perfil as any) || 'FORNECEDOR',
       mfa_verified: !!decodedToken.mfa_verified
     };
     

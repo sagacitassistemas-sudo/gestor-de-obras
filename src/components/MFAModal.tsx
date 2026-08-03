@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 interface MFAModalProps {
   isOpen: boolean;
@@ -20,6 +20,15 @@ export const MFAModal: React.FC<MFAModalProps> = ({
   const [code, setCode] = useState(otpCodeDemo || '');
   const [isVerifying, setIsVerifying] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+
+  // Reset internal state when modal opens or OTP changes
+  useEffect(() => {
+    if (isOpen) {
+      setCode(otpCodeDemo || '');
+      setErrorMessage('');
+      setIsVerifying(false);
+    }
+  }, [isOpen, otpCodeDemo]);
 
   if (!isOpen) return null;
 

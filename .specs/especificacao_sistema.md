@@ -22,7 +22,7 @@ O sistema adota um modelo descentralizado de responsabilidades entre um **Contai
 
 ### 1.2. Camada de Autorização (AuthZ & Supabase JWT Assinado)
 - **Base Proprietária (PostgreSQL / Supabase)**: Assume 100% da responsabilidade sobre regras de negócio e autorização de operações CRUD.
-- **Cliente Escopado por JWT (`getSupabaseClient`)**: O backend Express utiliza a biblioteca `jsonwebtoken` para assinar um JWT contendo as claims `{ role: 'authenticated', sub: uid, contrato_id, perfil }` usando o segredo `SUPABASE_JWT_SECRET`. Cada requisição a endpoints transacionais (como `/api/empresas`) inicializa um cliente Supabase com este token no cabeçalho `Authorization: Bearer <jwt>`.
+- **Cliente Escopado por JWT Handoff (`supabase.auth.setSession`)**: O backend Express utiliza a biblioteca `jsonwebtoken` para assinar um JWT contendo as claims de negócio usando o segredo `SUPABASE_JWT_SECRET`. Este token é devolvido ao frontend após o sucesso do Firebase OAuth e injetado diretamente no Cliente Supabase via `supabase.auth.setSession()`. A partir desse momento, a gestão do usuário e a autorização ficam por conta do Supabase. Cada requisição no frontend passa a enviar automaticamente este JWT válido para RLS.
 - **Segurança de Acesso (Row-Level Security - RLS Nativo)**: O isolamento multitenant de dados é forçado nativamente pelo PostgreSQL via RLS:
   - Leituras (SELECT) validam se `contrato_id = (current_setting('request.jwt.claims', true)::jsonb ->> 'contrato_id')`.
   - Mutações (INSERT, UPDATE, DELETE) validam adicionalmente se `(current_setting('request.jwt.claims', true)::jsonb ->> 'perfil') = 'ADMIN'`.
@@ -58,6 +58,8 @@ erDiagram
     contratos ||--o{ lancamentos_financeiros : "registra"
     empresas_fornecedores ||--o{ lancamentos_financeiros : "emite"
     contratos ||--o{ perfis_permissoes : "define regras para"
+    empresa_contratante ||--o{ projetos : "possui"
+    projetos ||--o{ itens_eap : "desdobrado em"
 ```
 
 ### 3.1. Dicionário de Tabelas / Coleções
@@ -118,6 +120,23 @@ Matriz relacional de autorização granular.
 - `pode_exportar_relatorio` (BOOLEAN): Acesso para downloads de DRE/Faturamento.
 - `pode_gerenciar_usuarios` (BOOLEAN): Gestão de acessos locais de operadores.
 
+#### Tabela `projetos` (PostgreSQL / Supabase)
+Cadastro dos Projetos/Obras vinculados ao Contrato (Tenant).
+- `id` (UUID, PK): ID único do projeto.
+- `contrato_id` (VARCHAR, FK): Associação ao tenant/empresa contratante.
+- `nome_projeto` (VARCHAR): Nome ou título da obra/projeto.
+- `data_inicio` (DATE): Data de início da execução.
+
+#### Tabela `itens_eap` (PostgreSQL / Supabase)
+Estrutura Analítica do Projeto, detalhando etapas, serviços e quantitativos.
+- `id` (UUID, PK): ID único do item.
+- `projeto_id` (UUID, FK): Associação ao projeto pai.
+- `eap_codigo` (VARCHAR): Código hierárquico com máscara até 3 níveis (ex: `1.2.3`).
+- `eap_pai_codigo` (VARCHAR): Código da etapa superior imediata.
+- `descricao_servico` (VARCHAR): Nome da etapa ou serviço.
+- `e_analitico` (BOOLEAN): Flag que determina se é um serviço executável ou apenas uma etapa sintética agrupadora.
+- `unidade_medida`, `preco_unitario`, `quantidade_contratada`: Detalhes financeiros (apenas para analíticos).
+
 ---
 
 ## 4. Módulos Funcionais e Telas Principais
@@ -132,8 +151,11 @@ Módulo de acompanhamento contábil estruturado em contas de resultado (Receita 
 Linha do tempo interativa e física-financeira de trechos viários e obras em andamento. Detalha cronograma planejado versus executado, marcos de conclusão de trechos físico-geográficos e desembolsos previstos indexados por fornecedor.
 
 ### 4.4. Homologação de Empresas (`EmpresasView`)
-Central de controle B2B para homologação, checagem cadastral, e auditoria documental de fornecedores e parceiros da cadeia produtiva. Integração nativa com RLS para restrição de cadastros a perfis `ADMIN`.
+Central de controle B2B para homologação, checagem cadastral, e auditoria documental de fornecedores e parceiros da cadeia produtiva. Integração nativa com RLS para restrição de cadastros a perfis `ADMIN`. Realiza operações Inline.
 
-### 4.5. Matriz de Acessos (`MatrizAcessosView`)
+### 4.5. Gestão de Projetos e EAP (`ProjetosEapView`)
+Módulo dedicado à estruturação de obras. Na barra lateral (sidebar), são gerenciados os Projetos de forma hierárquica. Na área central, são incluídos os Itens da Estrutura Analítica do Projeto (EAP). Implementa formatação estrita `x.x.x` (até 3 níveis) para os códigos, com cálculo automático de valores totais (Preço x Quantidade) e relacionamento de etapas sintéticas com serviços analíticos de ponta.
+
+### 4.6. Matriz de Acessos (`MatrizAcessosView`)
 Painel interativo que renderiza a matriz `perfis_permissoes` do banco PostgreSQL do tenant, permitindo a usuários `ADMIN` customizar as flags de autorização RBAC aplicadas a cada classe de perfil diretamente na UI.
 

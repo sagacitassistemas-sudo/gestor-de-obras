@@ -3,6 +3,7 @@ import { MFAModal } from './MFAModal';
 import { AuthSession } from '../types';
 import { auth } from '../lib/firebase';
 import { signInWithPopup, GoogleAuthProvider, OAuthProvider, signInWithEmailAndPassword } from 'firebase/auth';
+import { supabase } from '../lib/supabaseClient';
 
 interface LoginScreenProps {
   onLoginSuccess: (session: AuthSession) => void;
@@ -15,32 +16,57 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
   onOpenSupportModal,
   onOpenOnboarding
 }) => {
+  // Email/password form state
   const [email, setEmail] = useState('financeiro@logisticsglobal.com.br');
   const [password, setPassword] = useState('••••••••');
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isEmailLoading, setIsEmailLoading] = useState(false);
+
+  // OAuth loading state (separate from email)
+  const [isOAuthLoading, setIsOAuthLoading] = useState(false);
+
+  // OAuth confirmation step — after popup, before session creation
+  const [oauthPendingConfirm, setOauthPendingConfirm] = useState<{
+    providerType: 'google' | 'microsoft';
+    uid: string;
+    email: string;
+    displayName: string;
+    photoURL: string;
+  } | null>(null);
+  const [isOAuthConfirming, setIsOAuthConfirming] = useState(false);
+
+  // Forgot password modal
   const [forgotModalOpen, setForgotModalOpen] = useState(false);
   const [forgotEmail, setForgotEmail] = useState('');
   const [forgotSubmitted, setForgotSubmitted] = useState(false);
 
-  // 2FA MFA State
+  // 2FA MFA State — only for email/password flow
   const [mfaModalOpen, setMfaModalOpen] = useState(false);
   const [mfaTicket, setMfaTicket] = useState('');
   const [otpCodeDemo, setOtpCodeDemo] = useState('');
+  const [mfaEmail, setMfaEmail] = useState('');
+
+  // Error message
   const [errorMessage, setErrorMessage] = useState('');
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  // Derived: any auth operation in progress
+  const isLoading = isEmailLoading || isOAuthLoading || isOAuthConfirming;
+
+  // ─── Email/Password Login Handler ───
+  const handleEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsLoading(true);
+    if (isOAuthLoading || oauthPendingConfirm) return;
+
+    setIsEmailLoading(true);
     setErrorMessage('');
 
     try {
-      // 1. Autenticação Primária no Firebase
+      // 1. Firebase primary auth
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
 
-      // 2. Validação de Permissões no Backend (Supabase) + MFA
+      // 2. Backend validation + MFA challenge
       const res = await fetch('/api/auth/login-mfa-step1', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -48,21 +74,20 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
       });
 
       const data = await res.json();
-      setIsLoading(false);
+      setIsEmailLoading(false);
 
       if (res.ok && data.mfaRequired) {
         setMfaTicket(data.mfaTicket);
         setOtpCodeDemo(data.otpCodeDemo);
+        setMfaEmail(user.email || email);
         setMfaModalOpen(true);
       } else if (!res.ok) {
-        // Sign out from Firebase if backend rejects (e.g. not in Supabase)
         auth.signOut();
         setErrorMessage(data.error || 'Erro na verificação de permissões do sistema.');
       }
     } catch (err: any) {
-      setIsLoading(false);
-      
-      // Captura erros específicos do Firebase Auth
+      setIsEmailLoading(false);
+
       if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
         setErrorMessage('E-mail ou senha incorretos.');
       } else {
@@ -71,11 +96,114 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     }
   };
 
-  const handleMfaVerifySuccess = (sessionData: AuthSession) => {
+  // ─── OAuth Step 1: Open popup and get selected account ───
+  const handleOAuthLogin = async (providerType: 'google' | 'microsoft') => {
+    if (isEmailLoading || oauthPendingConfirm) return;
+
+    setIsOAuthLoading(true);
+    setErrorMessage('');
+
+    try {
+      const provider = providerType === 'google'
+        ? new GoogleAuthProvider()
+        : new OAuthProvider('microsoft.com');
+      provider.setCustomParameters({ prompt: 'select_account' });
+
+      const result = await signInWithPopup(auth, provider);
+      const user = result.user;
+
+      setIsOAuthLoading(false);
+
+      // Step 1 complete → show confirmation modal with selected account info
+      setOauthPendingConfirm({
+        providerType,
+        uid: user.uid,
+        email: user.email || '',
+        displayName: user.displayName || '',
+        photoURL: user.photoURL || ''
+      });
+    } catch (e: any) {
+      setIsOAuthLoading(false);
+      if (e.code === 'auth/popup-closed-by-user' || e.code === 'auth/cancelled-popup-request') {
+        return; // User cancelled — no error
+      }
+      auth.signOut();
+      setErrorMessage(e.message || `Falha na autenticação ${providerType === 'google' ? 'Google' : 'Microsoft'} OAuth`);
+    }
+  };
+
+  // ─── OAuth Step 2: User confirms the selected email ───
+  const handleOAuthConfirm = async () => {
+    if (!oauthPendingConfirm) return;
+
+    setIsOAuthConfirming(true);
+    setErrorMessage('');
+
+    try {
+      const { providerType, uid, email: oauthEmail, displayName, photoURL } = oauthPendingConfirm;
+
+      const res = await fetch('/api/auth/oauth-login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider: providerType,
+          uid,
+          email: oauthEmail,
+          displayName,
+          photoURL
+        })
+      });
+
+      const data = await res.json();
+      setIsOAuthConfirming(false);
+
+      if (res.ok && data.session) {
+        setOauthPendingConfirm(null);
+        await supabase.auth.setSession({
+          access_token: data.session.idToken,
+          refresh_token: data.session.idToken,
+        });
+        onLoginSuccess(data.session);
+      } else if (!res.ok) {
+        setOauthPendingConfirm(null);
+        auth.signOut();
+        setErrorMessage(data.error || 'Erro na validação do usuário no sistema.');
+      }
+    } catch (e: any) {
+      setIsOAuthConfirming(false);
+      setOauthPendingConfirm(null);
+      auth.signOut();
+      setErrorMessage(e.message || 'Falha ao confirmar autenticação OAuth.');
+    }
+  };
+
+  // ─── OAuth Cancel Confirmation ───
+  const handleOAuthCancelConfirm = () => {
+    setOauthPendingConfirm(null);
+    auth.signOut();
+  };
+
+  // ─── MFA Verification Success Handler ───
+  const handleMfaVerifySuccess = async (sessionData: AuthSession) => {
     setMfaModalOpen(false);
+    await supabase.auth.setSession({
+      access_token: sessionData.idToken,
+      refresh_token: sessionData.idToken,
+    });
     onLoginSuccess(sessionData);
   };
 
+  // ─── MFA Cancel Handler ───
+  const handleMfaCancel = () => {
+    setMfaModalOpen(false);
+    setMfaTicket('');
+    setOtpCodeDemo('');
+    setMfaEmail('');
+    // Sign out from Firebase since user cancelled MFA
+    auth.signOut();
+  };
+
+  // ─── Forgot Password Handler ───
   const handleForgotSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setForgotSubmitted(true);
@@ -125,7 +253,9 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
               </p>
             </header>
 
-            {/* OAuth Identity Providers (Principal Auth Flow) */}
+            {/* ═══════════════════════════════════════════
+                SECTION 1: OAuth Identity Providers (ISOLATED)
+                ═══════════════════════════════════════════ */}
             <div className="space-y-3 mb-6">
               <p className="font-label-bold text-[11px] text-[#404753] uppercase tracking-wider">
                 Autenticação Principal via Identity Provider (OAuth)
@@ -135,111 +265,56 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                 <button
                   type="button"
                   disabled={isLoading}
-                  onClick={async () => {
-                    setIsLoading(true);
-                    setErrorMessage('');
-                    try {
-                      const provider = new GoogleAuthProvider();
-                      // This triggers the real browser popup
-                      const result = await signInWithPopup(auth, provider);
-                      const user = result.user;
-
-                      // Send real user data to our backend to get custom claims and validate Supabase
-                      const res = await fetch('/api/auth/oauth-login', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ 
-                          provider: 'google',
-                          uid: user.uid,
-                          email: user.email,
-                          displayName: user.displayName,
-                          photoURL: user.photoURL
-                        })
-                      });
-                      const data = await res.json();
-                      setIsLoading(false);
-                      if (res.ok && data.session) {
-                        onLoginSuccess(data.session);
-                      } else {
-                        setErrorMessage(data.error || 'Erro na validação do usuário no sistema.');
-                      }
-                    } catch (e: any) {
-                      setIsLoading(false);
-                      setErrorMessage(e.message || 'Falha na autenticação Google OAuth');
-                    }
-                  }}
-                  className="w-full py-2.5 px-3 bg-white border border-[#c0c7d6] hover:bg-[#f8fafc] rounded-md font-label-bold text-xs text-[#1e293b] transition-all shadow-2xs flex items-center justify-center gap-2 cursor-pointer"
+                  onClick={() => handleOAuthLogin('google')}
+                  className="w-full py-2.5 px-3 bg-white border border-[#c0c7d6] hover:bg-[#f8fafc] rounded-md font-label-bold text-xs text-[#1e293b] transition-all shadow-2xs flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  <svg className="w-4 h-4" viewBox="0 0 24 24">
-                    <path
-                      fill="#4285F4"
-                      d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                    />
-                    <path
-                      fill="#34A853"
-                      d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                    />
-                    <path
-                      fill="#FBBC05"
-                      d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
-                    />
-                    <path
-                      fill="#EA4335"
-                      d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
-                    />
-                  </svg>
+                  {isOAuthLoading ? (
+                    <span className="material-symbols-outlined animate-spin text-[16px] text-[#707785]">sync</span>
+                  ) : (
+                    <svg className="w-4 h-4" viewBox="0 0 24 24">
+                      <path
+                        fill="#4285F4"
+                        d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                      />
+                      <path
+                        fill="#34A853"
+                        d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                      />
+                      <path
+                        fill="#FBBC05"
+                        d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                      />
+                      <path
+                        fill="#EA4335"
+                        d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+                      />
+                    </svg>
+                  )}
                   <span>Entrar com Google</span>
                 </button>
 
                 <button
                   type="button"
                   disabled={isLoading}
-                  onClick={async () => {
-                    setIsLoading(true);
-                    setErrorMessage('');
-                    try {
-                      const provider = new OAuthProvider('microsoft.com');
-                      // This triggers the real browser popup
-                      const result = await signInWithPopup(auth, provider);
-                      const user = result.user;
-
-                      // Send real user data to our backend to get custom claims and validate Supabase
-                      const res = await fetch('/api/auth/oauth-login', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ 
-                          provider: 'microsoft',
-                          uid: user.uid,
-                          email: user.email,
-                          displayName: user.displayName,
-                          photoURL: user.photoURL
-                        })
-                      });
-                      const data = await res.json();
-                      setIsLoading(false);
-                      if (res.ok && data.session) {
-                        onLoginSuccess(data.session);
-                      } else {
-                        setErrorMessage(data.error || 'Erro na validação do usuário no sistema.');
-                      }
-                    } catch (e: any) {
-                      setIsLoading(false);
-                      setErrorMessage(e.message || 'Falha na autenticação Microsoft OAuth');
-                    }
-                  }}
-                  className="w-full py-2.5 px-3 bg-white border border-[#c0c7d6] hover:bg-[#f8fafc] rounded-md font-label-bold text-xs text-[#1e293b] transition-all shadow-2xs flex items-center justify-center gap-2 cursor-pointer"
+                  onClick={() => handleOAuthLogin('microsoft')}
+                  className="w-full py-2.5 px-3 bg-white border border-[#c0c7d6] hover:bg-[#f8fafc] rounded-md font-label-bold text-xs text-[#1e293b] transition-all shadow-2xs flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  <svg className="w-4 h-4" viewBox="0 0 23 23">
-                    <path fill="#f35325" d="M1 1h10v10H1z" />
-                    <path fill="#81bc06" d="M12 1h10v10H12z" />
-                    <path fill="#05a6f0" d="M1 12h10v10H1z" />
-                    <path fill="#ffba08" d="M12 12h10v10H12z" />
-                  </svg>
+                  {isOAuthLoading ? (
+                    <span className="material-symbols-outlined animate-spin text-[16px] text-[#707785]">sync</span>
+                  ) : (
+                    <svg className="w-4 h-4" viewBox="0 0 23 23">
+                      <path fill="#f35325" d="M1 1h10v10H1z" />
+                      <path fill="#81bc06" d="M12 1h10v10H12z" />
+                      <path fill="#05a6f0" d="M1 12h10v10H1z" />
+                      <path fill="#ffba08" d="M12 12h10v10H12z" />
+                    </svg>
+                  )}
                   <span>Microsoft SSO</span>
                 </button>
               </div>
             </div>
 
+            {/* ═══════════════ SEPARATOR ═══════════════ */}
             <div className="relative flex py-2 items-center">
               <div className="flex-grow border-t border-[#e2e8f0]"></div>
               <span className="flex-shrink mx-3 font-label-bold text-[10px] text-[#94a3b8] uppercase">
@@ -248,6 +323,9 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
               <div className="flex-grow border-t border-[#e2e8f0]"></div>
             </div>
 
+            {/* ═══════════════════════════════════════════
+                SECTION 2: Email/Password Form (ISOLATED)
+                ═══════════════════════════════════════════ */}
             {errorMessage && (
               <div className="mb-4 p-3 bg-[#fef2f2] border border-[#ef4444]/30 rounded-md text-[#ef4444] text-body-sm font-bold flex items-center gap-2">
                 <span className="material-symbols-outlined text-[18px]">error</span>
@@ -255,7 +333,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
               </div>
             )}
 
-            <form className="space-y-6" onSubmit={handleSubmit}>
+            <form className="space-y-6" onSubmit={handleEmailSubmit}>
               {/* Email Input */}
               <div className="space-y-2">
                 <label className="font-label-bold text-label-bold text-[#191c1e] block" htmlFor="email">
@@ -272,7 +350,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="exemplo@empresa.com.br"
                     required
-                    className="w-full pl-10 pr-4 py-3 bg-white border border-[#c0c7d6] rounded-md font-body-md text-[#191c1e] placeholder:text-[#707785] focus:ring-2 focus:ring-[#005daa]/20 focus:border-[#005daa] transition-all outline-none"
+                    disabled={isOAuthLoading}
+                    className="w-full pl-10 pr-4 py-3 bg-white border border-[#c0c7d6] rounded-md font-body-md text-[#191c1e] placeholder:text-[#707785] focus:ring-2 focus:ring-[#005daa]/20 focus:border-[#005daa] transition-all outline-none disabled:opacity-60"
                   />
                 </div>
               </div>
@@ -302,7 +381,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••"
                     required
-                    className="w-full pl-10 pr-4 py-3 bg-white border border-[#c0c7d6] rounded-md font-body-md text-[#191c1e] placeholder:text-[#707785] focus:ring-2 focus:ring-[#005daa]/20 focus:border-[#005daa] transition-all outline-none"
+                    disabled={isOAuthLoading}
+                    className="w-full pl-10 pr-4 py-3 bg-white border border-[#c0c7d6] rounded-md font-body-md text-[#191c1e] placeholder:text-[#707785] focus:ring-2 focus:ring-[#005daa]/20 focus:border-[#005daa] transition-all outline-none disabled:opacity-60"
                   />
                   <button
                     type="button"
@@ -336,7 +416,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                 disabled={isLoading}
                 className="w-full py-4 bg-[#005daa] text-white rounded-md font-label-bold text-label-bold hover:bg-[#0075d5] active:scale-[0.98] transition-all shadow-sm flex items-center justify-center gap-2 disabled:opacity-80 group cursor-pointer"
               >
-                {isLoading ? (
+                {isEmailLoading ? (
                   <>
                     <span className="material-symbols-outlined animate-spin text-[20px]">sync</span>
                     <span>Iniciando 2FA...</span>
@@ -413,14 +493,128 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
 
       </div>
 
-      {/* 2FA MFA Verification Modal */}
+      {/* ═══════════════════════════════════════════
+          OAuth Step 2: Confirm Selected Account Modal
+          ═══════════════════════════════════════════ */}
+      {oauthPendingConfirm && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl max-w-md w-full p-6 md:p-8 border border-[#c0c7d6] shadow-2xl animate-in zoom-in-95 duration-200">
+            {/* Header */}
+            <div className="flex items-center gap-3 mb-6 pb-4 border-b border-[#e2e8f0]">
+              <div className="p-2.5 bg-[#eff6ff] text-[#005daa] rounded-lg">
+                <span className="material-symbols-outlined text-[24px]">verified_user</span>
+              </div>
+              <div>
+                <span className="text-[10px] font-bold text-[#005daa] uppercase tracking-wider">
+                  Confirmação de Identidade OAuth
+                </span>
+                <h3 className="font-headline-sm text-[#191c1e]">Confirmar Acesso</h3>
+              </div>
+            </div>
+
+            <p className="text-body-sm text-[#404753] leading-relaxed mb-5">
+              Você selecionou a seguinte conta para autenticação via{' '}
+              <strong className="text-[#191c1e]">
+                {oauthPendingConfirm.providerType === 'google' ? 'Google' : 'Microsoft'}
+              </strong>.
+              Confirme para prosseguir com o acesso ao sistema.
+            </p>
+
+            {/* Selected Account Card */}
+            <div className="p-4 bg-[#f7f9fb] rounded-lg border border-[#c0c7d6] mb-6">
+              <div className="flex items-center gap-3">
+                {oauthPendingConfirm.photoURL ? (
+                  <img
+                    src={oauthPendingConfirm.photoURL}
+                    alt="Avatar"
+                    className="w-12 h-12 rounded-full border-2 border-[#005daa]/20"
+                  />
+                ) : (
+                  <div className="w-12 h-12 rounded-full bg-[#005daa]/10 flex items-center justify-center">
+                    <span className="material-symbols-outlined text-[#005daa] text-[24px]">account_circle</span>
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="font-label-bold text-[#191c1e] truncate">
+                    {oauthPendingConfirm.displayName || 'Usuário'}
+                  </p>
+                  <p className="text-body-sm text-[#005daa] font-bold truncate">
+                    {oauthPendingConfirm.email}
+                  </p>
+                </div>
+                {oauthPendingConfirm.providerType === 'google' ? (
+                  <svg className="w-6 h-6 flex-shrink-0" viewBox="0 0 24 24">
+                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
+                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
+                  </svg>
+                ) : (
+                  <svg className="w-6 h-6 flex-shrink-0" viewBox="0 0 23 23">
+                    <path fill="#f35325" d="M1 1h10v10H1z" />
+                    <path fill="#81bc06" d="M12 1h10v10H12z" />
+                    <path fill="#05a6f0" d="M1 12h10v10H1z" />
+                    <path fill="#ffba08" d="M12 12h10v10H12z" />
+                  </svg>
+                )}
+              </div>
+            </div>
+
+            {/* Metadata */}
+            <div className="p-3 bg-[#f2f4f6] rounded-lg border border-[#c0c7d6] text-[11px] text-[#707785] space-y-1 mb-6">
+              <div className="flex justify-between font-bold text-[#404753]">
+                <span>Provedor OAuth:</span>
+                <span className="text-[#005daa] font-metric-mono">
+                  {oauthPendingConfirm.providerType === 'google' ? 'google.com' : 'microsoft.com'}
+                </span>
+              </div>
+              <div className="flex justify-between font-bold text-[#404753]">
+                <span>Verificação de Identidade:</span>
+                <span className="text-[#10b981] font-metric-mono">SSO Verificado</span>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={handleOAuthCancelConfirm}
+                disabled={isOAuthConfirming}
+                className="px-4 py-2.5 border border-[#c0c7d6] rounded-md font-label-bold text-[#404753] hover:bg-[#f2f4f6] disabled:opacity-60"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleOAuthConfirm}
+                disabled={isOAuthConfirming}
+                className="px-5 py-2.5 bg-[#005daa] text-white rounded-md font-label-bold hover:bg-[#0075d5] flex items-center gap-2 cursor-pointer disabled:opacity-80"
+              >
+                {isOAuthConfirming ? (
+                  <>
+                    <span className="material-symbols-outlined animate-spin text-[18px]">sync</span>
+                    <span>Validando...</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="material-symbols-outlined text-[18px]">check_circle</span>
+                    <span>Confirmar e Acessar</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 2FA MFA Verification Modal — only for email/password flow */}
       <MFAModal
         isOpen={mfaModalOpen}
-        email={email}
+        email={mfaEmail}
         mfaTicket={mfaTicket}
         otpCodeDemo={otpCodeDemo}
         onVerifySuccess={handleMfaVerifySuccess}
-        onCancel={() => setMfaModalOpen(false)}
+        onCancel={handleMfaCancel}
       />
 
       {/* Forgot Password Modal */}
@@ -483,4 +677,3 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     </div>
   );
 };
-

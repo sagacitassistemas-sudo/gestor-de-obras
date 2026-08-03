@@ -30,6 +30,48 @@ function getSupabaseClient(req: AuthenticatedRequest): SupabaseClient | null {
   });
 }
 
+// Centralized helper to coordinate CRUD operations (Insert vs Update vs Upsert)
+async function saveRecord(
+  client: SupabaseClient,
+  table: string,
+  data: any,
+  options: { idField?: string; onConflict?: string; single?: boolean } = {}
+) {
+  const idField = options.idField || "id";
+  const onConflict = options.onConflict;
+  const single = options.single !== false; // default to true
+
+  const idValue = data[idField];
+  const hasIdValue = idValue !== undefined && idValue !== null && idValue !== "";
+
+  let query: any;
+
+  if (onConflict) {
+    const conflictFields = onConflict.split(",").map(s => s.trim());
+    if (conflictFields.includes(idField) && !hasIdValue) {
+      const insertData = { ...data };
+      delete insertData[idField];
+      query = client.from(table).insert([insertData]);
+    } else {
+      query = client.from(table).upsert(data, { onConflict });
+    }
+  } else {
+    if (hasIdValue) {
+      query = client.from(table).update(data).eq(idField, idValue);
+    } else {
+      const insertData = { ...data };
+      delete insertData[idField];
+      query = client.from(table).insert([insertData]);
+    }
+  }
+
+  query = query.select();
+  if (single) {
+    query = query.single();
+  }
+  return await query;
+}
+
 // Check if Firebase Admin SDK has valid credentials to initialize Firestore
 const isFirestoreEnabled = () => {
   return !!process.env.GOOGLE_APPLICATION_CREDENTIALS || fs.existsSync(path.join(process.cwd(), "serviceAccountKey.json"));
@@ -188,27 +230,63 @@ function startServer() {
         return res.status(500).json({ error: "Banco de dados indisponível." });
       }
 
+      // Check count of users in DB to handle first admin setup
+      const { count, error: countErr } = await supabase
+        .from('usuarios')
+        .select('*', { count: 'exact', head: true });
+
+      const isDbEmpty = !countErr && count === 0;
+
       // Check if user exists in Supabase
       const { data: userData, error: userErr } = await supabase
         .from('usuarios')
         .select('*')
         .eq('email', userEmail)
-        .single();
+        .maybeSingle();
 
-      // OAuth Flow: Allow even if not found in users table, but issue VISITANTE generic role
-      let contrato_id = "GENERIC-SSO";
-      let empresa_id = "GENERIC-SSO";
-      let perfil = "VISITANTE";
-      let entidade_id = "GENERIC-SSO";
+      let contrato_id = "";
+      let empresa_id = "";
+      let perfil = "";
+      let entidade_id = "";
 
-      if (userErr || !userData) {
-        console.log(`[OAuth] User ${userEmail} not in DB, assigning VISITANTE.`);
+      if (!userData) {
+        if (isDbEmpty) {
+          // First user registers as ADMIN
+          contrato_id = "CTR-2026-SYS";
+          empresa_id = "SUP-9823-STORAGE";
+          perfil = "ADMIN";
+          entidade_id = "SUP-9823-STORAGE";
+
+          const { error: insertErr } = await supabase
+            .from('usuarios')
+            .insert({
+              uid: uid,
+              email: userEmail,
+              nome: userDisplayName,
+              foto_url: photoURL || '',
+              contrato_id,
+              perfil,
+              status: 'ATIVO'
+            });
+
+          if (insertErr) {
+            console.error("Error registering first Admin user:", insertErr);
+            return res.status(500).json({ error: "Erro ao registrar o primeiro administrador." });
+          }
+          console.log(`[First Login] Registered first user ${userEmail} as ADMIN.`);
+        } else {
+          // Whitelist check fails: block access
+          console.log(`[OAuth Whitelist] Unauthorized email blocked: ${userEmail}`);
+          return res.status(403).json({ error: "Usuário não autorizado. Cadastre seu e-mail com o administrador." });
+        }
       } else {
         if (userData.status === 'BLOQUEADO' || userData.status === 'INATIVO') {
           return res.status(403).json({ error: "Usuário bloqueado ou inativo. Contate o suporte em worksmanager.suporte@gmail.com" });
         }
         contrato_id = userData.contrato_id;
+        empresa_id = userData.empresa_id || "SEM-EMPRESA";
         perfil = userData.perfil;
+        entidade_id = userData.entidade_id || "SEM-ENTIDADE";
       }
 
       // Generate secure short-lived custom token with claims
@@ -229,33 +307,27 @@ function startServer() {
           .eq('email', userEmail);
       }
 
-      const contrato_id = userData.contrato_id;
-      const perfil = userData.perfil;
-
-      // Mandatory Custom Claims Injection
-      const customClaims = {
-        contrato_id,
-        empresa_id: "SUP-9823-STORAGE", // Temporário, pode vir do Supabase no futuro
-        entidade_id: "SUP-9823-STORAGE",
-        perfil,
-        mfa_verified: true,
-        auth_provider: targetProvider
-      };
-
+      // OAuth providers already handle identity verification (select account → confirm).
+      // No additional MFA/OTP is needed per Firebase Auth best practices.
+      // Generate the final session JWT directly.
+      let customToken = '';
       try {
-        await getAdminAuth().setCustomUserClaims(uid, customClaims);
-        console.log(`[Firebase Custom Claims Set via OAuth SSO ${targetProvider} for UID ${uid}]:`, customClaims);
-      } catch (claimsErr) {
-        console.warn("Could not set claims directly via Admin SDK:", claimsErr);
-      }
-
-      let customToken = "";
-      try {
-        customToken = await getAdminAuth().createCustomToken(uid, customClaims);
+        const jwtSecret = process.env.SUPABASE_JWT_SECRET || "super-secret-jwt-token-with-at-least-32-characters-long";
+        customToken = jwt.sign({
+          aud: 'authenticated',
+          sub: uid,
+          email: userEmail,
+          role: 'authenticated',
+          app_metadata: { provider: targetProvider, providers: [targetProvider] },
+          user_metadata: customClaims,
+          ...customClaims
+        }, jwtSecret, { expiresIn: '24h' });
+        console.log(`[Supabase JWT Generated via OAuth SSO ${targetProvider} for UID ${uid}]`);
       } catch (tokErr) {
-        const payloadStr = JSON.stringify({ uid, email: userEmail, customClaims });
-        customToken = `mock_jwt_${Buffer.from(payloadStr).toString("base64")}`;
+        console.error("Failed to generate Supabase JWT for OAuth:", tokErr);
+        return res.status(500).json({ error: "Falha na geração do token." });
       }
+
       return res.json({
         success: true,
         provider: targetProvider,
@@ -263,7 +335,7 @@ function startServer() {
           uid,
           email: userEmail,
           displayName: userDisplayName,
-          photoURL: photoURL || userData.foto_url,
+          photoURL: photoURL || (userData ? userData.foto_url : ''),
           customClaims,
           idToken: customToken,
           mfaVerified: true,
@@ -334,20 +406,22 @@ function startServer() {
         auth_provider: "firebase_mfa_container"
       };
 
+      let customToken = '';
       try {
-        await getAdminAuth().setCustomUserClaims(uid, customClaims);
-        console.log(`[Firebase Custom Claims Set for UID ${uid}]:`, customClaims);
-      } catch (claimsErr) {
-        console.warn("Could not set claims directly via Admin SDK:", claimsErr);
-      }
-
-      // Generate custom token or return session payload
-      let customToken = "";
-      try {
-        customToken = await getAdminAuth().createCustomToken(uid, customClaims);
+        const jwtSecret = process.env.SUPABASE_JWT_SECRET || "super-secret-jwt-token-with-at-least-32-characters-long";
+        customToken = jwt.sign({
+          aud: 'authenticated',
+          sub: uid,
+          email: email,
+          role: 'authenticated',
+          app_metadata: { provider: 'email', providers: ['email'] },
+          user_metadata: customClaims,
+          ...customClaims
+        }, jwtSecret, { expiresIn: '24h' });
+        console.log(`[Supabase JWT Generated via MFA Step 2 for UID ${uid}]`);
       } catch (tokErr) {
-        const payloadStr = JSON.stringify({ uid, email, customClaims });
-        customToken = `mock_jwt_${Buffer.from(payloadStr).toString("base64")}`;
+        console.error("Failed to generate Supabase JWT:", tokErr);
+        return res.status(500).json({ error: "Falha na geração do token." });
       }
 
       // Note: No need to delete activeMFAChallenges since it is stateless now.
@@ -502,14 +576,14 @@ function startServer() {
       }
 
       // Inserir na tabela usuarios (Supabase)
-      const { error: userInsertErr } = await supabase.from('usuarios').upsert({
+      const { error: userInsertErr } = await saveRecord(supabase, 'usuarios', {
         uid: uid,
         email: invite.email,
         nome: displayName || invite.email.split("@")[0].toUpperCase(),
         contrato_id: invite.contrato_id,
         perfil: invite.perfil,
         status: 'ATIVO'
-      }, { onConflict: 'uid' });
+      }, { idField: 'uid', onConflict: 'uid', single: false });
 
       if (userInsertErr) {
         console.error("Error inserting into usuarios:", userInsertErr);
@@ -962,8 +1036,8 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
       cnpj,
       email,
       telefone,
-      gestorresponsavel: gestorResponsavel,
-      unidadeadministrativa: unidadeAdministrativa
+      gestor_responsavel: gestorResponsavel,
+      unidade_administrativa: unidadeAdministrativa
     };
 
     // Keep memory fallback updated
@@ -980,10 +1054,7 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
         });
       }
 
-      const { data, error } = await supabase
-        .from("empresa_contratante")
-        .upsert(dbPayload, { onConflict: "contrato_id" })
-        .select();
+      const { data, error } = await saveRecord(supabase, "empresa_contratante", dbPayload, { onConflict: "contrato_id", single: false });
 
       if (error) {
         console.warn("Supabase upsert error, saved in memory fallback:", error.message);
@@ -1134,10 +1205,7 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
         });
       }
 
-      const { data, error } = await client
-        .from("empresas_fornecedores")
-        .upsert(dbPayload, { onConflict: "id, contrato_id" })
-        .select();
+      const { data, error } = await saveRecord(client, "empresas_fornecedores", dbPayload, { onConflict: "id, contrato_id", single: false });
 
       if (error) {
         console.warn("Supabase upsert companies error, saved in memory fallback:", error.message);
@@ -1275,10 +1343,7 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
       const payload = { ...req.body, contrato_id: req.decodedToken.contrato_id };
       delete payload.id;
       
-      const { data, error } = await client
-        .from("permissoes_contratante")
-        .upsert(payload, { onConflict: "contrato_id" })
-        .select();
+      const { data, error } = await saveRecord(client, "permissoes_contratante", payload, { onConflict: "contrato_id", single: false });
 
       if (error) return res.status(400).json({ error: error.message });
       return res.json({ success: true, data: data?.[0] });
@@ -1315,10 +1380,7 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
       const payload = { ...req.body, contrato_id: req.decodedToken.contrato_id };
       delete payload.id;
       
-      const { data, error } = await client
-        .from("permissoes_empresa")
-        .upsert(payload, { onConflict: "empresa_id, contrato_id" })
-        .select();
+      const { data, error } = await saveRecord(client, "permissoes_empresa", payload, { onConflict: "empresa_id, contrato_id", single: false });
 
       if (error) return res.status(400).json({ error: error.message });
       return res.json({ success: true, data: data?.[0] });
@@ -1358,10 +1420,7 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
       const payload = { ...req.body, contrato_id: req.decodedToken.contrato_id };
       delete payload.id;
       
-      const { data, error } = await client
-        .from("permissoes_usuario")
-        .upsert(payload, { onConflict: "usuario_uid, contrato_id" })
-        .select();
+      const { data, error } = await saveRecord(client, "permissoes_usuario", payload, { onConflict: "usuario_uid, contrato_id", single: false });
 
       if (error) return res.status(400).json({ error: error.message });
       return res.json({ success: true, data: data?.[0] });
@@ -1453,11 +1512,7 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
         upsertData.id = id;
       }
 
-      const { data, error } = await client
-        .from("contratos_obra")
-        .upsert([upsertData], { onConflict: "id" })
-        .select()
-        .single();
+      const { data, error } = await saveRecord(client, "contratos_obra", upsertData);
 
       if (error) {
         console.error("POST /api/contratos-obra Supabase error:", error);
@@ -1513,6 +1568,111 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
 
       if (error) return res.status(500).json({ error: error.message });
       return res.json({ projetos: data || [] });
+    } catch (err) {
+      return res.status(500).json({ error: "Internal Error" });
+    }
+  });
+
+  // POST /api/projetos - Create or update a project
+  app.post("/api/projetos", verifyFirebaseJWT, async (req: AuthenticatedRequest, res) => {
+    try {
+      const client = getSupabaseClient(req);
+      const tenantId = req.decodedToken?.contrato_id;
+      if (!client || !tenantId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { id, nome_projeto, data_inicio } = req.body;
+      if (!nome_projeto || !data_inicio) {
+        return res.status(400).json({ error: "Missing required fields" });
+      }
+
+      const upsertData: any = {
+        tenant_id: tenantId,
+        nome_projeto,
+        data_inicio,
+        updated_at: new Date().toISOString()
+      };
+      if (id) upsertData.id = id;
+
+      const { data, error } = await saveRecord(client, "projetos", upsertData);
+
+      if (error) {
+        console.error("[POST /api/projetos] Error saving projeto:", error);
+        return res.status(500).json({ error: error.message });
+      }
+      return res.json({ projeto: data });
+    } catch (err) {
+      return res.status(500).json({ error: "Internal Error" });
+    }
+  });
+
+  // DELETE /api/projetos
+  app.delete("/api/projetos", verifyFirebaseJWT, async (req: AuthenticatedRequest, res) => {
+    try {
+      const client = getSupabaseClient(req);
+      if (!client) return res.status(401).json({ error: "Unauthorized" });
+
+      const { id } = req.body;
+      if (!id) return res.status(400).json({ error: "Missing ID" });
+
+      const { error } = await client.from("projetos").delete().eq("id", id);
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json({ success: true });
+    } catch (err) {
+      return res.status(500).json({ error: "Internal Error" });
+    }
+  });
+
+  // POST /api/itens-eap
+  app.post("/api/itens-eap", verifyFirebaseJWT, async (req: AuthenticatedRequest, res) => {
+    try {
+      const client = getSupabaseClient(req);
+      if (!client) return res.status(401).json({ error: "Unauthorized" });
+
+      const { id, projeto_id, eap_codigo, eap_pai_codigo, descricao_servico, unidade_medida, preco_unitario, quantidade_contratada, e_analitico, ordem } = req.body;
+      if (!projeto_id || !eap_codigo || !descricao_servico) {
+        return res.status(400).json({ error: "Missing required fields" });
+      }
+
+      const valTotal = (parseFloat(preco_unitario || 0) * parseFloat(quantidade_contratada || 0));
+
+      const upsertData: any = {
+        projeto_id,
+        eap_codigo,
+        eap_pai_codigo: eap_pai_codigo || null,
+        descricao_servico,
+        unidade_medida: unidade_medida || null,
+        preco_unitario: parseFloat(preco_unitario || 0),
+        quantidade_contratada: parseFloat(quantidade_contratada || 0),
+        valor_total_contratado: valTotal,
+        e_analitico: !!e_analitico,
+        ordem: parseInt(ordem || 0, 10)
+      };
+      if (id) upsertData.id = id;
+
+      const { data, error } = await saveRecord(client, "itens_eap", upsertData);
+
+      if (error) {
+        console.error("[POST /api/itens-eap] Error saving item:", error);
+        return res.status(500).json({ error: error.message });
+      }
+      return res.json({ item: data });
+    } catch (err) {
+      return res.status(500).json({ error: "Internal Error" });
+    }
+  });
+
+  // DELETE /api/itens-eap
+  app.delete("/api/itens-eap", verifyFirebaseJWT, async (req: AuthenticatedRequest, res) => {
+    try {
+      const client = getSupabaseClient(req);
+      if (!client) return res.status(401).json({ error: "Unauthorized" });
+
+      const { id } = req.body;
+      if (!id) return res.status(400).json({ error: "Missing ID" });
+
+      const { error } = await client.from("itens_eap").delete().eq("id", id);
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json({ success: true });
     } catch (err) {
       return res.status(500).json({ error: "Internal Error" });
     }

@@ -311,11 +311,11 @@ export default function App() {
           )}
 
           {activeTab === 'projetos_eap' && (
-            <ProjetosEapView />
+            <ProjetosEapView authSession={authSession} />
           )}
 
           {activeTab === 'contratos_obra' && (
-            <ContratosObraView />
+            <ContratosObraView authSession={authSession} />
           )}
 
           {activeTab === 'alertas' && (

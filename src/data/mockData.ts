@@ -12,62 +12,15 @@ export const initialProfile: UserProfile = {
 export const initialContracts: ContractItem[] = [
   {
     id: '1',
-    code: 'CTR-2024-001',
-    object: 'Armazenagem Climatizada - Setor A',
-    expirationDate: '12/08/2025',
+    code: '006/2024',
+    object: 'Contrato Principal de Execução Real',
+    expirationDate: '31/12/2025',
     status: 'ATIVO',
-    totalValue: 450000.00,
-    monthlyValue: 37500.00,
-    category: 'Armazenamento',
-    marginAlert: false,
-    fornecedorId: 'SUP-9823-STORAGE'
-  },
-  {
-    id: '2',
-    code: 'CTR-2024-042',
-    object: 'Manutenção de Racks Industriais',
-    expirationDate: '15/04/2024',
-    status: 'RENOVAÇÃO',
-    totalValue: 82500.00,
-    monthlyValue: 6875.00,
-    category: 'Manutenção',
-    marginAlert: true,
-    fornecedorId: 'SUP-9823-STORAGE'
-  },
-  {
-    id: '3',
-    code: 'CTR-2023-118',
-    object: 'Sistemas de Monitoramento IoT',
-    expirationDate: '30/12/2024',
-    status: 'ATIVO',
-    totalValue: 1240000.00,
-    monthlyValue: 103333.33,
-    category: 'Tecnologia',
-    marginAlert: false,
-    fornecedorId: 'SUP-9823-STORAGE'
-  },
-  {
-    id: '4',
-    code: 'CTR-2024-08',
-    object: 'Transporte de Carga Pesada - Região Sul',
-    expirationDate: '03/08/2026',
-    status: 'RENOVAÇÃO',
-    totalValue: 320000.00,
-    monthlyValue: 26666.67,
+    totalValue: 1200000.00,
+    monthlyValue: 50000.00,
     category: 'Logística',
-    marginAlert: true,
-    fornecedorId: 'SUP-4012-LOGISTICA'
-  },
-  {
-    id: '5',
-    code: 'CTR-2023-15',
-    object: 'Locação de Paletes Automatizados',
-    expirationDate: '18/11/2025',
-    status: 'ATIVO',
-    totalValue: 195000.00,
-    monthlyValue: 16250.00,
-    category: 'Equipamentos',
-    marginAlert: true
+    marginAlert: false,
+    fornecedorId: 'SUP-8401-CONSORC'
   }
 ];
 

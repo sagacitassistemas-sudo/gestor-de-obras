@@ -190,6 +190,7 @@ export const EmpresasView: React.FC<EmpresasViewProps> = ({ authSession, empresa
 
   // Open Create Modal
   const handleOpenCreateModal = () => {
+    setActiveSubTab('LISTA');
     setEditingEmpresa(null);
     setFormData({
       idPrefix: 'SUP',
@@ -207,6 +208,7 @@ export const EmpresasView: React.FC<EmpresasViewProps> = ({ authSession, empresa
 
   // Open Edit Modal
   const handleOpenEditModal = (empresa: EmpresaItem) => {
+    setActiveSubTab('LISTA');
     setEditingEmpresa(empresa);
     setFormData({
       idPrefix: empresa.id.startsWith('CLI') ? 'CLI' : empresa.id.startsWith('PAR') ? 'PAR' : 'SUP',
@@ -825,8 +827,8 @@ export const EmpresasView: React.FC<EmpresasViewProps> = ({ authSession, empresa
       )}
 
       {/* Sub-Tab 2: Lista de Empresas (Fornecedores, Clientes e Parceiros) */}
-      {activeSubTab === 'LISTA' && (
-        <>
+      {activeSubTab === 'LISTA' && !isModalOpen && (
+        <div className="space-y-6">
           {/* KPI Cards */}
           <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
             <div className="md:col-span-4 bg-white p-5 rounded-md border border-slate-200 shadow-2xs">
@@ -1029,30 +1031,40 @@ export const EmpresasView: React.FC<EmpresasViewProps> = ({ authSession, empresa
           </table>
         </div>
       </div>
-        </>
+      </div>
       )}
 
-      {/* MODAL 1: Create / Edit Empresa (C and U) */}
-      {isModalOpen && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-md shadow-md max-w-lg w-full p-6 space-y-4 border border-slate-200">
-            <div className="flex justify-between items-center border-b pb-3">
-              <h3 className="font-bold text-slate-800 text-base flex items-center gap-2">
-                <span className="material-symbols-outlined text-[#1890ff]">
+      {/* INLINE FORM: Create / Edit Empresa (C and U) */}
+      {activeSubTab === 'LISTA' && isModalOpen && (
+        <div className="bg-white p-6 rounded-b-md border-x border-b border-slate-200 shadow-2xs space-y-6">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-200 pb-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-[#005daa] text-2xl">
                   {editingEmpresa ? 'edit_square' : 'domain_add'}
                 </span>
-                {editingEmpresa ? `Editar Empresa: ${editingEmpresa.id}` : 'Cadastrar Nova Empresa (Container Infra)'}
-              </h3>
-              <button
-                onClick={() => setIsModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 cursor-pointer"
-              >
-                <span className="material-symbols-outlined">close</span>
-              </button>
+                <h3 className="text-lg font-bold text-slate-800">
+                  {editingEmpresa ? `Editar Cadastro: ${editingEmpresa.id}` : 'Cadastrar Nova Empresa, Cliente ou Fornecedor'}
+                </h3>
+              </div>
+              <p className="text-xs text-slate-500 mt-1">
+                Integre fornecedores e parceiros ao ecossistema do contrato.
+              </p>
             </div>
+            <button
+              onClick={() => setIsModalOpen(false)}
+              className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-md shadow-2xs flex items-center gap-2 cursor-pointer transition-all"
+            >
+              <span className="material-symbols-outlined text-base">arrow_back</span>
+              <span>Voltar para Lista</span>
+            </button>
+          </div>
 
-            <form onSubmit={handleSaveEmpresa} className="space-y-3 text-xs">
-              <div>
+          <form onSubmit={handleSaveEmpresa} className="space-y-6 text-xs">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              
+              {/* Razão Social - Full Width like Contratante */}
+              <div className="md:col-span-3">
                 <label className="block font-bold text-slate-700 mb-1">Razão Social / Nome Fantasia *</label>
                 <input
                   type="text"
@@ -1060,144 +1072,136 @@ export const EmpresasView: React.FC<EmpresasViewProps> = ({ authSession, empresa
                   placeholder="Ex: Tech Solutions & Services Ltda"
                   value={formData.nome}
                   onChange={(e) => setFormData({ ...formData, nome: e.target.value })}
-                  className="w-full p-2 border border-slate-200 rounded-md focus:border-[#1890ff] outline-none"
+                  className="w-full p-2.5 border border-slate-200 rounded-md font-bold text-slate-800 focus:border-[#005daa] outline-none"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">CNPJ ou CPF *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="00.000.000/0001-00"
-                    value={formData.cnpj_cpf}
-                    onChange={(e) => setFormData({ ...formData, cnpj_cpf: e.target.value })}
-                    className="w-full p-2 border border-slate-200 rounded-md font-mono focus:border-[#1890ff] outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">Tipo de Empresa *</label>
-                  <select
-                    value={formData.tipo}
-                    onChange={(e: any) => setFormData({ ...formData, tipo: e.target.value })}
-                    className="w-full p-2 border border-slate-200 rounded-md font-bold text-slate-700 bg-white"
-                  >
-                    <option value="FORNECEDOR">Fornecedor</option>
-                    <option value="CLIENTE">Cliente</option>
-                    <option value="PARCEIRO">Parceiro</option>
-                    <option value="CONTRATANTE">Empresa Contratante</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">E-mail de Contato</label>
-                  <input
-                    type="email"
-                    placeholder="financeiro@empresa.com"
-                    value={formData.emailContato}
-                    onChange={(e) => setFormData({ ...formData, emailContato: e.target.value })}
-                    className="w-full p-2 border border-slate-200 rounded-md focus:border-[#1890ff] outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">Telefone</label>
-                  <input
-                    type="text"
-                    placeholder="(11) 99999-9999"
-                    value={formData.telefone}
-                    onChange={(e) => setFormData({ ...formData, telefone: e.target.value })}
-                    className="w-full p-2 border border-slate-200 rounded-md font-mono focus:border-[#1890ff] outline-none"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">Status Cadastral</label>
-                  <select
-                    value={formData.status}
-                    onChange={(e: any) => setFormData({ ...formData, status: e.target.value })}
-                    className="w-full p-2 border border-slate-200 rounded-md font-bold text-slate-700 bg-white"
-                  >
-                    <option value="ATIVO">ATIVO</option>
-                    <option value="EM_ANALISE">EM ANÁLISE</option>
-                    <option value="BLOQUEADO">BLOQUEADO</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">Total Faturado Acumulado (R$)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    placeholder="0.00"
-                    value={formData.totalFaturado}
-                    onChange={(e) => setFormData({ ...formData, totalFaturado: parseFloat(e.target.value) || 0 })}
-                    className="w-full p-2 border border-slate-200 rounded-md font-mono focus:border-[#1890ff] outline-none"
-                  />
-                </div>
-              </div>
-
-              {!editingEmpresa && (
-                <div className="p-3 bg-slate-50 border border-slate-200 rounded-md space-y-1">
-                  <label className="block font-bold text-slate-700 mb-0.5">ID da Empresa (Personalizado ou Prefixo)</label>
-                  <div className="flex gap-2">
-                    <select
-                      value={formData.idPrefix}
-                      onChange={(e) => setFormData({ ...formData, idPrefix: e.target.value })}
-                      className="p-2 border border-slate-200 rounded-md font-mono font-bold bg-white text-slate-700"
-                    >
-                      <option value="SUP">SUP- (Fornecedor)</option>
-                      <option value="CLI">CLI- (Cliente)</option>
-                      <option value="PAR">PAR- (Parceiro)</option>
-                    </select>
-
-                    <input
-                      type="text"
-                      placeholder="Ex: SUP-9900-TECH (Opcional)"
-                      value={formData.idCustom}
-                      onChange={(e) => setFormData({ ...formData, idCustom: e.target.value })}
-                      className="flex-1 p-2 border border-slate-200 rounded-md font-mono focus:border-[#1890ff] outline-none"
-                    />
-                  </div>
-                  <span className="text-[10px] text-slate-400 block">
-                    Deixe em branco para auto-gerar ID baseado no nome e prefixo.
-                  </span>
-                </div>
-              )}
-
+              {/* CNPJ */}
               <div>
-                <label className="block font-bold text-slate-700 mb-1">Vínculo de Contrato Tenant (Locked)</label>
+                <label className="block font-bold text-slate-700 mb-1">CNPJ ou CPF *</label>
                 <input
                   type="text"
-                  disabled
-                  value={contratoId}
-                  className="w-full p-2 border border-slate-200 rounded-md bg-slate-100 font-mono font-bold text-slate-500"
+                  required
+                  placeholder="00.000.000/0001-00"
+                  value={formData.cnpj_cpf}
+                  onChange={(e) => setFormData({ ...formData, cnpj_cpf: e.target.value })}
+                  className="w-full p-2.5 border border-slate-200 rounded-md font-mono focus:border-[#005daa] outline-none"
                 />
               </div>
 
-              <div className="pt-3 flex justify-end gap-2 border-t border-slate-200">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-3 py-2 bg-slate-100 text-slate-700 font-bold rounded-md hover:bg-slate-200 cursor-pointer"
+              {/* Tipo */}
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Tipo de Empresa *</label>
+                <select
+                  value={formData.tipo}
+                  onChange={(e: any) => setFormData({ ...formData, tipo: e.target.value })}
+                  className="w-full p-2.5 border border-slate-200 rounded-md font-bold text-slate-700 bg-white"
                 >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-[#1890ff] text-white font-bold rounded-md hover:bg-[#096dd9] cursor-pointer shadow-2xs"
-                >
-                  {editingEmpresa ? 'Salvar Alterações' : 'Salvar Empresa'}
-                </button>
+                  <option value="FORNECEDOR">Fornecedor</option>
+                  <option value="CLIENTE">Cliente</option>
+                  <option value="PARCEIRO">Parceiro</option>
+                  <option value="CONTRATANTE">Empresa Contratante</option>
+                </select>
               </div>
-            </form>
-          </div>
+              
+              {/* Status */}
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Status Cadastral</label>
+                <select
+                  value={formData.status}
+                  onChange={(e: any) => setFormData({ ...formData, status: e.target.value })}
+                  className="w-full p-2.5 border border-slate-200 rounded-md font-bold text-slate-700 bg-white"
+                >
+                  <option value="ATIVO">ATIVO</option>
+                  <option value="EM_ANALISE">EM ANÁLISE</option>
+                  <option value="BLOQUEADO">BLOQUEADO</option>
+                </select>
+              </div>
+
+              {/* Email */}
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">E-mail de Contato</label>
+                <input
+                  type="email"
+                  placeholder="financeiro@empresa.com"
+                  value={formData.emailContato}
+                  onChange={(e) => setFormData({ ...formData, emailContato: e.target.value })}
+                  className="w-full p-2.5 border border-slate-200 rounded-md focus:border-[#005daa] outline-none"
+                />
+              </div>
+
+              {/* Telefone */}
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Telefone</label>
+                <input
+                  type="text"
+                  placeholder="(11) 99999-9999"
+                  value={formData.telefone}
+                  onChange={(e) => setFormData({ ...formData, telefone: e.target.value })}
+                  className="w-full p-2.5 border border-slate-200 rounded-md font-mono focus:border-[#005daa] outline-none"
+                />
+              </div>
+              
+              {/* Total Faturado */}
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Total Faturado Acumulado (R$)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  placeholder="0.00"
+                  value={formData.totalFaturado}
+                  onChange={(e) => setFormData({ ...formData, totalFaturado: parseFloat(e.target.value) || 0 })}
+                  className="w-full p-2.5 border border-slate-200 rounded-md font-mono focus:border-[#005daa] outline-none"
+                />
+              </div>
+
+            </div>
+
+            {!editingEmpresa && (
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-md space-y-2 mt-2">
+                <label className="block font-bold text-slate-700">Configuração de ID (Personalizado ou Prefixo)</label>
+                <div className="flex gap-2">
+                  <select
+                    value={formData.idPrefix}
+                    onChange={(e) => setFormData({ ...formData, idPrefix: e.target.value })}
+                    className="p-2.5 border border-slate-200 rounded-md font-mono font-bold bg-white text-slate-700"
+                  >
+                    <option value="SUP">SUP- (Fornecedor)</option>
+                    <option value="CLI">CLI- (Cliente)</option>
+                    <option value="PAR">PAR- (Parceiro)</option>
+                  </select>
+
+                  <input
+                    type="text"
+                    placeholder="Ex: SUP-9900-TECH (Opcional)"
+                    value={formData.idCustom}
+                    onChange={(e) => setFormData({ ...formData, idCustom: e.target.value })}
+                    className="flex-1 p-2.5 border border-slate-200 rounded-md font-mono focus:border-[#005daa] outline-none"
+                  />
+                </div>
+                <span className="text-[11px] text-slate-500 block">
+                  Deixe o campo em branco para o sistema gerar automaticamente com o prefixo escolhido.
+                </span>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-3 pt-4 border-t border-slate-200">
+              <button
+                type="button"
+                onClick={() => setIsModalOpen(false)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-md transition-all cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                className="px-5 py-2 bg-[#005daa] hover:bg-[#004884] text-white font-bold text-xs rounded-md shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-base">save</span>
+                <span>{editingEmpresa ? 'Salvar Alterações' : 'Salvar Nova Empresa'}</span>
+              </button>
+            </div>
+          </form>
         </div>
       )}
 
