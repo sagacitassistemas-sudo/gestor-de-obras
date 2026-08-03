@@ -54,7 +54,7 @@ export interface CerneEmpresa {
   contrato_id: string;
   nome: string;
   cnpj_cpf: string;
-  tipo: 'FORNECEDOR' | 'CLIENTE' | 'PARCEIRO' | 'CONTRATANTE';
+  tipo: 'FORNECEDOR' | 'CLIENTE' | 'PARCEIRO' | 'CONTRATANTE' | 'GESTORA';
   emailContato: string;
   telefone: string;
   status: 'ATIVO' | 'BLOQUEADO' | 'EM_ANALISE';

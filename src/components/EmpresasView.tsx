@@ -178,7 +178,7 @@ export const EmpresasView: React.FC<EmpresasViewProps> = ({ authSession, empresa
     idCustom: '',
     nome: '',
     cnpj_cpf: '',
-    tipo: 'FORNECEDOR' as 'FORNECEDOR' | 'CLIENTE' | 'PARCEIRO',
+    tipo: 'FORNECEDOR' as 'FORNECEDOR' | 'CLIENTE' | 'PARCEIRO' | 'GESTORA' | 'CONTRATANTE',
     emailContato: '',
     telefone: '',
     status: 'ATIVO' as 'ATIVO' | 'BLOQUEADO' | 'EM_ANALISE',
@@ -211,7 +211,7 @@ export const EmpresasView: React.FC<EmpresasViewProps> = ({ authSession, empresa
     setActiveSubTab('LISTA');
     setEditingEmpresa(empresa);
     setFormData({
-      idPrefix: empresa.id.startsWith('CLI') ? 'CLI' : empresa.id.startsWith('PAR') ? 'PAR' : 'SUP',
+      idPrefix: empresa.id.startsWith('CLI') ? 'CLI' : empresa.id.startsWith('PAR') ? 'PAR' : empresa.id.startsWith('GER') ? 'GER' : 'SUP',
       idCustom: empresa.id,
       nome: empresa.nome,
       cnpj_cpf: empresa.cnpj_cpf,
@@ -1101,6 +1101,7 @@ export const EmpresasView: React.FC<EmpresasViewProps> = ({ authSession, empresa
                   <option value="CLIENTE">Cliente</option>
                   <option value="PARCEIRO">Parceiro</option>
                   <option value="CONTRATANTE">Empresa Contratante</option>
+                  <option value="GESTORA">Gestora (Gestão do Sistema)</option>
                 </select>
               </div>
               
@@ -1166,9 +1167,10 @@ export const EmpresasView: React.FC<EmpresasViewProps> = ({ authSession, empresa
                     onChange={(e) => setFormData({ ...formData, idPrefix: e.target.value })}
                     className="p-2.5 border border-slate-200 rounded-md font-mono font-bold bg-white text-slate-700"
                   >
-                    <option value="SUP">SUP- (Fornecedor)</option>
-                    <option value="CLI">CLI- (Cliente)</option>
-                    <option value="PAR">PAR- (Parceiro)</option>
+                     <option value="SUP">SUP- (Fornecedor)</option>
+                     <option value="CLI">CLI- (Cliente)</option>
+                     <option value="PAR">PAR- (Parceiro)</option>
+                     <option value="GER">GER- (Gestora)</option>
                   </select>
 
                   <input

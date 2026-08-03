@@ -253,9 +253,26 @@ function startServer() {
         if (isDbEmpty) {
           // First user registers as ADMIN
           contrato_id = "CTR-2026-SYS";
-          empresa_id = "SUP-9823-STORAGE";
+          empresa_id = "GER-2026-SYS";
           perfil = "ADMIN";
-          entidade_id = "SUP-9823-STORAGE";
+          entidade_id = "GER-2026-SYS";
+
+          // Automatically register the GESTORA company for system management
+          const { error: companyErr } = await supabase
+            .from('empresas_fornecedores')
+            .insert({
+              id: 'GER-2026-SYS',
+              contrato_id: 'CTR-2026-SYS',
+              nome: 'Gestora do Sistema',
+              cnpj_cpf: '00.000.000/0001-00',
+              tipo: 'GESTORA',
+              status: 'ATIVO',
+              total_faturado: 0
+            });
+          
+          if (companyErr) {
+            console.error("Error creating default Gestora company:", companyErr);
+          }
 
           const { error: insertErr } = await supabase
             .from('usuarios')
@@ -283,10 +300,15 @@ function startServer() {
         if (userData.status === 'BLOQUEADO' || userData.status === 'INATIVO') {
           return res.status(403).json({ error: "Usuário bloqueado ou inativo. Contate o suporte em worksmanager.suporte@gmail.com" });
         }
-        contrato_id = userData.contrato_id;
-        empresa_id = userData.empresa_id || "SEM-EMPRESA";
+        contrato_id = userData.contrato_id || "CTR-2026-SYS";
         perfil = userData.perfil;
-        entidade_id = userData.entidade_id || "SEM-ENTIDADE";
+        if (perfil === 'ADMIN') {
+          empresa_id = "GER-2026-SYS";
+          entidade_id = "GER-2026-SYS";
+        } else {
+          empresa_id = userData.empresa_id || "SEM-EMPRESA";
+          entidade_id = userData.entidade_id || "SEM-ENTIDADE";
+        }
       }
 
       // Generate secure short-lived custom token with claims
@@ -299,11 +321,16 @@ function startServer() {
         auth_provider: `oauth_${provider}`
       };
 
-      // Update Supabase user with the latest info from OAuth if they match
-      if (userData && (userData.uid !== uid || userData.foto_url !== photoURL)) {
+      // Update Supabase user with the latest info from OAuth if they match or if contrato_id is missing
+      if (userData && (userData.uid !== uid || userData.foto_url !== photoURL || !userData.contrato_id)) {
         await supabase
           .from('usuarios')
-          .update({ uid: uid, nome: userDisplayName, foto_url: photoURL })
+          .update({ 
+            uid: uid, 
+            nome: userDisplayName, 
+            foto_url: photoURL,
+            contrato_id: userData.contrato_id || "CTR-2026-SYS"
+          })
           .eq('email', userEmail);
       }
 
@@ -1129,7 +1156,7 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
         contrato_id: item.contrato_id,
         nome: item.nome,
         cnpj_cpf: item.cnpj_cpf,
-        tipo: item.tipo,
+        tipo: item.id.startsWith('GER-') ? 'GESTORA' : item.tipo,
         emailContato: item.email_contato !== undefined ? item.email_contato : item.emailContato,
         telefone: item.telefone,
         status: item.status,
@@ -1177,7 +1204,7 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
       contrato_id,
       nome,
       cnpj_cpf,
-      tipo: tipo || "FORNECEDOR",
+      tipo: (tipo === 'GESTORA' || id.startsWith('GER-')) ? 'CONTRATANTE' : (tipo || "FORNECEDOR"),
       email_contato: emailContato || "",
       telefone: telefone || "",
       status: status || "ATIVO",
@@ -1586,7 +1613,7 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
       }
 
       const upsertData: any = {
-        tenant_id: tenantId,
+        codigo_contrato: tenantId,
         nome_projeto,
         data_inicio,
         updated_at: new Date().toISOString()
@@ -1615,6 +1642,73 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
       if (!id) return res.status(400).json({ error: "Missing ID" });
 
       const { error } = await client.from("projetos").delete().eq("id", id);
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json({ success: true });
+    } catch (err) {
+      return res.status(500).json({ error: "Internal Error" });
+    }
+  });
+
+  // GET /api/usuarios
+  app.get("/api/usuarios", verifyFirebaseJWT, async (req: AuthenticatedRequest, res) => {
+    try {
+      const client = getSupabaseClient(req);
+      const tenantId = req.decodedToken?.contrato_id;
+      if (!client || !tenantId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { data, error } = await client
+        .from("usuarios")
+        .select("*")
+        .eq("contrato_id", tenantId);
+
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json({ usuarios: data || [] });
+    } catch (err) {
+      return res.status(500).json({ error: "Internal Error" });
+    }
+  });
+
+  // POST /api/usuarios
+  app.post("/api/usuarios", verifyFirebaseJWT, async (req: AuthenticatedRequest, res) => {
+    try {
+      const client = getSupabaseClient(req);
+      const tenantId = req.decodedToken?.contrato_id;
+      if (!client || !tenantId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { uid, email, nome, perfil, status, empresa_id } = req.body;
+      if (!uid || !email || !nome) {
+        return res.status(400).json({ error: "Missing required fields" });
+      }
+
+      const upsertData = {
+        uid,
+        email,
+        nome,
+        contrato_id: tenantId,
+        perfil: perfil || 'FORNECEDOR',
+        status: status || 'ATIVO',
+        empresa_id: empresa_id || null,
+        updated_at: new Date().toISOString()
+      };
+
+      const { data, error } = await saveRecord(client, "usuarios", upsertData, { idField: "uid", onConflict: "uid" });
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json({ usuario: data });
+    } catch (err) {
+      return res.status(500).json({ error: "Internal Error" });
+    }
+  });
+
+  // DELETE /api/usuarios
+  app.delete("/api/usuarios", verifyFirebaseJWT, async (req: AuthenticatedRequest, res) => {
+    try {
+      const client = getSupabaseClient(req);
+      if (!client) return res.status(401).json({ error: "Unauthorized" });
+
+      const { uid } = req.body;
+      if (!uid) return res.status(400).json({ error: "Missing uid" });
+
+      const { error } = await client.from("usuarios").delete().eq("uid", uid);
       if (error) return res.status(500).json({ error: error.message });
       return res.json({ success: true });
     } catch (err) {

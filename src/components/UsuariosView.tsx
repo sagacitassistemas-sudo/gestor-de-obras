@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { supabase } from '../lib/supabaseClient';
 import { AuthSession, UserRecord } from '../types';
 
 interface UsuariosViewProps {
@@ -8,78 +9,79 @@ interface UsuariosViewProps {
 export const UsuariosView: React.FC<UsuariosViewProps> = ({ authSession }) => {
   const contratoId = authSession?.customClaims?.contrato_id || 'CTR-2026-SYS';
 
-  // State: Seeded list of users for full CRUD operations
-  const [users, setUsers] = useState<UserRecord[]>([
-    {
-      id: 'USR-8801',
-      displayName: 'Carlos Eduardo Silva',
-      email: 'carlos.eduardo@sysstorage.com.br',
-      contrato_id: 'CTR-2026-SYS',
-      empresa_id: 'SUP-9823-STORAGE',
-      empresa_nome: 'Storage & Infraestrutura Ltda',
-      perfil: 'FINANCEIRO',
-      mfaEnabled: true,
-      status: 'ATIVO',
-      createdAt: '2026-01-10'
-    },
-    {
-      id: 'USR-8802',
-      displayName: 'Fernanda Lima (Fornecedor)',
-      email: 'fornecedor@logistica.com.br',
-      contrato_id: 'CTR-2026-SYS',
-      empresa_id: 'SUP-4012-LOGISTICA',
-      empresa_nome: 'Transportes & Logística SP-RJ',
-      perfil: 'FORNECEDOR',
-      mfaEnabled: true,
-      status: 'ATIVO',
-      createdAt: '2026-02-14'
-    },
-    {
-      id: 'USR-8803',
-      displayName: 'Mariana Alves',
-      email: 'mariana.alves@sysstorage.com.br',
-      contrato_id: 'CTR-2026-SYS',
-      empresa_id: undefined,
-      empresa_nome: undefined,
-      perfil: 'GESTOR',
-      mfaEnabled: false,
-      status: 'ATIVO',
-      createdAt: '2026-03-01'
-    },
-    {
-      id: 'USR-8804',
-      displayName: 'Roberto Garcia (Auditor)',
-      email: 'roberto.garcia@auditoriafiscal.com',
-      contrato_id: 'CTR-2026-SYS',
-      empresa_id: 'SUP-1102-AUDITORIA',
-      empresa_nome: 'Auditoria & Compliance Fiscal',
-      perfil: 'FORNECEDOR',
-      mfaEnabled: true,
-      status: 'PENDENTE',
-      createdAt: '2026-06-20'
-    },
-    {
-      id: 'USR-8805',
-      displayName: 'Administrador do Sistema',
-      email: 'admin@sysstorage.com.br',
-      contrato_id: 'CTR-2026-SYS',
-      empresa_id: undefined,
-      empresa_nome: undefined,
-      perfil: 'ADMIN',
-      mfaEnabled: true,
-      status: 'ATIVO',
-      createdAt: '2026-01-01'
+  // State: DB list of users for full CRUD operations
+  const [users, setUsers] = useState<UserRecord[]>([]);
+
+  // Load users from backend
+  const fetchUsers = async () => {
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      const token = session?.session?.access_token || authSession?.idToken;
+      const res = await fetch('/api/usuarios', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.usuarios) {
+          const mapped = json.usuarios.map((u: any) => ({
+            id: u.uid,
+            displayName: u.nome,
+            email: u.email,
+            contrato_id: u.contrato_id,
+            empresa_id: u.perfil === 'ADMIN' ? 'GER-2026-SYS' : (u.empresa_id || undefined),
+            empresa_nome: u.perfil === 'ADMIN' ? 'Gestora do Sistema' : (u.empresa_nome || undefined),
+            perfil: u.perfil,
+            mfaEnabled: true,
+            status: u.status || 'ATIVO',
+            createdAt: u.created_at?.split('T')[0] || new Date().toISOString().split('T')[0]
+          }));
+          setUsers(mapped);
+        }
+      }
+    } catch (err) {
+      console.error("Error loading users:", err);
     }
-  ]);
+  };
 
   // List of standard available companies for optional selection
-  const empresasDisponiveis = [
-    { id: 'SEM_VINCULO', label: 'Sem vínculo (Acesso Corporativo / Direto)' },
-    { id: 'SUP-9823-STORAGE', label: 'SUP-9823-STORAGE - Storage & Infraestrutura Ltda' },
-    { id: 'SUP-4012-LOGISTICA', label: 'SUP-4012-LOGISTICA - Transportes & Logística SP-RJ' },
-    { id: 'SUP-1102-AUDITORIA', label: 'SUP-1102-AUDITORIA - Auditoria & Compliance Fiscal' },
-    { id: 'OUTRO', label: '+ Digitar outra empresa personalizada' }
-  ];
+  const [empresasDisponiveis, setEmpresasDisponiveis] = useState<any[]>([
+    { id: 'SEM_VINCULO', label: 'Sem vínculo (Acesso Corporativo / Direto)' }
+  ]);
+
+  const fetchEmpresas = async () => {
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      const token = session?.session?.access_token || authSession?.idToken;
+      const res = await fetch('/api/empresas', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.data) {
+          const list = [
+            { id: 'SEM_VINCULO', label: 'Sem vínculo (Acesso Corporativo / Direto)' },
+            ...json.data.map((e: any) => ({
+              id: e.id,
+              label: `${e.id} - ${e.nome}`
+            })),
+            { id: 'OUTRO', label: '+ Digitar outra empresa personalizada' }
+          ];
+          setEmpresasDisponiveis(list);
+        }
+      }
+    } catch (err) {
+      console.error("Error loading empresas:", err);
+    }
+  };
+
+  useEffect(() => {
+    fetchUsers();
+    fetchEmpresas();
+  }, []);
 
   // Filters & Search
   const [search, setSearch] = useState('');
@@ -181,56 +183,49 @@ export const UsuariosView: React.FC<UsuariosViewProps> = ({ authSession }) => {
       return;
     }
 
-    // Determine Empresa Vínculo
-    let finalEmpresaId: string | undefined = undefined;
-    let finalEmpresaNome: string | undefined = undefined;
+    const saveToBackend = async () => {
+      try {
+        const { data: session } = await supabase.auth.getSession();
+        const token = session?.session?.access_token || authSession?.idToken;
 
-    if (formData.selectedEmpresaOption === 'OUTRO') {
-      finalEmpresaId = formData.customEmpresaId ? sanitizeInput(formData.customEmpresaId) : undefined;
-      finalEmpresaNome = formData.customEmpresaNome ? sanitizeInput(formData.customEmpresaNome) : undefined;
-    } else if (formData.selectedEmpresaOption !== 'SEM_VINCULO') {
-      finalEmpresaId = formData.selectedEmpresaOption;
-      const found = empresasDisponiveis.find((e) => e.id === formData.selectedEmpresaOption);
-      finalEmpresaNome = found ? found.label.split(' - ')[1] : formData.selectedEmpresaOption;
-    }
+        const uid = editingUser ? editingUser.id : `usr_${cleanEmail.replace(/[^a-zA-Z0-9]/g, '_')}`;
 
-    if (editingUser) {
-      // UPDATE (U)
-      const updatedUsers = users.map((u) => {
-        if (u.id === editingUser.id) {
-          return {
-            ...u,
-            displayName: cleanName,
-            email: cleanEmail,
-            perfil: formData.perfil,
-            empresa_id: finalEmpresaId,
-            empresa_nome: finalEmpresaNome,
-            mfaEnabled: formData.mfaEnabled,
-            status: formData.status
-          };
+        // Determine Empresa Vínculo
+        let finalEmpresaId: string | null = null;
+        if (formData.selectedEmpresaOption === 'OUTRO') {
+          finalEmpresaId = formData.customEmpresaId ? sanitizeInput(formData.customEmpresaId) : null;
+        } else if (formData.selectedEmpresaOption !== 'SEM_VINCULO') {
+          finalEmpresaId = formData.selectedEmpresaOption;
         }
-        return u;
-      });
-      setUsers(updatedUsers);
-      showNotification('success', `Usuário "${cleanName}" atualizado com sucesso.`);
-    } else {
-      // CREATE (C)
-      const newUser: UserRecord = {
-        id: `USR-${Math.floor(1000 + Math.random() * 9000)}`,
-        displayName: cleanName,
-        email: cleanEmail,
-        contrato_id: contratoId,
-        empresa_id: finalEmpresaId,
-        empresa_nome: finalEmpresaNome,
-        perfil: formData.perfil,
-        mfaEnabled: formData.mfaEnabled,
-        status: formData.status,
-        createdAt: new Date().toISOString().split('T')[0]
-      };
-      setUsers([newUser, ...users]);
-      showNotification('success', `Novo usuário "${cleanName}" cadastrado com sucesso.`);
-    }
 
+        const res = await fetch('/api/usuarios', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            uid,
+            email: cleanEmail,
+            nome: cleanName,
+            perfil: formData.perfil,
+            status: formData.status,
+            empresa_id: finalEmpresaId
+          })
+        });
+
+        if (res.ok) {
+          showNotification('success', editingUser ? `Usuário "${cleanName}" atualizado com sucesso.` : `Novo usuário "${cleanName}" cadastrado com sucesso.`);
+          fetchUsers();
+        } else {
+          const errData = await res.json();
+          showNotification('error', 'Erro ao salvar usuário: ' + (errData.error || 'Erro desconhecido'));
+        }
+      } catch (err) {
+        showNotification('error', 'Erro de conexão.');
+      }
+    };
+    saveToBackend();
     setIsCreateModalOpen(false);
   };
 
@@ -238,26 +233,67 @@ export const UsuariosView: React.FC<UsuariosViewProps> = ({ authSession }) => {
   const handleConfirmDelete = () => {
     if (!deletingUser) return;
     const userName = deletingUser.displayName;
-    setUsers(users.filter((u) => u.id !== deletingUser.id));
+
+    const deleteFromBackend = async () => {
+      try {
+        const { data: session } = await supabase.auth.getSession();
+        const token = session?.session?.access_token || authSession?.idToken;
+
+        const res = await fetch('/api/usuarios', {
+          method: 'DELETE',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ uid: deletingUser.id })
+        });
+
+        if (res.ok) {
+          showNotification('info', `Usuário "${userName}" foi excluído.`);
+          fetchUsers();
+        } else {
+          showNotification('error', 'Erro ao excluir usuário.');
+        }
+      } catch (err) {
+        showNotification('error', 'Erro de conexão.');
+      }
+    };
+    deleteFromBackend();
     setDeletingUser(null);
-    showNotification('info', `Usuário "${userName}" foi excluído do tenant ${contratoId}.`);
   };
 
   // Quick Status Toggle (Ativar / Inativar)
   const handleToggleStatus = (user: UserRecord) => {
     const nextStatus: 'ATIVO' | 'INATIVO' = user.status === 'ATIVO' ? 'INATIVO' : 'ATIVO';
-    setUsers(
-      users.map((u) => {
-        if (u.id === user.id) {
-          return { ...u, status: nextStatus };
+    const toggleBackend = async () => {
+      try {
+        const { data: session } = await supabase.auth.getSession();
+        const token = session?.session?.access_token || authSession?.idToken;
+
+        const res = await fetch('/api/usuarios', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            uid: user.id,
+            email: user.email,
+            nome: user.displayName,
+            perfil: user.perfil,
+            status: nextStatus
+          })
+        });
+
+        if (res.ok) {
+          showNotification('info', `Status do usuário "${user.displayName}" alterado para ${nextStatus}.`);
+          fetchUsers();
         }
-        return u;
-      })
-    );
-    showNotification(
-      'info',
-      `Status do usuário "${user.displayName}" alterado para ${nextStatus}.`
-    );
+      } catch (err) {
+        console.error(err);
+      }
+    };
+    toggleBackend();
   };
 
   // Export Users as CSV
