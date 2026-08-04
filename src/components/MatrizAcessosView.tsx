@@ -41,6 +41,12 @@ export const MatrizAcessosView: React.FC<MatrizAcessosViewProps> = ({ authSessio
   const [selectedUsuarioId, setSelectedUsuarioId] = useState('');
   const [permUsuario, setPermUsuario] = useState<PermissoesUsuario | null>(null);
 
+  // Loading states to prevent infinite spinners
+  const [loadingTipo, setLoadingTipo] = useState(false);
+  const [loadingEmpresa, setLoadingEmpresa] = useState(false);
+  const [loadingUsuario, setLoadingUsuario] = useState(false);
+  const [loadingContratante, setLoadingContratante] = useState(false);
+
   const showNotification = (type: 'success' | 'error' | 'info', message: string) => {
     setNotification({ type, message });
     setTimeout(() => setNotification(null), 3000);
@@ -99,10 +105,11 @@ export const MatrizAcessosView: React.FC<MatrizAcessosViewProps> = ({ authSessio
 
   // Carregar permissões da Contratante
   const fetchPermContratante = async () => {
+    setLoadingContratante(true);
     try {
       const { data: session } = await supabase.auth.getSession();
       const token = session?.session?.access_token || authSession?.idToken;
-      if (!token) return;
+      if (!token) { setLoadingContratante(false); return; }
 
       const res = await fetch('/api/permissoes/contratante', {
         headers: { 'Authorization': `Bearer ${token}` }
@@ -112,7 +119,6 @@ export const MatrizAcessosView: React.FC<MatrizAcessosViewProps> = ({ authSessio
         if (json.data) {
           setPermContratante(json.data);
         } else {
-          // Default to all true if not initialized
           setPermContratante({
             contrato_id: tenantId,
             empresas_criar: true, empresas_ler: true, empresas_editar: true, empresas_excluir: true,
@@ -123,9 +129,23 @@ export const MatrizAcessosView: React.FC<MatrizAcessosViewProps> = ({ authSessio
             usuarios_criar: true, usuarios_ler: true, usuarios_editar: true, usuarios_excluir: true,
           });
         }
+      } else {
+        // On error, use safe defaults
+        setPermContratante({
+          contrato_id: tenantId,
+          empresas_criar: true, empresas_ler: true, empresas_editar: true, empresas_excluir: true,
+          projetos_criar: true, projetos_ler: true, projetos_editar: true, projetos_excluir: true,
+          medicoes_criar: true, medicoes_ler: true, medicoes_editar: true, medicoes_excluir: true,
+          financeiro_criar: true, financeiro_ler: true, financeiro_editar: true, financeiro_excluir: true,
+          relatorios_ler: true,
+          usuarios_criar: true, usuarios_ler: true, usuarios_editar: true, usuarios_excluir: true,
+        });
       }
     } catch (err) {
       console.error(err);
+      setPermContratante(null);
+    } finally {
+      setLoadingContratante(false);
     }
   };
 
@@ -136,10 +156,12 @@ export const MatrizAcessosView: React.FC<MatrizAcessosViewProps> = ({ authSessio
   // Carregar permissões por Tipo
   const fetchPermTipo = async () => {
     if (!selectedTipo) return;
+    setLoadingTipo(true);
+    setPermTipo(null);
     try {
       const { data: session } = await supabase.auth.getSession();
       const token = session?.session?.access_token || authSession?.idToken;
-      if (!token) return;
+      if (!token) { setLoadingTipo(false); return; }
 
       const res = await fetch('/api/permissoes/tipo', {
         headers: { 'Authorization': `Bearer ${token}` }
@@ -150,7 +172,6 @@ export const MatrizAcessosView: React.FC<MatrizAcessosViewProps> = ({ authSessio
         if (found) {
           setPermTipo(found);
         } else {
-          // Default configs based on role type
           setPermTipo({
             contrato_id: tenantId,
             perfil: selectedTipo,
@@ -177,9 +198,24 @@ export const MatrizAcessosView: React.FC<MatrizAcessosViewProps> = ({ authSessio
             usuarios_excluir: selectedTipo === 'ADMIN'
           });
         }
+      } else {
+        // API error: fallback to safe defaults
+        setPermTipo({
+          contrato_id: tenantId,
+          perfil: selectedTipo,
+          empresas_criar: false, empresas_ler: true, empresas_editar: false, empresas_excluir: false,
+          projetos_criar: false, projetos_ler: true, projetos_editar: false, projetos_excluir: false,
+          medicoes_criar: false, medicoes_ler: true, medicoes_editar: false, medicoes_excluir: false,
+          financeiro_criar: false, financeiro_ler: true, financeiro_editar: false, financeiro_excluir: false,
+          relatorios_ler: true,
+          usuarios_criar: false, usuarios_ler: false, usuarios_editar: false, usuarios_excluir: false,
+        });
       }
     } catch (err) {
       console.error(err);
+      setPermTipo(null);
+    } finally {
+      setLoadingTipo(false);
     }
   };
 
@@ -190,10 +226,12 @@ export const MatrizAcessosView: React.FC<MatrizAcessosViewProps> = ({ authSessio
   // Carregar permissões da Empresa selecionada
   const fetchPermEmpresa = async () => {
     if (!selectedEmpresaId) return;
+    setLoadingEmpresa(true);
+    setPermEmpresa(null);
     try {
       const { data: session } = await supabase.auth.getSession();
       const token = session?.session?.access_token || authSession?.idToken;
-      if (!token) return;
+      if (!token) { setLoadingEmpresa(false); return; }
 
       const res = await fetch('/api/permissoes/empresa', {
         headers: { 'Authorization': `Bearer ${token}` }
@@ -204,7 +242,6 @@ export const MatrizAcessosView: React.FC<MatrizAcessosViewProps> = ({ authSessio
         if (found) {
           setPermEmpresa(found);
         } else {
-          // Default clean config
           setPermEmpresa({
             contrato_id: tenantId,
             empresa_id: selectedEmpresaId,
@@ -216,9 +253,23 @@ export const MatrizAcessosView: React.FC<MatrizAcessosViewProps> = ({ authSessio
             usuarios_criar: false, usuarios_ler: false, usuarios_editar: false, usuarios_excluir: false,
           });
         }
+      } else {
+        setPermEmpresa({
+          contrato_id: tenantId,
+          empresa_id: selectedEmpresaId,
+          empresas_criar: false, empresas_ler: true, empresas_editar: false, empresas_excluir: false,
+          projetos_criar: false, projetos_ler: true, projetos_editar: false, projetos_excluir: false,
+          medicoes_criar: false, medicoes_ler: true, medicoes_editar: false, medicoes_excluir: false,
+          financeiro_criar: false, financeiro_ler: true, financeiro_editar: false, financeiro_excluir: false,
+          relatorios_ler: true,
+          usuarios_criar: false, usuarios_ler: false, usuarios_editar: false, usuarios_excluir: false,
+        });
       }
     } catch (err) {
       console.error(err);
+      setPermEmpresa(null);
+    } finally {
+      setLoadingEmpresa(false);
     }
   };
 
@@ -229,10 +280,12 @@ export const MatrizAcessosView: React.FC<MatrizAcessosViewProps> = ({ authSessio
   // Carregar permissões do Usuario selecionado
   const fetchPermUsuario = async () => {
     if (!selectedUsuarioId) return;
+    setLoadingUsuario(true);
+    setPermUsuario(null);
     try {
       const { data: session } = await supabase.auth.getSession();
       const token = session?.session?.access_token || authSession?.idToken;
-      if (!token) return;
+      if (!token) { setLoadingUsuario(false); return; }
 
       const res = await fetch('/api/permissoes/usuario', {
         headers: { 'Authorization': `Bearer ${token}` }
@@ -256,9 +309,25 @@ export const MatrizAcessosView: React.FC<MatrizAcessosViewProps> = ({ authSessio
             usuarios_criar: false, usuarios_ler: false, usuarios_editar: false, usuarios_excluir: false,
           });
         }
+      } else {
+        const user = usuariosList.find(u => u.uid === selectedUsuarioId);
+        setPermUsuario({
+          usuario_uid: selectedUsuarioId,
+          contrato_id: tenantId,
+          empresa_id: user?.empresa_id || null,
+          empresas_criar: false, empresas_ler: true, empresas_editar: false, empresas_excluir: false,
+          projetos_criar: false, projetos_ler: true, projetos_editar: false, projetos_excluir: false,
+          medicoes_criar: false, medicoes_ler: true, medicoes_editar: false, medicoes_excluir: false,
+          financeiro_criar: false, financeiro_ler: true, financeiro_editar: false, financeiro_excluir: false,
+          relatorios_ler: true,
+          usuarios_criar: false, usuarios_ler: false, usuarios_editar: false, usuarios_excluir: false,
+        });
       }
     } catch (err) {
       console.error(err);
+      setPermUsuario(null);
+    } finally {
+      setLoadingUsuario(false);
     }
   };
 
@@ -346,12 +415,21 @@ export const MatrizAcessosView: React.FC<MatrizAcessosViewProps> = ({ authSessio
     setter({ ...stateObj, [key]: !stateObj[key] });
   };
 
+  const LoadingSpinner = () => (
+    <div className="p-8 flex flex-col items-center justify-center gap-3 text-slate-400">
+      <div className="w-8 h-8 border-2 border-slate-200 border-t-blue-500 rounded-full animate-spin"></div>
+      <span className="text-xs font-bold">Carregando permissões...</span>
+    </div>
+  );
+
   const renderMatrix = (
     currentPerms: any, 
     setter: any, 
-    maxLimitPerms?: any
+    maxLimitPerms?: any,
+    isLoading?: boolean
   ) => {
-    if (!currentPerms) return <div className="p-4">Carregando...</div>;
+    if (isLoading) return <LoadingSpinner />;
+    if (!currentPerms) return <LoadingSpinner />;
 
     return (
       <div className="overflow-x-auto border border-slate-200 rounded-md">
@@ -501,7 +579,7 @@ export const MatrizAcessosView: React.FC<MatrizAcessosViewProps> = ({ authSessio
               </p>
             </div>
             {isAdmin ? (
-              renderMatrix(permContratante, setPermContratante)
+              renderMatrix(permContratante, setPermContratante, undefined, loadingContratante)
             ) : (
               <div className="p-4 bg-slate-50 text-slate-500 text-sm font-bold rounded-md border border-slate-200 text-center">
                 Acesso Restrito: Somente Administradores podem alterar o Teto Global.
@@ -536,7 +614,7 @@ export const MatrizAcessosView: React.FC<MatrizAcessosViewProps> = ({ authSessio
               </select>
             </div>
             {isGestor ? (
-              renderMatrix(permTipo, setPermTipo, permContratante)
+              renderMatrix(permTipo, setPermTipo, permContratante, loadingTipo)
             ) : (
               <div className="p-4 bg-slate-50 text-slate-500 text-sm font-bold rounded-md border border-slate-200 text-center">
                 Acesso Restrito: Apenas Gestores e Admins podem configurar templates por tipo.
@@ -569,7 +647,7 @@ export const MatrizAcessosView: React.FC<MatrizAcessosViewProps> = ({ authSessio
               </select>
             </div>
             {isGestor ? (
-              renderMatrix(permEmpresa, setPermEmpresa, permContratante)
+              renderMatrix(permEmpresa, setPermEmpresa, permContratante, loadingEmpresa)
             ) : (
               <div className="p-4 bg-slate-50 text-slate-500 text-sm font-bold rounded-md border border-slate-200 text-center">
                 Acesso Restrito: Apenas Gestores e Admins da Contratante podem configurar empresas.
@@ -611,8 +689,8 @@ export const MatrizAcessosView: React.FC<MatrizAcessosViewProps> = ({ authSessio
             {renderMatrix(
               permUsuario, 
               setPermUsuario, 
-              // Limitador dinâmico: Se tiver empresa vinculada, o teto é a empresa. Senão, é a contratante.
-              permUsuario?.empresa_id ? permEmpresa : permContratante
+              permUsuario?.empresa_id ? permEmpresa : permContratante,
+              loadingUsuario
             )}
             
           </div>
