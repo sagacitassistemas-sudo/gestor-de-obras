@@ -84,6 +84,9 @@ export default function App() {
         .then(data => {
           if (data.success && data.data) {
             setEffectivePermissions(data.data);
+            if (data.data.perfil) {
+              setUser(prev => ({ ...prev, role: data.data.perfil }));
+            }
           } else {
             setEffectivePermissions({});
           }

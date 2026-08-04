@@ -586,9 +586,15 @@ export const MatrizAcessosView: React.FC<MatrizAcessosViewProps> = ({ authSessio
                 <h3 className="font-bold text-emerald-800 text-sm flex items-center gap-2">
                   <span className="material-symbols-outlined">person</span>
                   Permissões Efetivas do Usuário
+                  {(permUsuario as any)?.e_customizada && (
+                    <span className="px-2 py-0.5 bg-amber-100 text-amber-800 border border-amber-300 text-[10px] font-bold rounded-md flex items-center gap-1">
+                      <span className="material-symbols-outlined text-[12px]">star</span>
+                      Configuração Especial Customizada (Prioritária)
+                    </span>
+                  )}
                 </h3>
                 <p className="text-xs text-emerald-700 mt-1">
-                  Permissões individuais. Limitadas pelo Teto da Empresa (se vinculado) ou pelo Teto Global (se direto).
+                  Permissões individuais. Ao salvar alterações nesta aba, esta configuração passa a ser uma regra especial prioritária.
                 </p>
               </div>
               <select

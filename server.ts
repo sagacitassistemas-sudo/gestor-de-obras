@@ -160,6 +160,7 @@ async function ensureUserExists(
       delete newPerms.updated_at;
       newPerms.usuario_uid = token.uid;
       newPerms.empresa_id = empresa_id;
+      newPerms.e_customizada = false;
       await client.from("permissoes_usuario").insert([newPerms]);
     }
   } catch (permErr) {
@@ -1627,7 +1628,12 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
       const client = getSupabaseClient(req);
       if (!client) return res.status(500).json({ error: "Supabase não configurado." });
       
-      const payload = { ...req.body, contrato_id: req.decodedToken.contrato_id };
+      const payload = { 
+        ...req.body, 
+        contrato_id: req.decodedToken.contrato_id,
+        e_customizada: true, // User permissions explicitly modified -> set custom priority flag
+        updated_at: new Date().toISOString()
+      };
       delete payload.id;
       
       const { data, error } = await saveRecord(client, "permissoes_usuario", payload, { onConflict: "usuario_uid, contrato_id", single: false });
@@ -1902,11 +1908,25 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
       const { data, error } = await saveRecord(client, "usuarios", upsertData, { idField: "uid", onConflict: "uid" });
       if (error) return res.status(500).json({ error: error.message });
       
-      // Auto-assign permissions from "por Tipo" template if this is a new user
+      // Check if user has special custom permissions (e_customizada = true)
+      const { data: userPermRecord } = await client
+        .from("permissoes_usuario")
+        .select("e_customizada")
+        .eq("usuario_uid", uid)
+        .maybeSingle();
+
+      const isCustomized = userPermRecord?.e_customizada === true;
       const userPerfil = perfil || 'FORNECEDOR';
-      const { data: existingPerms } = await client.from("permissoes_usuario").select("usuario_uid").eq("usuario_uid", uid).maybeSingle();
-      if (!existingPerms) {
-        const { data: tipoData } = await client.from("permissoes_tipo").select("*").eq("contrato_id", tenantId).eq("perfil", userPerfil).maybeSingle();
+
+      // Only sync permissions from "permissoes_tipo" template IF user permissions are NOT customized/specialized
+      if (!isCustomized) {
+        const { data: tipoData } = await client
+          .from("permissoes_tipo")
+          .select("*")
+          .eq("contrato_id", tenantId)
+          .eq("perfil", userPerfil)
+          .maybeSingle();
+
         if (tipoData) {
           const newPerms = { ...tipoData };
           delete newPerms.id;
@@ -1915,8 +1935,30 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
           delete newPerms.updated_at;
           newPerms.usuario_uid = uid;
           newPerms.empresa_id = empresa_id || null;
+          newPerms.e_customizada = false;
+          newPerms.updated_at = new Date().toISOString();
+
+          // Re-seed default template permissions for updated perfil
+          await client.from("permissoes_usuario").delete().eq("usuario_uid", uid);
           await client.from("permissoes_usuario").insert([newPerms]);
         }
+      } else {
+        console.log(`[POST /api/usuarios] Permissões customizadas priorizadas para o usuário ${uid}. Manterá a configuração especial.`);
+      }
+
+      // Sync custom claims in Firebase Admin SDK if available
+      try {
+        const adminAuth = getAdminAuth();
+        if (adminAuth) {
+          await adminAuth.setCustomUserClaims(uid, {
+            perfil: userPerfil,
+            contrato_id: tenantId,
+            empresa_id: empresa_id || null,
+            entidade_id: empresa_id || null
+          });
+        }
+      } catch (claimsErr) {
+        console.error("Error setting custom claims:", claimsErr);
       }
 
       return res.json({ usuario: data });
