@@ -91,8 +91,29 @@ async function ensureUserExists(
   if (existingUser) {
     // If user exists, ensure uid matches
     if (existingUser.uid !== token.uid) {
-      await client.from('usuarios').update({ uid: token.uid }).eq('email', userEmail);
+      const { error: updateErr } = await client.from('usuarios').update({ uid: token.uid }).eq('email', userEmail);
+      if (updateErr) {
+        console.error("[ensureUserExists] Erro ao atualizar UID do usuário:", updateErr);
+      } else {
+        existingUser.uid = token.uid;
+      }
     }
+
+    // Sync custom claims for existing user on login
+    try {
+      const adminAuth = getAdminAuth();
+      if (adminAuth && typeof adminAuth.setCustomUserClaims === 'function') {
+        await adminAuth.setCustomUserClaims(token.uid, {
+          perfil: existingUser.perfil,
+          contrato_id: existingUser.contrato_id,
+          empresa_id: existingUser.empresa_id,
+          entidade_id: existingUser.empresa_id
+        });
+      }
+    } catch (claimsErr) {
+      console.error("[ensureUserExists] Erro ao sincronizar claims do usuário existente:", claimsErr);
+    }
+
     return existingUser;
   }
 
