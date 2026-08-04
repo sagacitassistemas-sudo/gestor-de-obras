@@ -7,3 +7,23 @@ coverage/
 .env*
 !.env.example
 .vercel
+
+# Arquivos de Testes, Scripts Locais e Dumps
+scratch/
+scratch_*
+test-*
+data_dump.sql
+eap_data.sql
+eap_data_clean.sql
+public_data.sql
+fix_*.sql
+fix_*.cjs
+check_*.cjs
+update_*.cjs
+query_*.ts
+query_*.cjs
+insert-admin.ts
+patch_*.mjs
+add-checks.*
+vercel-logs.txt
+__pycache__/
