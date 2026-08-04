@@ -1,4 +1,4 @@
-export type NavigationTab = 'login' | 'dashboard' | 'financeiro' | 'contratos' | 'alertas' | 'onboarding' | 'auth-debug' | 'empresas' | 'entidades' | 'matriz-acesso' | 'usuarios' | 'projetos_eap' | 'contratos_obra';
+export type NavigationTab = 'login' | 'dashboard' | 'financeiro' | 'contratos' | 'alertas' | 'onboarding' | 'auth-debug' | 'empresas' | 'entidades' | 'matriz-acesso' | 'usuarios' | 'projetos_eap' | 'contratos_obra' | 'audit-log';
 
 // Re-exports dos tipos modularizados para manter compatibilidade com o frontend
 export type { FirebaseCustomClaims as CustomClaims } from './types/firebase.types';
@@ -109,4 +109,35 @@ export interface SystemAlert {
   daysRemaining?: number;
   usagePercent?: number;
   actionText: string;
+}
+
+export interface AuditLogEntry {
+  id: string;
+  contrato_id: string;
+  usuario_uid: string;
+  usuario_email: string;
+  cod_evento: string;
+  descricao: string;
+  entidade_tipo: string;
+  entidade_id: string;
+  criado_em: string;
+  sistema_eventos_catalogo?: {
+    descricao: string;
+    categoria: string;
+  };
+}
+
+export interface SystemErrorEntry {
+  id: string;
+  contrato_id: string;
+  usuario_uid: string;
+  cod_evento: string;
+  rota: string;
+  mensagem: string;
+  stack_trace: string;
+  criado_em: string;
+  sistema_eventos_catalogo?: {
+    descricao: string;
+    categoria: string;
+  };
 }

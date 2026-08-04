@@ -1,0 +1,9 @@
+GRANT ALL PRIVILEGES ON TABLE audit_log TO service_role;
+GRANT ALL PRIVILEGES ON TABLE system_error_log TO service_role;
+GRANT ALL PRIVILEGES ON TABLE sistema_eventos_catalogo TO service_role;
+GRANT ALL PRIVILEGES ON TABLE audit_log TO authenticated;
+GRANT ALL PRIVILEGES ON TABLE system_error_log TO authenticated;
+GRANT ALL PRIVILEGES ON TABLE sistema_eventos_catalogo TO authenticated;
+GRANT ALL PRIVILEGES ON TABLE audit_log TO anon;
+GRANT ALL PRIVILEGES ON TABLE system_error_log TO anon;
+GRANT ALL PRIVILEGES ON TABLE sistema_eventos_catalogo TO anon;

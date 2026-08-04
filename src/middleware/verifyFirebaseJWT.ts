@@ -2,6 +2,7 @@ import { Response, NextFunction } from 'express';
 import { getAuth } from 'firebase-admin/auth';
 import { AuthenticatedRequest } from '../types/middleware.types';
 import jwt from 'jsonwebtoken';
+import { logSystemError } from '../services/logger.service';
 
 export async function verifyFirebaseJWT(req: AuthenticatedRequest, res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
@@ -45,6 +46,14 @@ export async function verifyFirebaseJWT(req: AuthenticatedRequest, res: Response
   } catch (err: unknown) {
     const errMsg = err instanceof Error ? err.message : String(err);
     console.error(`[middleware.verifyFirebaseJWT] Falha ao decodificar/validar token: ${errMsg}`);
+    
+    await logSystemError({
+      cod_evento: "AUTH_FAIL_JWT",
+      rota: req.originalUrl,
+      mensagem: `Acesso não autorizado: ${errMsg}`,
+      stack_trace: err instanceof Error ? err.stack : undefined
+    });
+
     return res.status(401).json({ error: `Acesso não autorizado: ${errMsg}` });
   }
 }

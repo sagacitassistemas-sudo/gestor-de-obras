@@ -39,6 +39,7 @@ import { EntidadesView } from './components/EntidadesView';
 import { UsuariosView } from './components/UsuariosView';
 import { MatrizAcessosView } from './components/MatrizAcessosView';
 import { ContratosObraView } from './components/ContratosObraView';
+import { AuditLogView } from './components/AuditLogView';
 
 import { NovoChamadoModal } from './components/NovoChamadoModal';
 import { ProcessamentoNotasDrawer } from './components/ProcessamentoNotasDrawer';
@@ -109,7 +110,8 @@ export default function App() {
       case 'projetos_eap': return !!effectivePermissions.projetos_ler;
       case 'contratos_obra': return !!effectivePermissions.medicoes_ler;
       case 'usuarios': return !!effectivePermissions.usuarios_ler;
-      case 'matriz-acesso': return user.role === 'GESTOR';
+      case 'matriz-acesso': return user.role === 'GESTOR' || user.role === 'ADMIN';
+      case 'audit-log': return user.role === 'ADMIN';
       case 'financeiro': return !!effectivePermissions.financeiro_ler;
       default: return true;
     }
@@ -400,13 +402,30 @@ export default function App() {
           {activeTab === 'matriz-acesso' && (
             hasAccess('matriz-acesso') ? (
               <MatrizAcessosView authSession={authSession} currentUserRole={user.role} />
-            ) : <div className="p-8 text-center bg-white rounded-xl border border-gray-200">Acesso Restrito: Sem permissão à Matriz de Acessos</div>
+            ) : (
+              <div className="flex items-center justify-center h-full p-8 text-gray-500">
+                <div className="bg-white p-6 rounded-lg text-center border border-gray-200 max-w-md">
+                  <h3 className="text-xl font-bold text-gray-800 mb-2">Acesso Negado</h3>
+                  <p>Você não tem permissão para visualizar a Matriz de Acessos.</p>
+                </div>
+              </div>
+            )
           )}
 
           {activeTab === 'projetos_eap' && (
             hasAccess('projetos_eap') ? (
               <ProjetosEapView authSession={authSession} />
             ) : <div className="p-8 text-center bg-white rounded-xl border border-gray-200">Acesso Restrito: Sem permissão aos Projetos/EAP</div>
+          )}
+
+          {activeTab === 'audit-log' && (
+            hasAccess('audit-log') ? (
+              <AuditLogView authSession={authSession} />
+            ) : (
+              <div className="p-8 text-center bg-white rounded-xl border border-gray-200">
+                Acesso Restrito: A Trilha de Auditoria é restrita a administradores do sistema.
+              </div>
+            )
           )}
         </main>
 

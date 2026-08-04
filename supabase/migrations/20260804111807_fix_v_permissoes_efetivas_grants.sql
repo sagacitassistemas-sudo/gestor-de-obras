@@ -81,4 +81,3 @@ GRANT ALL ON TABLE permissoes_tipo TO postgres, anon, authenticated, service_rol
 
 -- 3. Correção de dados existentes onde empresa_id não existe
 UPDATE permissoes_usuario SET empresa_id = NULL WHERE empresa_id IN ('SEM-EMPRESA', 'GER-2026-SYS');
-UPDATE usuarios SET empresa_id = NULL WHERE empresa_id IN ('SEM-EMPRESA', 'GER-2026-SYS');

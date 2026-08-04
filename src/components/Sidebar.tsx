@@ -204,9 +204,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <span className="font-label-bold text-label-bold">Matriz Acessos</span>
             </button>
           )}
+
+          {isAdmin && (
+            <button
+              onClick={() => handleNavClick('audit-log')}
+              className={`w-full text-left ${navItemClass('audit-log')}`}
+            >
+              <span
+                className="material-symbols-outlined"
+                style={{ fontVariationSettings: activeTab === 'audit-log' ? "'FILL' 1" : "'FILL' 0" }}
+              >
+                policy
+              </span>
+              <span className="font-label-bold text-label-bold">Auditoria</span>
+            </button>
+          )}
         </nav>
 
-        <div className="mt-auto pt-4 border-t border-[#c0c7d6] space-y-1">          <button
+        <div className="mt-auto pt-4 border-t border-[#c0c7d6] space-y-1">
+          <button
             onClick={onOpenNovoChamado}
             className="w-full bg-[#005daa] text-white rounded-lg p-3 mb-3 font-label-bold flex items-center justify-center gap-2 hover:bg-[#0075d5] active:scale-[0.98] transition-all shadow-sm group"
           >
