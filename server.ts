@@ -73,6 +73,118 @@ async function saveRecord(
   return await query;
 }
 
+async function ensureUserExists(
+  client: SupabaseClient, 
+  token: { uid: string; email: string; nome?: string; photoURL?: string }
+) {
+  if (!client || !token || !token.uid) return null;
+
+  const userEmail = token.email || `${token.uid}@user.com`;
+  
+  // 1. Check if user already exists by uid OR email
+  const { data: existingUser } = await client
+    .from('usuarios')
+    .select('*')
+    .or(`uid.eq.${token.uid},email.eq.${userEmail}`)
+    .maybeSingle();
+
+  if (existingUser) {
+    // If user exists, ensure uid matches
+    if (existingUser.uid !== token.uid) {
+      await client.from('usuarios').update({ uid: token.uid }).eq('email', userEmail);
+    }
+    return existingUser;
+  }
+
+  // 2. Count users to handle First Admin vs Visitante
+  const { count } = await client
+    .from('usuarios')
+    .select('*', { count: 'exact', head: true });
+
+  const isDbEmpty = !count || count === 0;
+
+  const contrato_id = "CTR-2026-SYS";
+  const empresa_id = isDbEmpty ? "GER-2026-SYS" : "SEM-EMPRESA";
+  const perfil = isDbEmpty ? "ADMIN" : "VISITANTE";
+  const nome = token.nome || userEmail.split('@')[0];
+
+  if (isDbEmpty) {
+    await client.from('empresas_fornecedores').upsert({
+      id: 'GER-2026-SYS',
+      contrato_id: 'CTR-2026-SYS',
+      nome: 'Gestora do Sistema',
+      cnpj_cpf: '00.000.000/0001-00',
+      tipo: 'GESTORA',
+      status: 'ATIVO',
+      total_faturado: 0
+    }, { onConflict: 'id' });
+  }
+
+  // 3. Insert user record
+  const newUser = {
+    uid: token.uid,
+    email: userEmail,
+    nome,
+    foto_url: token.photoURL || '',
+    contrato_id,
+    empresa_id: isDbEmpty ? empresa_id : null,
+    perfil,
+    status: 'ATIVO'
+  };
+
+  const { data: insertedUser, error: insertErr } = await client
+    .from('usuarios')
+    .insert([newUser])
+    .select('*')
+    .single();
+
+  if (insertErr) {
+    console.error("[ensureUserExists] Erro ao inserir usuário:", insertErr);
+    return null;
+  }
+
+  // 4. Seed default permissions from permissoes_tipo
+  try {
+    const { data: tipoData } = await client
+      .from("permissoes_tipo")
+      .select("*")
+      .eq("contrato_id", contrato_id)
+      .eq("perfil", perfil)
+      .maybeSingle();
+
+    if (tipoData) {
+      const newPerms = { ...tipoData };
+      delete newPerms.id;
+      delete newPerms.perfil;
+      delete newPerms.created_at;
+      delete newPerms.updated_at;
+      newPerms.usuario_uid = token.uid;
+      newPerms.empresa_id = empresa_id;
+      await client.from("permissoes_usuario").insert([newPerms]);
+    }
+  } catch (permErr) {
+    console.error("[ensureUserExists] Erro ao atribuir permissões:", permErr);
+  }
+
+  // 5. Update custom claims in Firebase Admin if configured
+  try {
+    const adminAuth = getAdminAuth();
+    if (adminAuth) {
+      await adminAuth.setCustomUserClaims(token.uid, {
+        perfil,
+        contrato_id,
+        empresa_id,
+        entidade_id: empresa_id
+      });
+    }
+  } catch (claimsErr) {
+    // Ignore
+  }
+
+  console.log(`[ensureUserExists] Auto-registrado usuário ${userEmail} como ${perfil}.`);
+  return insertedUser;
+}
+
 // Check if Firebase Admin SDK has valid credentials to initialize Firestore
 const isFirestoreEnabled = () => {
   return !!process.env.GOOGLE_APPLICATION_CREDENTIALS || fs.existsSync(path.join(process.cwd(), "serviceAccountKey.json"));
@@ -697,34 +809,21 @@ function startServer() {
   app.post("/api/auth/sync-user", verifyFirebaseJWT, async (req: AuthenticatedRequest, res) => {
     try {
       const client = getSupabaseClient(req);
-      if (!client) return res.status(500).json({ error: "Supabase not configurado." });
+      if (!client) return res.status(500).json({ error: "Supabase não configurado." });
 
       const token = req.decodedToken;
       if (!token || !token.uid) return res.status(401).json({ error: "Acesso não autorizado." });
 
       const { nome, avatar_url } = req.body || {};
 
-      const upsertData = {
+      const usuario = await ensureUserExists(client, {
         uid: token.uid,
         email: token.email,
-        nome: nome || token.email,
-        avatar_url: avatar_url || null,
-        perfil: token.perfil || 'FORNECEDOR',
-        status: 'ATIVO',
-        contrato_id: token.contrato_id || null,
-        empresa_id: token.empresa_id || null,
-        updated_at: new Date().toISOString()
-      };
+        nome: nome || token.nome,
+        photoURL: avatar_url || token.photoURL
+      });
 
-      // Using saveRecord ensures INSERT or UPDATE on conflict
-      const { data, error } = await saveRecord(client, "usuarios", upsertData, { idField: "uid", onConflict: "uid" });
-      
-      if (error) {
-        console.error("[Sync User] Erro ao sincronizar usuário:", error);
-        return res.status(500).json({ error: error.message });
-      }
-
-      return res.json({ success: true, usuario: data });
+      return res.json({ success: true, usuario });
     } catch (err: any) {
       console.error("[Sync User] Erro interno:", err);
       return res.status(500).json({ error: "Internal Server Error" });
@@ -1548,6 +1647,15 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
       if (!client) return res.status(500).json({ error: "Supabase não configurado." });
       
       const uid = req.params.uid;
+
+      // Auto-ensure requesting user exists in DB
+      await ensureUserExists(client, {
+        uid: req.decodedToken.uid,
+        email: req.decodedToken.email,
+        nome: req.decodedToken.nome,
+        photoURL: req.decodedToken.photoURL
+      });
+
       const { data, error } = await client
         .from("v_permissoes_efetivas")
         .select("*")
@@ -1740,8 +1848,18 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
         return res.status(403).json({ error: "Acesso negado: sem permissão para ler usuários." });
       }
       const client = getSupabaseClient(req);
-      const tenantId = req.decodedToken?.contrato_id;
-      if (!client || !tenantId) return res.status(401).json({ error: "Unauthorized" });
+      if (!client) return res.status(401).json({ error: "Unauthorized" });
+
+      if (req.decodedToken) {
+        await ensureUserExists(client, {
+          uid: req.decodedToken.uid,
+          email: req.decodedToken.email,
+          nome: req.decodedToken.nome,
+          photoURL: req.decodedToken.photoURL
+        });
+      }
+
+      const tenantId = req.decodedToken?.contrato_id || "CTR-2026-SYS";
 
       const { data, error } = await client
         .from("usuarios")

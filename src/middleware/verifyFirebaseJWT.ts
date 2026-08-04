@@ -32,11 +32,13 @@ export async function verifyFirebaseJWT(req: AuthenticatedRequest, res: Response
     req.decodedToken = {
       uid: decodedToken.uid || decodedToken.sub,
       email: decodedToken.email || '',
-      contrato_id: (decodedToken.contrato_id as string) || (decodedToken.user_metadata?.contrato_id as string) || '',
+      contrato_id: (decodedToken.contrato_id as string) || (decodedToken.user_metadata?.contrato_id as string) || 'CTR-2026-SYS',
       empresa_id: (decodedToken.empresa_id as string) || (decodedToken.user_metadata?.empresa_id as string) || '',
       entidade_id: (decodedToken.entidade_id as string) || (decodedToken.empresa_id as string) || (decodedToken.user_metadata?.empresa_id as string) || '',
-      perfil: (decodedToken.perfil as any) || (decodedToken.user_metadata?.perfil as any) || 'FORNECEDOR',
-      mfa_verified: !!decodedToken.mfa_verified
+      perfil: (decodedToken.perfil as any) || (decodedToken.user_metadata?.perfil as any) || 'VISITANTE',
+      mfa_verified: !!decodedToken.mfa_verified,
+      nome: decodedToken.name || decodedToken.user_metadata?.full_name || decodedToken.displayName || decodedToken.email || '',
+      photoURL: decodedToken.picture || decodedToken.photoURL || decodedToken.user_metadata?.avatar_url || ''
     };
     
     next();

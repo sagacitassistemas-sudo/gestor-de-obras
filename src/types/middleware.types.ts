@@ -9,6 +9,8 @@ export interface DecodedFirebaseJWT {
   entidade_id?: string;
   perfil: 'FINANCEIRO' | 'FORNECEDOR' | 'GESTOR' | 'ADMIN' | 'VISITANTE';
   mfa_verified?: boolean;
+  nome?: string;
+  photoURL?: string;
 }
 
 export interface AuthenticatedRequest extends Request {
