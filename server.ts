@@ -328,7 +328,7 @@ if (supabaseUrl) {
     // 1. Step 1 Login: Initiates MFA / 2FA challenge
     app.post("/api/auth/login-mfa-step1", async (req, res) => {
       try {
-        const { email, password } = req.body || {};
+        const { uid, email, password } = req.body || {};
         if (!email || !password) {
           return res.status(400).json({ error: "E-mail e senha são obrigatórios." });
         }
@@ -344,17 +344,38 @@ if (supabaseUrl) {
           .eq('email', email)
           .single();
 
-        if (userErr || !userData) {
-          return res.status(403).json({ error: "Usuário não autorizado. E-mail não encontrado no sistema." });
-        }
+        let contrato_id = "";
+        let perfil = "";
 
-        if (userData.status === 'BLOQUEADO' || userData.status === 'INATIVO') {
-          return res.status(403).json({ error: "Usuário bloqueado ou inativo. Contate o suporte." });
+        if (userErr || !userData) {
+          // Auto-registro como VISITANTE
+          contrato_id = "CTR-2026-SYS";
+          perfil = "VISITANTE";
+          const newUid = uid || `email_${email.replace(/[^a-zA-Z0-9]/g, "_")}`;
+          
+          const { error: insertErr } = await supabase.from('usuarios').insert({
+            uid: newUid,
+            email: email,
+            nome: email.split('@')[0],
+            contrato_id,
+            perfil,
+            status: 'ATIVO'
+          });
+
+          if (insertErr) {
+            console.error("Erro no auto-registro de visitante:", insertErr);
+            return res.status(500).json({ error: "Erro ao registrar usuário visitante." });
+          }
+          console.log(`[Auto-Registro] Usuário ${email} registrado como VISITANTE.`);
+        } else {
+          if (userData.status === 'BLOQUEADO' || userData.status === 'INATIVO') {
+            return res.status(403).json({ error: "Usuário bloqueado ou inativo. Contate o suporte." });
+          }
+          contrato_id = userData.contrato_id;
+          perfil = userData.perfil;
         }
 
         // Validated user metadata
-        let contrato_id = userData.contrato_id;
-        let perfil = userData.perfil;
         let empresa_id = "SUP-9823-STORAGE"; // Temporary fallback or could be from db
 
         // Generate 6-digit OTP code for MFA validation
@@ -588,6 +609,28 @@ if (supabaseUrl) {
       } catch (err: any) {
         console.error("OAuth Login Error:", err);
         return res.status(500).json({ error: "Erro na autenticação OAuth principal." });
+      }
+    });
+
+    // Endpoint de Sincronização em Background (Sync pipeline)
+    app.post("/api/auth/sync-user", verifyFirebaseJWT, async (req: AuthenticatedRequest, res) => {
+      try {
+        if (!req.decodedToken) return res.status(401).json({ error: "Token inválido" });
+        const client = getSupabaseClient(req);
+        if (!client) return res.status(401).json({ error: "Falha na criação do client Supabase." });
+
+        // Garante a existência ou criação do usuário (usando a lógica lazy atual)
+        await ensureUserExists(client, {
+          uid: req.decodedToken.uid,
+          email: req.decodedToken.email || `${req.decodedToken.uid}@user.com`,
+          nome: req.decodedToken.nome,
+          photoURL: req.decodedToken.photoURL
+        });
+
+        return res.json({ success: true, message: "User sync triggered" });
+      } catch (err: any) {
+        console.error("Erro no /api/auth/sync:", err);
+        return res.status(500).json({ error: "Erro ao sincronizar usuário." });
       }
     });
 
