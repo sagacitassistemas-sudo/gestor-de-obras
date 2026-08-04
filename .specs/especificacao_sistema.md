@@ -1,6 +1,6 @@
 # Especificação Completa do Sistema - Works Manager (Gestor de Obras)
 
-Este documento consolida a especificação técnica e funcional completa da plataforma **Works Manager** (anteriormente Gestor de Obras) na revisão atual. A plataforma é uma solução SaaS Multi-Tenant focada na gestão integrada de obras, infraestrutura, fornecedores, faturamentos (DRE), projetos (EAP) e contratos viários.
+Este documento consolida a especificação técnica e funcional completa da plataforma **Works Manager** (anteriormente Gestor de Obras) na **revisão v1.1.0 (2026-08-04)**. A plataforma é uma solução SaaS Multi-Tenant focada na gestão integrada de obras, infraestrutura, fornecedores, faturamentos (DRE), projetos (EAP) e contratos viários.
 
 ---
 
@@ -200,8 +200,37 @@ Painel interativo e hierárquico organizado em **4 Abas de Configuração**:
 3. **3. Por Empresa**: Definição dos Tetos aplicados a empresas fornecedoras cadastradas na base. Dropdown conectado à API `/api/empresas`.
 4. **4. Por Usuário**: Ajuste de permissões individuais por operador. Dropdown conectado à API `/api/usuarios`.
 
-### 4.7. Parâmetros do Sistema (`ParametrosView`)
+> [!NOTE]
+> **Resiliência e UX da Matriz de Acessos (v1.1.0)**:
+> O componente implementa controle explícito de quatro estados independentes de carregamento (`loadingTipo`, `loadingEmpresa`, `loadingUsuario` e `loadingContratante`). Caso ocorra qualquer falha HTTP ou inconsistência na API, o componente evita travamentos visuais ("Carregando..." infinito) aplicando fallbacks seguros com templates de permissões padrão e renderizando o indicador visual `LoadingSpinner`.
+
+### 4.7. Menu Retrátil e Navegação Principal (`Sidebar.tsx`)
+A navegação lateral adota um comportamento de **Menu Retrátil Responsivo**:
+- **Estado de Colapso (`isSidebarCollapsed`)**: Gerenciado globalmente no `App.tsx` e compartilhado via props.
+- **Modos de Exibição**:
+  - **Expandido (`w-64` / 256px)**: Exibe a marca completa (Works Manager Supplier Portal), cabeçalhos de grupos de infraestrutura e rótulos de texto de cada menu.
+  - **Colapsado (`w-20` / 80px)**: Exibe a interface simplificada em ícones centralizados (`justify-center`), substitui o logo completo por um ícone compacto (`business_center`) e ativa atributos de acessibilidade `title="..."` em cada botão.
+- **Botão de Alternância (Toggle Button)**: Posicionado flutuante no canto superior direito do menu para desktop, apresentando os ícones `chevron_left` e `chevron_right`.
+- **Sincronismo de Margem Externa**: O container principal da aplicação ajusta a margem esquerda dinamicamente (`md:ml-20` vs `md:ml-64`) para evitar sobreposições e garantir transições fluidas de layout.
+
+### 4.8. Parâmetros do Sistema (`ParametrosView`)
 Interface global de configuração (`/api/parametros`) acessível unicamente por Administradores (`ADMIN`), permitindo edições dinâmicas e em tempo de execução dos **`SYSTEM_PARAMS`**:
 - **Autenticação**: Ajuste de tempo da Sessão JWT (ex: `4h`) e Validade do Ticket MFA (ex: `10m`).
 - **Compliance / Logs**: Dias de retenção do Audit Log (registro de trilha) e do Error Log.
 - **Sincronismo**: Toggle para habilitar ou desabilitar o sincronismo automatizado de claims no login. Alterações nessa tela geram eventos automáticos na auditoria do sistema.
+
+---
+
+## 5. Arquitetura de Deploy em Produção e Sincronização de Banco (Vercel & Supabase Cloud)
+
+### 5.1. Variáveis de Ambiente & Compilação Client-Side
+A implantação na plataforma Vercel requer sincronismo estrito entre o backend (Node.js Express) e o frontend empacotado via Vite:
+- **Prefixo `VITE_`**: As variáveis consumidas pelo cliente web (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`) exigem obrigatoriamente o prefixo `VITE_` para injeção no bundle de produção durante a fase de build.
+- **JWT Signature Alignment**: A variável `SUPABASE_JWT_SECRET` deve corresponder exatamente ao segredo de criptografia da instância Supabase Cloud. Uma divergência nessa chave impede a validação de sessão pelo middleware backend, resultando em erros `500 Internal Server Error` na rota `ensureUserExists`.
+
+### 5.2. Estratégia de Migração e Dump Idempotente
+Para sincronismo seguro entre a base de desenvolvimento local e a nuvem sem colisão de dados:
+- **Dump Idempotente (`ON CONFLICT DO NOTHING`)**: Os scripts de carga de dados (`scratch/local_data_dump_clean.sql`) utilizam a cláusula `ON CONFLICT DO NOTHING` em todas as instruções `INSERT INTO`, permitindo a re-execução segura sem duplicar chaves primárias.
+- **Compatibilidade com SQL Editor**: Remoção de comandos meta do cliente de linha de comando `psql` (ex: `\restrict`, `\unrestrict`), garantindo compatibilidade direta com a interface web do Supabase Cloud SQL Editor.
+- **Integridade Referencial**: Garantia de pré-carregamento dos registros pai (ex: tabela `projetos`) antes da inserção dos itens dependentes (ex: `itens_eap`).
+

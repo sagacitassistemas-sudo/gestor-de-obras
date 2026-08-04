@@ -60,8 +60,16 @@ As cores seguem uma lógica semântica rígida ligada aos resultados operacionai
 
 ---
 
-## 6. Responsividade
+---
 
-Toda a área de trabalho deve utilizar sistemas de layout flexíveis (Flexbox e CSS Grid):
-*   Usar grids com divisões adaptativas: `grid grid-cols-1 md:grid-cols-12 gap-6`.
-*   Painéis de controle devem colapsar verticalmente em telas menores para garantir que gestores consigam operar em tablets ou smartphones de campo.
+## 7. Diretrizes de Layout e Navegação Retrátil (Sidebar)
+
+O menu de navegação lateral (`Sidebar.tsx`) deve seguir padrões rigorosos de transição e responsividade:
+
+*   **Larguras Padrão**:
+    *   **Expandido:** `w-64` (`256px`).
+    *   **Colapsado:** `w-20` (`80px`).
+*   **Transição Suave:** `transition-all duration-300` aplicada tanto no container da `aside` quanto no container de conteúdo principal (`App.tsx`).
+*   **Acessibilidade e Tooltips:** No modo colapsado, todo botão deve manter `title="..."` preenchido com a ação do botão (ex: "Suporte", "Logout", "Novo Chamado") e ocultar o texto descritivo via `!isCollapsed`.
+*   **Alinhamento de Ícones:** No modo colapsado, usar `justify-center p-3` para manter os ícones perfeitamente centralizados vertical e horizontalmente.
+*   **Botão de Alternância (Toggle):** Posicionado com `absolute -right-3 top-6`, formato circular (`rounded-full w-6 h-6`), sombra sutil e borda alinhada com o divisor do menu (`border-[#c0c7d6]`).
