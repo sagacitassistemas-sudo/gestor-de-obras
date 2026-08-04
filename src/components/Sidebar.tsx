@@ -11,6 +11,8 @@ interface SidebarProps {
   onCloseMobile?: () => void;
   permissions?: Record<string, boolean> | null;
   userRole?: string;
+  isCollapsed?: boolean;
+  onToggleCollapse?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -22,7 +24,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   mobileOpen = false,
   onCloseMobile,
   permissions,
-  userRole
+  userRole,
+  isCollapsed = false,
+  onToggleCollapse
 }) => {
   const isAdmin = userRole === 'ADMIN';
   const hasAccess = (key: string) => isAdmin || (permissions && permissions[key]);
@@ -34,10 +38,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const navItemClass = (tab: NavigationTab) => {
     const isActive = activeTab === tab;
+    const base = isCollapsed ? 'justify-center p-3' : 'gap-2 p-3';
     if (isActive) {
-      return 'flex items-center gap-2 bg-[#eff6ff] text-[#005daa] rounded-lg p-3 font-bold border-l-4 border-[#005daa] shadow-2xs transition-all';
+      return `flex items-center ${base} bg-[#eff6ff] text-[#005daa] rounded-lg font-bold border-l-4 border-[#005daa] shadow-2xs transition-all`;
     }
-    return 'flex items-center gap-2 text-[#404753] p-3 hover:bg-[#e6e8ea] hover:translate-x-1 transition-all rounded-lg group';
+    return `flex items-center ${base} text-[#404753] hover:bg-[#e6e8ea] hover:translate-x-1 transition-all rounded-lg group`;
   };
 
   return (
@@ -51,20 +56,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
       )}
 
       <aside
-        className={`fixed left-0 top-0 h-screen w-64 bg-white border-r border-[#c0c7d6] p-4 flex flex-col z-50 transition-transform duration-300 ${
-          mobileOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
-        }`}
+        className={`fixed left-0 top-0 h-screen bg-white border-r border-[#c0c7d6] flex flex-col z-50 transition-all duration-300 ${
+          mobileOpen ? 'translate-x-0 w-64 p-4' : '-translate-x-full md:translate-x-0'
+        } ${isCollapsed && !mobileOpen ? 'md:w-20 p-2' : 'w-64 p-4'}`}
       >
         {/* Brand Header */}
-        <div className="mb-8 px-2 flex items-center justify-between">
-          <div>
-            <h1 className="font-headline-sm text-headline-sm font-extrabold text-[#005daa] tracking-tight">
-              Works Manager
-            </h1>
-            <p className="text-[10px] text-[#707785] font-label-bold uppercase tracking-wider mt-0.5">
-              Supplier Portal
-            </p>
-          </div>
+        <div className={`mb-8 px-2 flex items-center ${isCollapsed ? 'justify-center mt-2' : 'justify-between'}`}>
+          {!isCollapsed ? (
+            <div>
+              <h1 className="font-headline-sm text-headline-sm font-extrabold text-[#005daa] tracking-tight">
+                Works Manager
+              </h1>
+              <p className="text-[10px] text-[#707785] font-label-bold uppercase tracking-wider mt-0.5">
+                Supplier Portal
+              </p>
+            </div>
+          ) : (
+            <span className="material-symbols-outlined text-[32px] text-[#005daa]">business_center</span>
+          )}
           {onCloseMobile && (
             <button
               onClick={onCloseMobile}
@@ -75,6 +84,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </button>
           )}
         </div>
+
+        {/* Toggle Collapse Button (Desktop only) */}
+        {onToggleCollapse && (
+          <button
+            onClick={onToggleCollapse}
+            className={`hidden md:flex absolute -right-3 top-6 bg-white border border-[#c0c7d6] rounded-full w-6 h-6 items-center justify-center text-[#707785] hover:text-[#005daa] hover:bg-[#eff6ff] transition-all z-10`}
+            aria-label="Recolher menu"
+          >
+            <span className="material-symbols-outlined text-[16px]">
+              {isCollapsed ? 'chevron_right' : 'chevron_left'}
+            </span>
+          </button>
+        )}
 
         {/* Navigation Items */}
         <nav className="flex-1 space-y-1.5 overflow-y-auto">
@@ -88,7 +110,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             >
               dashboard
             </span>
-            <span className="font-label-bold text-label-bold">Dashboard</span>
+            {!isCollapsed && <span className="font-label-bold text-label-bold">Dashboard</span>}
           </button>
 
           {hasAccess('projetos_ler') && (
@@ -102,7 +124,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               >
                 account_tree
               </span>
-              <span className="font-label-bold text-label-bold">Projetos (EAP)</span>
+              {!isCollapsed && <span className="font-label-bold text-label-bold">Projetos (EAP)</span>}
             </button>
           )}
 
@@ -117,7 +139,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               >
                 architecture
               </span>
-              <span className="font-label-bold text-label-bold">Medições</span>
+              {!isCollapsed && <span className="font-label-bold text-label-bold">Medições</span>}
             </button>
           )}
 
@@ -132,7 +154,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               >
                 store
               </span>
-              <span className="font-label-bold text-label-bold">Empresas</span>
+              {!isCollapsed && <span className="font-label-bold text-label-bold">Empresas</span>}
             </button>
           )}
 
@@ -147,7 +169,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               >
                 account_balance_wallet
               </span>
-              <span className="font-label-bold text-label-bold">Financeiro</span>
+              {!isCollapsed && <span className="font-label-bold text-label-bold">Financeiro</span>}
             </button>
           )}
 
@@ -161,19 +183,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
             >
               warning
             </span>
-            <span className="font-label-bold text-label-bold flex-1">Alertas</span>
-            {alertCount > 0 && (
+            {!isCollapsed && <span className="font-label-bold text-label-bold flex-1">Alertas</span>}
+            {!isCollapsed && alertCount > 0 && (
               <span className="px-2 py-0.5 text-[10px] bg-[#f59e0b] text-white font-bold rounded-full">
                 {alertCount}
               </span>
             )}
+            {isCollapsed && alertCount > 0 && (
+              <span className="absolute top-2 right-2 w-2 h-2 bg-[#f59e0b] rounded-full"></span>
+            )}
           </button>
 
-          <div className="pt-3 pb-1 px-3">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-              Infraestrutura (Container)
-            </span>
-          </div>
+          {!isCollapsed && (
+            <div className="pt-3 pb-1 px-3">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                Infraestrutura (Container)
+              </span>
+            </div>
+          )}
 
           {hasAccess('usuarios_ler') && (
             <button
@@ -186,7 +213,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               >
                 group
               </span>
-              <span className="font-label-bold text-label-bold">Usuários</span>
+              {!isCollapsed && <span className="font-label-bold text-label-bold">Usuários</span>}
             </button>
           )}
 
@@ -201,7 +228,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               >
                 admin_panel_settings
               </span>
-              <span className="font-label-bold text-label-bold">Matriz Acessos</span>
+              {!isCollapsed && <span className="font-label-bold text-label-bold">Matriz Acessos</span>}
             </button>
           )}
 
@@ -216,7 +243,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               >
                 policy
               </span>
-              <span className="font-label-bold text-label-bold">Auditoria</span>
+              {!isCollapsed && <span className="font-label-bold text-label-bold">Auditoria</span>}
             </button>
           )}
 
@@ -231,7 +258,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               >
                 tune
               </span>
-              <span className="font-label-bold text-label-bold">Parâmetros</span>
+              {!isCollapsed && <span className="font-label-bold text-label-bold">Parâmetros</span>}
             </button>
           )}
         </nav>
@@ -239,28 +266,31 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <div className="mt-auto pt-4 border-t border-[#c0c7d6] space-y-1">
           <button
             onClick={onOpenNovoChamado}
-            className="w-full bg-[#005daa] text-white rounded-lg p-3 mb-3 font-label-bold flex items-center justify-center gap-2 hover:bg-[#0075d5] active:scale-[0.98] transition-all shadow-sm group"
+            className={`w-full bg-[#005daa] text-white rounded-lg p-3 mb-3 font-label-bold flex items-center ${isCollapsed ? 'justify-center' : 'justify-center gap-2'} hover:bg-[#0075d5] active:scale-[0.98] transition-all shadow-sm group`}
+            title="Novo Chamado"
           >
             <span className="material-symbols-outlined text-[18px]">add</span>
-            <span>Novo Chamado</span>
+            {!isCollapsed && <span>Novo Chamado</span>}
           </button>
 
           <button
             onClick={onOpenNovoChamado}
-            className="w-full text-left flex items-center gap-2 text-[#404753] p-2.5 hover:bg-[#eceef0] transition-all rounded-lg"
+            className={`w-full text-left flex items-center ${isCollapsed ? 'justify-center p-2.5' : 'gap-2 p-2.5'} text-[#404753] hover:bg-[#eceef0] transition-all rounded-lg`}
+            title="Suporte"
           >
             <span className="material-symbols-outlined text-[20px]">help</span>
-            <span className="font-label-bold text-label-bold">Suporte</span>
+            {!isCollapsed && <span className="font-label-bold text-label-bold">Suporte</span>}
           </button>
 
           <button
             onClick={onLogout}
-            className="w-full text-left flex items-center gap-2 text-[#ef4444] p-2.5 hover:bg-[#fef2f2] transition-all rounded-lg group"
+            className={`w-full text-left flex items-center ${isCollapsed ? 'justify-center p-2.5' : 'gap-2 p-2.5'} text-[#ef4444] hover:bg-[#fef2f2] transition-all rounded-lg group`}
+            title="Logout"
           >
             <span className="material-symbols-outlined text-[20px] group-hover:-translate-x-0.5 transition-transform">
               logout
             </span>
-            <span className="font-label-bold text-label-bold">Logout</span>
+            {!isCollapsed && <span className="font-label-bold text-label-bold">Logout</span>}
           </button>
         </div>
       </aside>

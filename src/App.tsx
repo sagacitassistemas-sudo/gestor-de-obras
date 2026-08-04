@@ -75,6 +75,7 @@ export default function App() {
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
   // Fetch effective permissions after login
   React.useEffect(() => {
@@ -262,52 +263,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#f7f9fb] text-[#191c1e] flex flex-col font-body-md">
-      {/* Screen Switcher Bar for Quick Demo Navigation */}
-      <div className="bg-[#005daa] text-white py-1.5 px-4 text-[12px] flex items-center justify-between font-label-bold z-50 border-b border-[#0075d5]">
-        <div className="flex items-center gap-2">
-          <span className="material-symbols-outlined text-[16px]">verified_user</span>
-          <span className="hidden sm:inline">Firebase Container Auth Demo (MFA & Custom Claims Ativos)</span>
-        </div>
-        <div className="flex gap-1.5 sm:gap-2">
-          <button
-            onClick={() => setIsAuthDebugOpen(true)}
-            className="px-2.5 py-0.5 bg-[#10b981] text-white font-bold rounded text-[11px] hover:bg-[#059669] flex items-center gap-1 cursor-pointer"
-          >
-            <span className="material-symbols-outlined text-[14px]">token</span>
-            <span>Token Inspector</span>
-          </button>
-          <button
-            onClick={() => setActiveTab('dashboard')}
-            className={`px-2.5 py-0.5 rounded text-[11px] sm:text-[12px] transition-colors ${
-              activeTab === 'dashboard' ? 'bg-white text-[#005daa] font-bold' : 'hover:bg-white/10'
-            }`}
-          >
-            Visão Geral
-          </button>
-          <button
-            onClick={() => setActiveTab('financeiro')}
-            className={`px-2.5 py-0.5 rounded text-[11px] sm:text-[12px] transition-colors ${
-              activeTab === 'financeiro' ? 'bg-white text-[#005daa] font-bold' : 'hover:bg-white/10'
-            }`}
-          >
-            DRE Financeiro
-          </button>
-          <button
-            onClick={() => setActiveTab('onboarding')}
-            className={`px-2.5 py-0.5 rounded text-[11px] sm:text-[12px] transition-colors ${
-              activeTab === 'onboarding' ? 'bg-white text-[#005daa] font-bold' : 'hover:bg-white/10'
-            }`}
-          >
-            Onboarding
-          </button>
-          <button
-            onClick={() => setActiveTab('login')}
-            className="px-2.5 py-0.5 rounded text-[11px] sm:text-[12px] hover:bg-white/10 opacity-80"
-          >
-            Login 2FA
-          </button>
-        </div>
-      </div>
+
 
       {/* Side Navigation Sidebar */}
       <Sidebar
@@ -320,10 +276,59 @@ export default function App() {
         onCloseMobile={() => setIsMobileMenuOpen(false)}
         permissions={effectivePermissions}
         userRole={user.role}
+        isCollapsed={isSidebarCollapsed}
+        onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
       />
 
       {/* Main Layout Container */}
-      <div className="md:ml-64 min-h-screen flex flex-col flex-1">
+      <div className={`${isSidebarCollapsed ? 'md:ml-20' : 'md:ml-64'} min-h-screen flex flex-col flex-1 transition-all duration-300`}>
+        {/* Screen Switcher Bar for Quick Demo Navigation */}
+        <div className="bg-[#005daa] text-white py-1.5 px-4 text-[12px] flex items-center justify-between font-label-bold z-50 border-b border-[#0075d5]">
+          <div className="flex items-center gap-2">
+            <span className="material-symbols-outlined text-[16px]">verified_user</span>
+            <span className="hidden sm:inline">Firebase Container Auth Demo (MFA & Custom Claims Ativos)</span>
+          </div>
+          <div className="flex gap-1.5 sm:gap-2">
+            <button
+              onClick={() => setIsAuthDebugOpen(true)}
+              className="px-2.5 py-0.5 bg-[#10b981] text-white font-bold rounded text-[11px] hover:bg-[#059669] flex items-center gap-1 cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-[14px]">token</span>
+              <span>Token Inspector</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('dashboard')}
+              className={`px-2.5 py-0.5 rounded text-[11px] sm:text-[12px] transition-colors ${
+                activeTab === 'dashboard' ? 'bg-white text-[#005daa] font-bold' : 'hover:bg-white/10'
+              }`}
+            >
+              Visão Geral
+            </button>
+            <button
+              onClick={() => setActiveTab('financeiro')}
+              className={`px-2.5 py-0.5 rounded text-[11px] sm:text-[12px] transition-colors ${
+                activeTab === 'financeiro' ? 'bg-white text-[#005daa] font-bold' : 'hover:bg-white/10'
+              }`}
+            >
+              DRE Financeiro
+            </button>
+            <button
+              onClick={() => setActiveTab('onboarding')}
+              className={`px-2.5 py-0.5 rounded text-[11px] sm:text-[12px] transition-colors ${
+                activeTab === 'onboarding' ? 'bg-white text-[#005daa] font-bold' : 'hover:bg-white/10'
+              }`}
+            >
+              Onboarding
+            </button>
+            <button
+              onClick={() => setActiveTab('login')}
+              className="px-2.5 py-0.5 rounded text-[11px] sm:text-[12px] hover:bg-white/10 opacity-80"
+            >
+              Login 2FA
+            </button>
+          </div>
+        </div>
+
         <Header
           activeTab={activeTab}
           user={user}

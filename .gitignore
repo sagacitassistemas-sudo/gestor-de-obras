@@ -27,3 +27,6 @@ patch_*.mjs
 add-checks.*
 vercel-logs.txt
 __pycache__/
+
+# Documentação
+docs/
