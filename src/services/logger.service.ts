@@ -51,6 +51,10 @@ export async function logSystemError(
   }
 ) {
   try {
+    if (process.env.NODE_ENV === 'test') {
+      return; // Prevenir poluição do banco de dados durante a execução dos testes
+    }
+    
     if (supabaseAdmin) {
       const { error } = await supabaseAdmin.from("system_error_log").insert([params]);
       if (error) console.error("[Compliance] Erro ao registrar falha do sistema:", error);
