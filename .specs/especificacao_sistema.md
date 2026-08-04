@@ -43,10 +43,11 @@ flowchart TD
   - `empresa_id` / `entidade_id`: Vínculo a uma empresa/fornecedor (ex: `GER-2026-SYS` ou `SUP-9823-STORAGE`).
   - `perfil`: Papel do usuário (`ADMIN`, `GESTOR`, `FINANCEIRO`, `FORNECEDOR`, `VISITANTE`).
   - `mfa_verified`: Flag indicando validação de duplo fator.
+- **Sincronismo Firebase ↔ Supabase (`claims_pendentes`)**: Toda edição de usuário no backend ativa a flag `claims_pendentes = true` na tabela `usuarios`. No próximo login ou renovação da sessão, a rotina `ensureUserExists` identifica a flag, força a recarga das custom claims atualizadas diretamente no Firebase Admin SDK e desliga a flag, garantindo sincronismo bidirecional seguro (contornando restrições do Vercel sem acesso local a credenciais do Firebase). Há também um endpoint manual (`POST /api/auth/sync-claims`) acionado por um botão na UI para forçar esse sincronismo sob demanda.
 
 ### 1.2. Camada de Autorização (AuthZ & Supabase JWT Handoff)
 - **Base Proprietária (PostgreSQL / Supabase)**: Assume 100% da responsabilidade sobre regras de negócio e autorização de operações CRUD.
-- **Cliente Escopado por JWT Handoff (`supabase.auth.setSession`)**: O backend Express utiliza a biblioteca `jsonwebtoken` para assinar um JWT contendo as claims de negócio usando o segredo `SUPABASE_JWT_SECRET`. Este token é devolvido ao frontend após a autenticação e injetado diretamente no Cliente Supabase via `supabase.auth.setSession()`.
+- **Cliente Escopado por JWT Handoff (`supabase.auth.setSession`)**: O backend Express utiliza a biblioteca `jsonwebtoken` para assinar um JWT contendo as claims de negócio usando o segredo `SUPABASE_JWT_SECRET`. Este token é devolvido ao frontend após a autenticação e injetado diretamente no Cliente Supabase via `supabase.auth.setSession()`. O Tempo de Vida (TTL) do JWT de sessão é de **4 horas** (reduzido para acelerar o sincronismo e garantir maior segurança), enquanto o ticket temporário MFA possui TTL de **10 minutos**. Esses valores de configuração são controlados globalmente via `SYSTEM_PARAMS`.
 - **Segurança de Acesso (Row-Level Security - RLS Nativo)**: O isolamento multitenant de dados é forçado nativamente pelo PostgreSQL via RLS:
   - Leituras (`SELECT`) validam se `contrato_id = (current_setting('request.jwt.claims', true)::jsonb ->> 'contrato_id')`.
   - Mutações (`INSERT`, `UPDATE`, `DELETE`) validam adicionalmente o perfil ou as permissões efetivas computadas.
@@ -145,6 +146,7 @@ Cadastro central de usuários autorizados e atribuição de papéis no tenant.
 - `perfil` (VARCHAR): Papel no sistema (`ADMIN`, `GESTOR`, `FINANCEIRO`, `FORNECEDOR`, `VISITANTE`).
 - `status` (VARCHAR): Estado da conta (`ATIVO`, `BLOQUEADO`, `INATIVO`).
 - `foto_url` (VARCHAR): URL da imagem de perfil.
+- `claims_pendentes` (BOOLEAN): Flag de sincronização que indica se as custom claims do usuário devem ser reinjetadas no Firebase Admin SDK durante o próximo login (Default: FALSE).
 
 #### Tabela `permissoes_contratante` (Teto Global)
 - `contrato_id` (VARCHAR, PK): Identificador do tenant.
@@ -197,3 +199,9 @@ Painel interativo e hierárquico organizado em **4 Abas de Configuração**:
 2. **2. Por Tipo**: Definição dos Templates padrão (`ADMIN`, `GESTOR`, `FINANCEIRO`, `FORNECEDOR`, `VISITANTE`).
 3. **3. Por Empresa**: Definição dos Tetos aplicados a empresas fornecedoras cadastradas na base. Dropdown conectado à API `/api/empresas`.
 4. **4. Por Usuário**: Ajuste de permissões individuais por operador. Dropdown conectado à API `/api/usuarios`.
+
+### 4.7. Parâmetros do Sistema (`ParametrosView`)
+Interface global de configuração (`/api/parametros`) acessível unicamente por Administradores (`ADMIN`), permitindo edições dinâmicas e em tempo de execução dos **`SYSTEM_PARAMS`**:
+- **Autenticação**: Ajuste de tempo da Sessão JWT (ex: `4h`) e Validade do Ticket MFA (ex: `10m`).
+- **Compliance / Logs**: Dias de retenção do Audit Log (registro de trilha) e do Error Log.
+- **Sincronismo**: Toggle para habilitar ou desabilitar o sincronismo automatizado de claims no login. Alterações nessa tela geram eventos automáticos na auditoria do sistema.
