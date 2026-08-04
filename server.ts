@@ -104,7 +104,7 @@ async function ensureUserExists(
   const isDbEmpty = !count || count === 0;
 
   const contrato_id = "CTR-2026-SYS";
-  const empresa_id = isDbEmpty ? "GER-2026-SYS" : "SEM-EMPRESA";
+  const empresa_id = isDbEmpty ? "GER-2026-SYS" : null;
   const perfil = isDbEmpty ? "ADMIN" : "VISITANTE";
   const nome = token.nome || userEmail.split('@')[0];
 
@@ -417,7 +417,7 @@ function startServer() {
         } else {
           // Auto-register unregistered users as VISITANTE under CTR-2026-SYS
           contrato_id = "CTR-2026-SYS";
-          empresa_id = "SEM-EMPRESA";
+          empresa_id = null;
           perfil = "VISITANTE";
           entidade_id = "SEM-ENTIDADE";
 
@@ -443,7 +443,7 @@ function startServer() {
           if (tipoData) {
             const newPerms = { ...tipoData };
             delete newPerms.id; delete newPerms.perfil; delete newPerms.created_at; delete newPerms.updated_at;
-            newPerms.usuario_uid = uid; newPerms.empresa_id = "SEM-EMPRESA";
+            newPerms.usuario_uid = uid; newPerms.empresa_id = null;
             await supabase.from("permissoes_usuario").insert([newPerms]);
           }
           console.log(`[OAuth Auto-Register] Registered user ${userEmail} as VISITANTE.`);
@@ -458,7 +458,7 @@ function startServer() {
           empresa_id = "GER-2026-SYS";
           entidade_id = "GER-2026-SYS";
         } else {
-          empresa_id = userData.empresa_id || "SEM-EMPRESA";
+          empresa_id = userData.empresa_id || null;
           entidade_id = userData.entidade_id || "SEM-ENTIDADE";
         }
       }
@@ -1875,7 +1875,8 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
       if (error) return res.status(500).json({ error: error.message });
       return res.json({ usuarios: data || [] });
     } catch (err) {
-      return res.status(500).json({ error: "Internal Error" });
+      console.error("GET /api/usuarios erro:", err);
+      return res.status(500).json({ error: err instanceof Error ? err.message : "Internal Error" });
     }
   });
 
@@ -1949,7 +1950,7 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
       // Sync custom claims in Firebase Admin SDK if available
       try {
         const adminAuth = getAdminAuth();
-        if (adminAuth) {
+        if (adminAuth && typeof adminAuth.setCustomUserClaims === 'function') {
           await adminAuth.setCustomUserClaims(uid, {
             perfil: userPerfil,
             contrato_id: tenantId,

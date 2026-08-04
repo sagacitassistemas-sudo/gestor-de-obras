@@ -152,6 +152,11 @@ function buildQuery(tableName: string) {
       return q; // chainable
     },
 
+    or(query: string) {
+      // Basic mock: does nothing for now but prevents crashing
+      return q; 
+    },
+
     single() {
       const results = applyFilters();
       if (!results[0]) return Promise.resolve({ data: null, error: { message: 'Not found', code: 'PGRST116' } });
