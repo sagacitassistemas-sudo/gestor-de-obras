@@ -40,6 +40,7 @@ import { UsuariosView } from './components/UsuariosView';
 import { MatrizAcessosView } from './components/MatrizAcessosView';
 import { ContratosObraView } from './components/ContratosObraView';
 import { AuditLogView } from './components/AuditLogView';
+import { ParametrosView } from './components/ParametrosView';
 
 import { NovoChamadoModal } from './components/NovoChamadoModal';
 import { ProcessamentoNotasDrawer } from './components/ProcessamentoNotasDrawer';
@@ -112,6 +113,7 @@ export default function App() {
       case 'usuarios': return !!effectivePermissions.usuarios_ler;
       case 'matriz-acesso': return user.role === 'GESTOR' || user.role === 'ADMIN';
       case 'audit-log': return user.role === 'ADMIN';
+      case 'parametros': return user.role === 'ADMIN';
       case 'financeiro': return !!effectivePermissions.financeiro_ler;
       default: return true;
     }
@@ -424,6 +426,16 @@ export default function App() {
             ) : (
               <div className="p-8 text-center bg-white rounded-xl border border-gray-200">
                 Acesso Restrito: A Trilha de Auditoria é restrita a administradores do sistema.
+              </div>
+            )
+          )}
+
+          {activeTab === 'parametros' && (
+            hasAccess('parametros') ? (
+              <ParametrosView authSession={authSession} />
+            ) : (
+              <div className="p-8 text-center bg-white rounded-xl border border-gray-200">
+                Acesso Restrito: Os Parâmetros do sistema são restritos a administradores.
               </div>
             )
           )}

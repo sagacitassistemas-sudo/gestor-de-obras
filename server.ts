@@ -15,6 +15,22 @@ import { FirebaseCustomClaims } from "./src/types/firebase.types";
 import { parseEapMarkdown, simulateEapTestEnvironment, executeEapImport, compareEapCodes } from "./src/services/eapImporter.service";
 import { logAudit, logSystemError } from "./src/services/logger.service";
 
+// ==========================================
+// PARÂMETROS CENTRAIS DO SISTEMA
+// Todos os tempos e limiares configuráveis estão aqui.
+// A tela de Parâmetros (admin) lê e atualiza esses valores via /api/parametros.
+// ==========================================
+export const SYSTEM_PARAMS = {
+  // Autenticação
+  JWT_SESSION_TTL: "4h" as const,         // Duração da sessão do usuário logado
+  JWT_MFA_TICKET_TTL: "10m" as const,     // Duração do ticket de desafio MFA/2FA
+  // Compliance / Retenção de Logs
+  AUDIT_LOG_RETENTION_DAYS: 30,  // Dias de retenção do audit_log (CRUD/eventos)
+  ERROR_LOG_RETENTION_DAYS: 30,  // Dias de retenção do system_error_log (falhas backend)
+  // Sincronismo
+  CLAIMS_SYNC_ENABLED: true,     // Ativa sincronismo automático de claims no login
+};
+
 // Helper function to create a scoped Supabase client with a custom JWT
 function getSupabaseClient(req: AuthenticatedRequest): SupabaseClient | null {
   if (!supabaseUrl || !supabaseAnonKey || !req.decodedToken) return null;
@@ -100,19 +116,34 @@ async function ensureUserExists(
       }
     }
 
-    // Sync custom claims for existing user on login
-    try {
-      const adminAuth = getAdminAuth();
-      if (adminAuth && typeof adminAuth.setCustomUserClaims === 'function') {
-        await adminAuth.setCustomUserClaims(token.uid, {
-          perfil: existingUser.perfil,
+    // Sync custom claims for existing user on every login (SYSTEM_PARAMS.CLAIMS_SYNC_ENABLED)
+    // Also clears the claims_pendentes flag set by POST /api/usuarios when profile changes
+    if (SYSTEM_PARAMS.CLAIMS_SYNC_ENABLED) {
+      try {
+        const adminAuth = getAdminAuth();
+        if (adminAuth && typeof adminAuth.setCustomUserClaims === 'function') {
+          await adminAuth.setCustomUserClaims(token.uid, {
+            perfil: existingUser.perfil,
+            contrato_id: existingUser.contrato_id,
+            empresa_id: existingUser.empresa_id,
+            entidade_id: existingUser.empresa_id
+          });
+          // Clear the pending claims flag if it was set
+          if (existingUser.claims_pendentes) {
+            await client.from('usuarios').update({ claims_pendentes: false }).eq('uid', token.uid);
+          }
+          console.log(`[ensureUserExists] Claims sincronizados para ${userEmail} (perfil: ${existingUser.perfil})`);
+        }
+      } catch (claimsErr) {
+        console.error("[ensureUserExists] Erro ao sincronizar claims do usuário existente:", claimsErr);
+        await logSystemError({
+          usuario_uid: token.uid,
           contrato_id: existingUser.contrato_id,
-          empresa_id: existingUser.empresa_id,
-          entidade_id: existingUser.empresa_id
+          cod_evento: "CLAIMS_SYNC_FAIL",
+          rota: "ensureUserExists",
+          mensagem: `Falha ao sincronizar claims Firebase: ${claimsErr}`
         });
       }
-    } catch (claimsErr) {
-      console.error("[ensureUserExists] Erro ao sincronizar claims do usuário existente:", claimsErr);
     }
 
     return existingUser;
@@ -336,7 +367,7 @@ if (supabaseUrl) {
         };
 
         const jwtSecret = process.env.SUPABASE_JWT_SECRET || "super-secret-jwt-token-with-at-least-32-characters-long";
-        const mfaTicket = jwt.sign(mfaPayload, jwtSecret, { expiresIn: '10m' });
+        const mfaTicket = jwt.sign(mfaPayload, jwtSecret, { expiresIn: SYSTEM_PARAMS.JWT_MFA_TICKET_TTL });
 
         console.log(`[MFA 2FA Code Generated for ${email}]: ${code} (Ticket: ${mfaTicket})`);
 
@@ -522,7 +553,7 @@ if (supabaseUrl) {
             app_metadata: { provider: targetProvider, providers: [targetProvider] },
             user_metadata: customClaims,
             ...customClaims
-          }, jwtSecret, { expiresIn: '24h' });
+          }, jwtSecret, { expiresIn: SYSTEM_PARAMS.JWT_SESSION_TTL });
           console.log(`[Supabase JWT Generated via OAuth SSO ${targetProvider} for UID ${uid}]`);
         } catch (tokErr) {
           console.error("Failed to generate Supabase JWT for OAuth:", tokErr);
@@ -628,7 +659,7 @@ if (supabaseUrl) {
             app_metadata: { provider: 'email', providers: ['email'] },
             user_metadata: customClaims,
             ...customClaims
-          }, jwtSecret, { expiresIn: '24h' });
+          }, jwtSecret, { expiresIn: SYSTEM_PARAMS.JWT_SESSION_TTL });
           console.log(`[Supabase JWT Generated via MFA Step 2 for UID ${uid}]`);
         } catch (tokErr) {
           console.error("Failed to generate Supabase JWT:", tokErr);
@@ -861,6 +892,97 @@ if (supabaseUrl) {
         console.error("[Sync User] Erro interno:", err);
         return res.status(500).json({ error: "Internal Server Error" });
       }
+    });
+
+    // 6b. Manual Claims Sync — botão "Sincronizar Firebase" na tela de Usuários (admin-only)
+    app.post("/api/auth/sync-claims", verifyFirebaseJWT, async (req: AuthenticatedRequest, res) => {
+      try {
+        if (req.decodedToken?.perfil !== 'ADMIN') {
+          return res.status(403).json({ error: "Acesso negado: somente admin pode sincronizar claims." });
+        }
+
+        const { uid: targetUid } = req.body;
+        if (!targetUid) return res.status(400).json({ error: "uid é obrigatório." });
+
+        // Read user's current state from Supabase (source of truth)
+        const { data: usuario, error: userErr } = await supabase!
+          .from('usuarios')
+          .select('perfil, contrato_id, empresa_id, email')
+          .eq('uid', targetUid)
+          .maybeSingle();
+
+        if (userErr || !usuario) {
+          return res.status(404).json({ error: "Usuário não encontrado no Supabase." });
+        }
+
+        // Push to Firebase Admin
+        const adminAuth = getAdminAuth();
+        if (!adminAuth || typeof adminAuth.setCustomUserClaims !== 'function') {
+          return res.status(503).json({ error: "Firebase Admin não disponível neste ambiente." });
+        }
+
+        await adminAuth.setCustomUserClaims(targetUid, {
+          perfil: usuario.perfil,
+          contrato_id: usuario.contrato_id,
+          empresa_id: usuario.empresa_id,
+          entidade_id: usuario.empresa_id
+        });
+
+        // Clear claims_pendentes flag
+        await supabase!.from('usuarios').update({ claims_pendentes: false }).eq('uid', targetUid);
+
+        await logAudit(supabase!, {
+          contrato_id: req.decodedToken?.contrato_id || "CTR-2026-SYS",
+          usuario_uid: req.decodedToken?.uid,
+          usuario_email: req.decodedToken?.email,
+          cod_evento: "USR_UPDATE",
+          descricao: `Claims Firebase sincronizados manualmente para ${usuario.email} (perfil: ${usuario.perfil})`,
+          entidade_tipo: "usuario",
+          entidade_id: targetUid
+        });
+
+        return res.json({ success: true, mensagem: `Claims de ${usuario.email} sincronizados com Firebase.` });
+      } catch (err: any) {
+        await logSystemError({
+          usuario_uid: req.decodedToken?.uid,
+          contrato_id: req.decodedToken?.contrato_id,
+          cod_evento: "CLAIMS_SYNC_FAIL",
+          rota: "/api/auth/sync-claims",
+          mensagem: err?.message || String(err)
+        });
+        return res.status(500).json({ error: "Erro ao sincronizar claims." });
+      }
+    });
+
+    // 6c. Parâmetros do Sistema — GET para leitura, PUT para atualização (admin-only)
+    app.get("/api/parametros", verifyFirebaseJWT, async (req: AuthenticatedRequest, res) => {
+      if (req.decodedToken?.perfil !== 'ADMIN') {
+        return res.status(403).json({ error: "Acesso negado." });
+      }
+      return res.json({ parametros: SYSTEM_PARAMS });
+    });
+
+    app.put("/api/parametros", verifyFirebaseJWT, async (req: AuthenticatedRequest, res) => {
+      if (req.decodedToken?.perfil !== 'ADMIN') {
+        return res.status(403).json({ error: "Acesso negado." });
+      }
+      const allowed = Object.keys(SYSTEM_PARAMS);
+      const updates = req.body as Record<string, unknown>;
+      for (const key of Object.keys(updates)) {
+        if (allowed.includes(key)) {
+          (SYSTEM_PARAMS as any)[key] = updates[key];
+        }
+      }
+      await logAudit(supabase!, {
+        contrato_id: req.decodedToken?.contrato_id || "CTR-2026-SYS",
+        usuario_uid: req.decodedToken?.uid,
+        usuario_email: req.decodedToken?.email,
+        cod_evento: "USR_UPDATE",
+        descricao: `Parâmetros do sistema atualizados: ${JSON.stringify(updates)}`,
+        entidade_tipo: "sistema",
+        entidade_id: "SYSTEM_PARAMS"
+      });
+      return res.json({ success: true, parametros: SYSTEM_PARAMS });
     });
 
     // 7. Inspect Custom Claims (JWT Token Inspector)
@@ -1935,7 +2057,8 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
           perfil: perfil || 'FORNECEDOR',
           status: status || 'ATIVO',
           empresa_id: empresa_id || null,
-          updated_at: new Date().toISOString()
+          updated_at: new Date().toISOString(),
+          claims_pendentes: true  // Invalidates Firebase token — will re-sync on next login
         };
 
         const { data, error } = await saveRecord(client, "usuarios", upsertData, { idField: "uid", onConflict: "uid" });

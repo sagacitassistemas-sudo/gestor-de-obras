@@ -296,6 +296,28 @@ export const UsuariosView: React.FC<UsuariosViewProps> = ({ authSession }) => {
     toggleBackend();
   };
 
+  // Sincronizar Claims Firebase manualmente para um usuário
+  const handleSyncClaims = async (user: UserRecord) => {
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      const token = session?.session?.access_token || authSession?.idToken;
+      const res = await fetch('/api/auth/sync-claims', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ uid: user.id })
+      });
+      const json = await res.json();
+      if (res.ok) {
+        showNotification('success', json.mensagem || `Claims de "${user.displayName}" sincronizados com Firebase.`);
+        fetchUsers();
+      } else {
+        showNotification('error', json.error || 'Erro ao sincronizar claims.');
+      }
+    } catch (err) {
+      showNotification('error', 'Falha de rede ao sincronizar claims.');
+    }
+  };
+
   // Export Users as CSV
   const handleExportCSV = () => {
     const headers = ['ID', 'Nome', 'Email', 'Perfil', 'Contrato_ID', 'Empresa_ID', 'Empresa_Nome', 'MFA_Ativo', 'Status', 'Criado_Em'];
@@ -628,6 +650,16 @@ export const UsuariosView: React.FC<UsuariosViewProps> = ({ authSession }) => {
                           title="Gerenciar Permissões (CRUD Granular)"
                         >
                           <span className="material-symbols-outlined text-base">admin_panel_settings</span>
+                        </button>
+
+                        {/* Sync Firebase Claims */}
+                        <button
+                          id={`btn-sync-claims-${item.id}`}
+                          onClick={() => handleSyncClaims(item)}
+                          className="p-1.5 text-slate-500 hover:text-sky-600 hover:bg-sky-50 rounded-md transition-all cursor-pointer"
+                          title="Sincronizar Perfil com Firebase (forçar re-leitura das permissões)"
+                        >
+                          <span className="material-symbols-outlined text-base">sync</span>
                         </button>
 
                         {/* Delete User */}

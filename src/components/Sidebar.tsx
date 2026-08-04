@@ -219,6 +219,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <span className="font-label-bold text-label-bold">Auditoria</span>
             </button>
           )}
+
+          {isAdmin && (
+            <button
+              onClick={() => handleNavClick('parametros')}
+              className={`w-full text-left ${navItemClass('parametros')}`}
+            >
+              <span
+                className="material-symbols-outlined"
+                style={{ fontVariationSettings: activeTab === 'parametros' ? "'FILL' 1" : "'FILL' 0" }}
+              >
+                tune
+              </span>
+              <span className="font-label-bold text-label-bold">Parâmetros</span>
+            </button>
+          )}
         </nav>
 
         <div className="mt-auto pt-4 border-t border-[#c0c7d6] space-y-1">
