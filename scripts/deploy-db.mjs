@@ -5,17 +5,17 @@ const isVercel = process.env.VERCEL === '1' || process.env.CI === 'true' || proc
 try {
   if (!isVercel) {
     console.log('Ambiente local detectado. Executando db push --linked...');
-    execSync('npx --no-install supabase db push --linked', { stdio: 'inherit' });
+    execSync('npx --yes supabase db push --linked', { stdio: 'inherit' });
   } else {
     console.log('Ambiente Vercel (CI) detectado. Verificando credenciais para sincronismo do banco...');
     
     if (process.env.SUPABASE_DB_URL) {
       console.log('Sincronizando banco usando SUPABASE_DB_URL...');
-      execSync(`npx --no-install supabase db push --db-url "${process.env.SUPABASE_DB_URL}"`, { stdio: 'inherit' });
+      execSync(`npx --yes supabase db push --db-url "${process.env.SUPABASE_DB_URL}"`, { stdio: 'inherit' });
     } 
     else if (process.env.SUPABASE_PROJECT_ID && process.env.SUPABASE_ACCESS_TOKEN) {
       console.log('Sincronizando banco usando SUPABASE_PROJECT_ID...');
-      execSync(`npx --no-install supabase db push --project-ref ${process.env.SUPABASE_PROJECT_ID}`, { stdio: 'inherit' });
+      execSync(`npx --yes supabase db push --project-ref ${process.env.SUPABASE_PROJECT_ID}`, { stdio: 'inherit' });
     } 
     else {
       console.warn('\n======================================================');
