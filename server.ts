@@ -1751,6 +1751,42 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
       }
     });
 
+    // 1.5 Tipo de Perfil (Role)
+    app.get("/api/permissoes/tipo", verifyFirebaseJWT, async (req: AuthenticatedRequest, res) => {
+      if (!req.decodedToken) return res.status(401).json({ error: "Acesso não autorizado." });
+      try {
+        const client = getSupabaseClient(req);
+        if (!client) return res.status(500).json({ error: "Supabase não configurado." });
+
+        const { data, error } = await client
+          .from("permissoes_tipo")
+          .select("*");
+
+        if (error) return res.status(400).json({ error: error.message });
+        return res.json({ success: true, data });
+      } catch (err: any) {
+        return res.status(500).json({ error: err.message });
+      }
+    });
+
+    app.post("/api/permissoes/tipo", verifyFirebaseJWT, async (req: AuthenticatedRequest, res) => {
+      if (!req.decodedToken) return res.status(401).json({ error: "Acesso não autorizado." });
+      try {
+        const client = getSupabaseClient(req);
+        if (!client) return res.status(500).json({ error: "Supabase não configurado." });
+
+        const payload = { ...req.body, contrato_id: req.decodedToken.contrato_id };
+        delete payload.id; // avoid id conflict
+
+        const { data, error } = await saveRecord(client, "permissoes_tipo", payload, { onConflict: "contrato_id, perfil", single: false });
+
+        if (error) return res.status(400).json({ error: error.message });
+        return res.json({ success: true, data: data?.[0] });
+      } catch (err: any) {
+        return res.status(500).json({ error: err.message });
+      }
+    });
+
     // 2. Empresas
     app.get("/api/permissoes/empresa", verifyFirebaseJWT, async (req: AuthenticatedRequest, res) => {
       if (!req.decodedToken) return res.status(401).json({ error: "Acesso não autorizado." });
