@@ -11,6 +11,8 @@ export function AuditLogView({ authSession }: AuditLogViewProps) {
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
   const [systemErrors, setSystemErrors] = useState<SystemErrorEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [diagResult, setDiagResult] = useState<{ success: boolean; logs?: string[]; error?: string } | null>(null);
+  const [runningDiag, setRunningDiag] = useState(false);
 
   useEffect(() => {
     fetchLogs();
@@ -39,6 +41,27 @@ export function AuditLogView({ authSession }: AuditLogViewProps) {
     }
   };
 
+  const runDiagnostic = async () => {
+    if (!authSession?.idToken) return;
+    setRunningDiag(true);
+    setDiagResult(null);
+    try {
+      const res = await fetch('/api/diagnostic/persistence', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${authSession.idToken}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      const data = await res.json();
+      setDiagResult(data);
+    } catch (err: any) {
+      setDiagResult({ success: false, error: err.message });
+    } finally {
+      setRunningDiag(false);
+    }
+  };
+
   const getEventBadge = (categoria: string, descricao: string) => {
     switch (categoria) {
       case 'ACESSO':
@@ -64,7 +87,51 @@ export function AuditLogView({ authSession }: AuditLogViewProps) {
           </h1>
           <p className="text-gray-500 mt-2 text-lg">Registro inalterável de atividades e falhas do sistema</p>
         </div>
+        
+        <button
+          onClick={runDiagnostic}
+          disabled={runningDiag}
+          className="bg-[#005daa] text-white px-5 py-2.5 rounded-md font-label-bold flex items-center justify-center gap-2 hover:bg-[#0075d5] transition-colors shadow-sm disabled:opacity-50"
+        >
+          {runningDiag ? (
+            <Clock className="w-5 h-5 animate-spin" />
+          ) : (
+            <Activity className="w-5 h-5" />
+          )}
+          <span>{runningDiag ? 'Executando Pipeline...' : 'Testar Persistência (Diagnóstico)'}</span>
+        </button>
       </div>
+
+      {diagResult && (
+        <div className={`mb-6 p-6 rounded-xl border shadow-sm ${diagResult.success ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+          <div className="flex items-center gap-3 mb-4">
+            {diagResult.success ? (
+              <CheckCircle2 className="w-6 h-6 text-green-600" />
+            ) : (
+              <AlertTriangle className="w-6 h-6 text-red-600" />
+            )}
+            <h3 className={`font-bold text-lg ${diagResult.success ? 'text-green-900' : 'text-red-900'}`}>
+              Resultado do Pipeline de Diagnóstico
+            </h3>
+            <button onClick={() => setDiagResult(null)} className="ml-auto text-gray-500 hover:text-gray-700">
+              <span className="material-symbols-outlined text-[20px]">close</span>
+            </button>
+          </div>
+          
+          <div className="space-y-2 bg-white/50 rounded-lg p-4 font-mono text-sm">
+            {diagResult.logs ? (
+              diagResult.logs.map((log, i) => (
+                <div key={i} className={`flex items-start gap-2 ${log.startsWith('SUCESSO') ? 'text-green-700 font-bold' : log.startsWith('Falha') ? 'text-red-600 font-bold' : 'text-gray-700'}`}>
+                  <span className="text-gray-400 select-none">[{String(i+1).padStart(2, '0')}]</span>
+                  {log}
+                </div>
+              ))
+            ) : (
+              <div className="text-red-600 font-bold">Erro de Execução: {diagResult.error}</div>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
         <div className="border-b border-gray-200">
