@@ -395,7 +395,7 @@ export default function App() {
               <EmpresasView 
                 empresas={empresas}
                 authSession={authSession}
-                onAddEmpresa={(e) => setEmpresas([e, ...empresas])}
+                setEmpresas={setEmpresas}
               />
             ) : <div className="p-8 text-center bg-white rounded-xl border border-gray-200">Acesso Restrito: Sem permissão às Empresas</div>
           )}
