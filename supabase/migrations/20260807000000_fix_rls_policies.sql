@@ -12,11 +12,6 @@ CREATE POLICY tenant_fornecedores ON empresas_fornecedores
     contrato_id = current_setting('request.jwt.claims', true)::json->>'contrato_id'
   );
 
-DROP POLICY IF EXISTS tenant_permissoes ON perfis_permissoes;
-CREATE POLICY tenant_permissoes ON perfis_permissoes
-  FOR ALL USING (
-    contrato_id = current_setting('request.jwt.claims', true)::json->>'contrato_id'
-  );
 
 DROP POLICY IF EXISTS tenant_usuarios ON usuarios;
 CREATE POLICY tenant_usuarios ON usuarios
