@@ -24,5 +24,11 @@
     "noEmit": true,
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true
-  }
+  },
+  "exclude": [
+    "node_modules",
+    "dist",
+    "scratch",
+    "backups"
+  ]
 }

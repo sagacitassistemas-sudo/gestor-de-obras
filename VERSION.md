@@ -1,5 +1,22 @@
 # Histórico de Versões e Releases - Works Manager (Gestor de Obras)
 
+## Versão 1.1.1 (2026-08-07) - Travas de Integridade & Mecanismo Antirregressão
+
+### 🛡️ 1. Pipeline de Verificação Automática de Integridade (`scripts/check-integrity.mjs`)
+- **Paridade entre Frontend e Backend**:
+  - Varredura estática de todas as chamadas `fetch('/api/...')` em componentes React (`src/components/`) para garantir que 100% das rotas possuam handlers correspondentes registrados em `server.ts`.
+- **Prevenção de Polling / Erros COOP no Supabase Client**:
+  - Enforce de `persistSession: false` e `autoRefreshToken: false` em `src/lib/supabaseClient.ts` para evitar conflito com Firebase Auth e erros de `Cross-Origin-Opener-Policy`.
+- **Validação Estrita de Props e Tipos React**:
+  - Integração do `tsc --noEmit` na pipeline para impedir incompatibilidade de props entre `App.tsx` e subcomponentes (`EmpresasView`, `MatrizAcessosView`, etc.).
+- **Integração no NPM**:
+  - Comando `npm run check:integrity` adicionado ao `package.json` e configurado no `npm run lint`.
+
+### 🗄️ 2. Diagnóstico Dinâmico de Persistência em Produção
+- Endpoint `/api/diagnostic/persistence` e botão interativo no painel **Compliance & Auditoria** (`AuditLogView.tsx`) para execução de testes end-to-end de INSERT, SELECT, RLS e DELETE em tempo real.
+
+---
+
 ## Versão 1.1.0 (2026-08-04) - Release de Estabilidade de UI, Permissões e Produção
 
 ### 🖥️ 1. Interface de Usuário & UX (Menu Retrátil)

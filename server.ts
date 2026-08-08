@@ -2499,7 +2499,7 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
           return res.status(403).json({ error: "Acesso negado." });
         }
 
-        const tenantId = req.decodedToken.tenantId;
+        const tenantId = req.decodedToken.contrato_id;
         const testId = `TEST-${Date.now()}`;
         
         let logs: string[] = [];
