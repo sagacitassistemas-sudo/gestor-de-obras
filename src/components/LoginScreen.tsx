@@ -159,12 +159,16 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
 
       if (res.ok && data.session) {
         setOauthPendingConfirm(null);
-        await supabase.auth.setSession({
+        setIsOAuthConfirming(false);
+        supabase.auth.setSession({
           access_token: data.session.idToken,
           refresh_token: data.session.idToken,
+        }).catch((err) => {
+          console.warn('[LoginScreen] supabase.auth.setSession non-blocking warning:', err);
         });
         onLoginSuccess(data.session);
       } else if (!res.ok) {
+        setIsOAuthConfirming(false);
         setOauthPendingConfirm(null);
         auth.signOut();
         setErrorMessage(data.error || 'Erro na validação do usuário no sistema.');
@@ -186,9 +190,11 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
   // ─── MFA Verification Success Handler ───
   const handleMfaVerifySuccess = async (sessionData: AuthSession) => {
     setMfaModalOpen(false);
-    await supabase.auth.setSession({
+    supabase.auth.setSession({
       access_token: sessionData.idToken,
       refresh_token: sessionData.idToken,
+    }).catch((err) => {
+      console.warn('[LoginScreen] supabase.auth.setSession non-blocking warning:', err);
     });
     onLoginSuccess(sessionData);
   };
