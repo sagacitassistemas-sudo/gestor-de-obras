@@ -310,6 +310,12 @@ function startServer() {
   const app = express();
   let PORT = Number(process.env.PORT) || 8500;
 
+  // Header de política de abertura de janelas (COOP) para compatibilidade com Firebase Auth Popup (Google / Microsoft SSO)
+  app.use((_req, res, next) => {
+    res.setHeader("Cross-Origin-Opener-Policy", "same-origin-allow-popups");
+    next();
+  });
+
   app.use(express.json());
 
   // ==========================================
