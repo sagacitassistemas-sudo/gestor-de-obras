@@ -641,10 +641,11 @@ export const CronogramaExecutivoView: React.FC<CronogramaExecutivoViewProps> = (
 
   // ── 9. Configuração das colunas do grid ─────────────────────────────────────
 
-  // Colunas do grid — NÃO incluir coluna WBS manual quando wbs={true} está ativo no Gantt.
-  // A prop wbs={true} injeta automaticamente a coluna $wbs com numeração hierárquica.
+  // Colunas do grid
+  // O id 'id' corresponde ao eap_codigo do banco, garantindo que a EAP seja a primeira coluna.
   // O id 'text' é o campo nativo do SVAR (ITask.text) para o nome da tarefa.
   const columns = [
+    { id: 'id',       header: 'EAP',            width: 80,  resize: true },
     { id: 'text',     header: 'Nome da Tarefa', width: 260, resize: true },
     { id: 'start',    header: 'Início',         width: 100, align: 'center' as const },
     { id: 'duration', header: 'Duração (d)',    width: 85,  align: 'center' as const },
@@ -814,7 +815,7 @@ export const CronogramaExecutivoView: React.FC<CronogramaExecutivoViewProps> = (
               undo={true}            // Ctrl+Z / Ctrl+Y nativos
               zoom={true}            // Ctrl+scroll para zoom
               rollups={true}         // Marcos dos filhos aparecem na barra do pai colapsado
-              wbs={true}             // Exibe coluna WBS automaticamente
+              wbs={false}            // Usando coluna id customizada na primeira posição
               criticalPath={{ type: 'flexible' }}   // Destaca caminho crítico
               markers={todayMarker}  // Linha vertical "Hoje"
               /* ── Hierarquia / collapse automático ── */
