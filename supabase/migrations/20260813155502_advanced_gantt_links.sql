@@ -14,6 +14,7 @@ DECLARE
     v_predecessores_array JSONB;
     v_req_inicio DATE;
     v_max_req_inicio DATE;
+    v_base_inicio DATE;
     matches TEXT[];
 BEGIN
     SELECT data_inicio INTO v_data_inicio_projeto
@@ -41,9 +42,19 @@ BEGIN
                 v_pred_tipo := COALESCE(matches[2], 'FS');
                 v_pred_lag := COALESCE(matches[3], '0')::int;
                 
-                SELECT data_inicio, data_fim INTO v_pred_data_inicio, v_pred_data_fim
+                -- Se o predecessor for um agrupador (macroetapa), obtém o intervalo real dos seus filhos analíticos
+                SELECT MIN(data_inicio), MAX(data_fim) INTO v_pred_data_inicio, v_pred_data_fim
                 FROM itens_eap
-                WHERE projeto_id = NEW.projeto_id AND eap_codigo = v_pred_codigo;
+                WHERE projeto_id = NEW.projeto_id 
+                  AND (eap_codigo = v_pred_codigo OR eap_codigo LIKE v_pred_codigo || '.%')
+                  AND e_analitico = true;
+
+                -- Fallback se for um item analítico direto sem filhos
+                IF v_pred_data_inicio IS NULL OR v_pred_data_fim IS NULL THEN
+                    SELECT data_inicio, data_fim INTO v_pred_data_inicio, v_pred_data_fim
+                    FROM itens_eap
+                    WHERE projeto_id = NEW.projeto_id AND eap_codigo = v_pred_codigo;
+                END IF;
                 
                 IF v_pred_data_inicio IS NOT NULL AND v_pred_data_fim IS NOT NULL THEN
                     v_req_inicio := NULL;
@@ -68,18 +79,24 @@ BEGIN
         END LOOP;
     END IF;
 
+    -- Preserva a data_inicio definida pelo usuário desde que atenda o requisito mínimo de predecessora e projeto!
+    v_base_inicio := COALESCE(NEW.data_inicio, NEW.data_execucao, v_max_req_inicio, v_data_inicio_projeto);
+    
     IF v_max_req_inicio IS NOT NULL THEN
-        NEW.data_inicio := GREATEST(v_max_req_inicio, v_data_inicio_projeto);
+        NEW.data_inicio := GREATEST(v_base_inicio, v_max_req_inicio, v_data_inicio_projeto);
     ELSE
-        NEW.data_inicio := COALESCE(NEW.data_inicio, v_data_inicio_projeto);
+        NEW.data_inicio := GREATEST(v_base_inicio, v_data_inicio_projeto);
     END IF;
 
+    -- Mantém data_execucao sincronizada
+    NEW.data_execucao := NEW.data_inicio;
+
+    -- Calcula data_fim com base na duração estipulada
     NEW.data_fim := NEW.data_inicio + ((NEW.duracao_dias - 1) || ' days')::interval;
 
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
-
 
 CREATE OR REPLACE FUNCTION calc_datas_eap_cascade_trigger()
 RETURNS TRIGGER AS $$
@@ -98,8 +115,40 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Re-cria triggers com a versão avançada das funções acima
--- (as funções foram atualizadas via CREATE OR REPLACE acima)
+-- Trigger para recálculo automático de agrupadores (tarefas sintéticas com e_analitico = false)
+CREATE OR REPLACE FUNCTION sync_summary_eap_dates_trigger()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_proj_id UUID;
+BEGIN
+    v_proj_id := COALESCE(NEW.projeto_id, OLD.projeto_id);
+    IF v_proj_id IS NULL THEN RETURN NULL; END IF;
+
+    UPDATE itens_eap s
+    SET 
+        data_inicio = sub.min_start,
+        data_execucao = sub.min_start,
+        data_fim = sub.max_end,
+        duracao_dias = GREATEST(1, (sub.max_end - sub.min_start + 1))
+    FROM (
+        SELECT 
+            parent.id AS parent_id,
+            MIN(child.data_inicio) AS min_start,
+            MAX(child.data_fim) AS max_end
+        FROM itens_eap parent
+        JOIN itens_eap child ON child.projeto_id = parent.projeto_id 
+                            AND child.eap_codigo LIKE parent.eap_codigo || '.%'
+                            AND child.e_analitico = true
+        WHERE parent.projeto_id = v_proj_id
+          AND parent.e_analitico = false
+        GROUP BY parent.id
+    ) sub
+    WHERE s.id = sub.parent_id
+      AND (s.data_inicio IS DISTINCT FROM sub.min_start OR s.data_fim IS DISTINCT FROM sub.max_end);
+
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS trigger_calc_datas_eap ON itens_eap;
 CREATE TRIGGER trigger_calc_datas_eap
@@ -108,7 +157,6 @@ CREATE TRIGGER trigger_calc_datas_eap
     FOR EACH ROW
     EXECUTE FUNCTION calc_datas_eap_trigger();
 
--- Cascade agora monitora tanto data_fim quanto data_inicio
 DROP TRIGGER IF EXISTS trigger_calc_datas_eap_cascade ON itens_eap;
 CREATE TRIGGER trigger_calc_datas_eap_cascade
     AFTER UPDATE OF data_fim, data_inicio
@@ -116,6 +164,12 @@ CREATE TRIGGER trigger_calc_datas_eap_cascade
     FOR EACH ROW
     EXECUTE FUNCTION calc_datas_eap_cascade_trigger();
 
+DROP TRIGGER IF EXISTS trigger_sync_summary_eap_dates ON itens_eap;
+CREATE TRIGGER trigger_sync_summary_eap_dates
+    AFTER INSERT OR UPDATE OR DELETE
+    ON itens_eap
+    FOR EACH ROW
+    EXECUTE FUNCTION sync_summary_eap_dates_trigger();
+
 -- Forçar recálculo completo de todos os registros existentes
--- para aplicar a nova lógica FS/SS/FF/SF nos dados já salvos
 UPDATE public.itens_eap SET duracao_dias = COALESCE(duracao_dias, 1);

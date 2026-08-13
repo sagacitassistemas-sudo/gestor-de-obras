@@ -48,17 +48,15 @@ function parseSafeDate(dateVal: any, fallback: Date): Date {
     const y = parseInt(parts[0], 10);
     const m = parseInt(parts[1], 10) - 1;
     const d = parseInt(parts[2], 10);
-    if (!isNaN(y) && !isNaN(m) && !isNaN(d)) return new Date(y, m, d);
+    if (!isNaN(y) && !isNaN(m) && !isNaN(d)) return new Date(y, m, d, 12, 0, 0);
   }
   const dt = new Date(dateVal);
-  return isNaN(dt.getTime()) ? fallback : dt;
+  if (isNaN(dt.getTime())) return fallback;
+  return new Date(dt.getFullYear(), dt.getMonth(), dt.getDate(), 12, 0, 0);
 }
 
 /**
- * Converte um Date ou string para "YYYY-MM-DD".
- * Lida com o fato de que o SVAR Gantt pode retornar objetos Date criados
- * internamente com horário 00:00 UTC (ex: ao deserializar de ISO strings),
- * o que em UTC-3 retornaria o dia anterior via getFullYear/getMonth/getDate.
+ * Converte um Date ou string para "YYYY-MM-DD" de forma imune a deslocamentos de fuso horário.
  */
 function toYMD(d: any): string {
   if (!d) return '';
@@ -68,13 +66,6 @@ function toYMD(d: any): string {
   }
   const dt = d instanceof Date ? d : new Date(d);
   if (isNaN(dt.getTime())) return '';
-  // Se foi criado como meia-noite UTC, usar funções UTC
-  if (dt.getUTCHours() === 0 && dt.getUTCMinutes() === 0 && dt.getUTCSeconds() === 0) {
-    const yyyy = dt.getUTCFullYear();
-    const mm = String(dt.getUTCMonth() + 1).padStart(2, '0');
-    const dd = String(dt.getUTCDate()).padStart(2, '0');
-    return `${yyyy}-${mm}-${dd}`;
-  }
   const yyyy = dt.getFullYear();
   const mm = String(dt.getMonth() + 1).padStart(2, '0');
   const dd = String(dt.getDate()).padStart(2, '0');
@@ -338,6 +329,10 @@ export const CronogramaExecutivoView: React.FC<CronogramaExecutivoViewProps> = (
     while (anyChange && iterations < 100) {
       anyChange = false;
       iterations++;
+
+      // Atualiza datas das tarefas agrupadoras antes de checar dependências
+      rollupSummaries(itemsMap, projStart);
+
       itemsMap.forEach(item => {
         if (!item.predecessores?.length) return;
         let maxReqStart: string | null = null;
@@ -366,6 +361,8 @@ export const CronogramaExecutivoView: React.FC<CronogramaExecutivoViewProps> = (
         }
       });
     }
+
+    rollupSummaries(itemsMap, projStart);
     return changed;
   };
 
@@ -421,9 +418,6 @@ export const CronogramaExecutivoView: React.FC<CronogramaExecutivoViewProps> = (
 
   /**
    * Chamado pelo SVAR após qualquer mudança de data/duração em uma tarefa.
-   * A API do SVAR Gantt dispara `update-task` com `{ id, task: Partial<ITask> }`.
-   * O SVAR já trata internamente os summary tasks — apenas precisamos
-   * sincronizar nossas estruturas de dados (rawItems / banco).
    */
   const handleTaskUpdate = (id: string, updatedTask: Partial<ITask>) => {
     const currentItems = rawItemsRef.current;
@@ -436,12 +430,30 @@ export const CronogramaExecutivoView: React.FC<CronogramaExecutivoViewProps> = (
     const item = itemsMap.get(id);
     if (!item) return;
 
+    const oldStart = item.data_inicio ?? item.data_execucao ?? projStart;
+
     // Aplicar a nova start/duration vindas do SVAR ao item
     if (updatedTask.start) {
       const newStart = toYMD(updatedTask.start);
       item.data_inicio = newStart;
       item.data_execucao = newStart;
+
+      // Se for uma tarefa agrupadora/sintética, desloca todos os filhos proporcionalmente!
+      if (!item.e_analitico) {
+        const deltaDays = diffDays(newStart, oldStart);
+        if (deltaDays !== 0) {
+          itemsMap.forEach(child => {
+            if (child.eap_codigo.startsWith(id + '.')) {
+              const childStart = child.data_inicio ?? child.data_execucao ?? projStart;
+              const shifted = addDays(childStart, deltaDays);
+              child.data_inicio = shifted;
+              child.data_execucao = shifted;
+            }
+          });
+        }
+      }
     }
+
     if (updatedTask.duration != null) {
       item.duracao_dias = Math.max(1, updatedTask.duration);
     } else if (updatedTask.start && updatedTask.end) {
@@ -450,11 +462,11 @@ export const CronogramaExecutivoView: React.FC<CronogramaExecutivoViewProps> = (
       item.duracao_dias = Math.max(1, diffDays(e, s) + 1);
     }
 
+    // Rollup das tarefas sintéticas primeiro
+    rollupSummaries(itemsMap, projStart);
+
     // Propagar dependências para os sucessores
     propagateDeps(itemsMap, projStart);
-
-    // Recalcular summary tasks
-    rollupSummaries(itemsMap, projStart);
 
     const updatedList = Array.from(itemsMap.values());
 
@@ -481,7 +493,16 @@ export const CronogramaExecutivoView: React.FC<CronogramaExecutivoViewProps> = (
     setSaving(true);
     try {
       const updates = Array.from(pendingItemsRef.current.values()) as ItemEap[];
-      for (const item of updates) {
+
+      // Ordena para salvar itens mais profundos (analíticos) primeiro, depois agrupadores
+      const sortedUpdates = [...updates].sort((a, b) => {
+        const depthA = a.eap_codigo.split('.').length;
+        const depthB = b.eap_codigo.split('.').length;
+        if (depthA !== depthB) return depthB - depthA;
+        return a.eap_codigo.localeCompare(b.eap_codigo);
+      });
+
+      for (const item of sortedUpdates) {
         if (!item.item_eap_id) continue;
         await supabase.from('itens_eap').update({
           data_inicio: item.data_inicio ?? item.data_execucao,
