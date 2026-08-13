@@ -33,6 +33,7 @@ import { DashboardView } from './components/DashboardView';
 import { FinanceiroView } from './components/FinanceiroView';
 import { ContratosView } from './components/ContratosView';
 import { ProjetosEapView } from './components/ProjetosEapView';
+import { CronogramaExecutivoView } from './components/CronogramaExecutivoView';
 import { AlertasView } from './components/AlertasView';
 import { EmpresasView } from './components/EmpresasView';
 import { EntidadesView } from './components/EntidadesView';
@@ -110,6 +111,7 @@ export default function App() {
     switch (tab) {
       case 'empresas': return !!effectivePermissions.empresas_ler;
       case 'projetos_eap': return !!effectivePermissions.projetos_ler;
+      case 'cronograma_executivo': return !!effectivePermissions.projetos_ler;
       case 'contratos_obra': return !!effectivePermissions.medicoes_ler;
       case 'usuarios': return !!effectivePermissions.usuarios_ler;
       case 'matriz-acesso': return user.role === 'GESTOR' || user.role === 'ADMIN';
@@ -341,7 +343,7 @@ export default function App() {
         />
 
         {/* View Component Canvas */}
-        <main className="p-4 md:p-8 max-w-[1280px] w-full mx-auto flex-1">
+        <main className={`p-4 md:p-8 w-full mx-auto flex-1 ${activeTab === 'cronograma_executivo' ? 'max-w-full' : 'max-w-[1280px]'}`}>
           {activeTab === 'dashboard' && (
             <DashboardView
               contracts={contracts}
@@ -423,6 +425,12 @@ export default function App() {
             hasAccess('projetos_eap') ? (
               <ProjetosEapView authSession={authSession} />
             ) : <div className="p-8 text-center bg-white rounded-xl border border-gray-200">Acesso Restrito: Sem permissão aos Projetos/EAP</div>
+          )}
+
+          {activeTab === 'cronograma_executivo' && (
+            hasAccess('cronograma_executivo') ? (
+              <CronogramaExecutivoView authSession={authSession} />
+            ) : <div className="p-8 text-center bg-white rounded-xl border border-gray-200">Acesso Restrito: Sem permissão ao Cronograma</div>
           )}
 
           {activeTab === 'audit-log' && (

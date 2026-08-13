@@ -114,18 +114,33 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </button>
 
           {hasAccess('projetos_ler') && (
-            <button
-              onClick={() => handleNavClick('projetos_eap')}
-              className={`w-full text-left ${navItemClass('projetos_eap')}`}
-            >
-              <span
-                className="material-symbols-outlined"
-                style={{ fontVariationSettings: activeTab === 'projetos_eap' ? "'FILL' 1" : "'FILL' 0" }}
+            <>
+              <button
+                onClick={() => handleNavClick('projetos_eap')}
+                className={`w-full text-left ${navItemClass('projetos_eap')}`}
               >
-                account_tree
-              </span>
-              {!isCollapsed && <span className="font-label-bold text-label-bold">Projetos (EAP)</span>}
-            </button>
+                <span
+                  className="material-symbols-outlined"
+                  style={{ fontVariationSettings: activeTab === 'projetos_eap' ? "'FILL' 1" : "'FILL' 0" }}
+                >
+                  account_tree
+                </span>
+                {!isCollapsed && <span className="font-label-bold text-label-bold">Projetos (EAP)</span>}
+              </button>
+
+              <button
+                onClick={() => handleNavClick('cronograma_executivo')}
+                className={`w-full text-left ${navItemClass('cronograma_executivo')}`}
+              >
+                <span
+                  className="material-symbols-outlined"
+                  style={{ fontVariationSettings: activeTab === 'cronograma_executivo' ? "'FILL' 1" : "'FILL' 0" }}
+                >
+                  calendar_month
+                </span>
+                {!isCollapsed && <span className="font-label-bold text-label-bold">Cronograma</span>}
+              </button>
+            </>
           )}
 
           {hasAccess('medicoes_ler') && (

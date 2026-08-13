@@ -128,3 +128,54 @@
   box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
 }
 
+/* ==========================================================================
+   SVAR Gantt Custom Styling & Theme Overrides
+   ========================================================================== */
+.wx-willow-theme, .wx-material-theme, .wx-gantt, div[class*="wx-gantt"] {
+  --wx-gantt-task-color: #005daa;
+  --wx-gantt-task-font-color: #ffffff;
+  --wx-gantt-task-fill-color: #004a88;
+  --wx-gantt-task-border-color: #004a88;
+  --wx-gantt-task-border: 1px solid #004a88;
+  --wx-gantt-summary-color: #10b981;
+  --wx-gantt-summary-font-color: #ffffff;
+  --wx-gantt-summary-fill-color: #059669;
+  --wx-gantt-summary-border-color: #059669;
+  --wx-gantt-summary-border: 1px solid #059669;
+  --wx-gantt-milestone-color: #8b5cf6;
+  --wx-gantt-select-color: #e0f2fe;
+  --wx-gantt-bar-border-radius: 6px;
+  --wx-gantt-bar-font: 600 12px 'Inter', sans-serif;
+  --wx-gantt-holiday-background: #f8fafc;
+  --wx-gantt-border-color: #e2e8f0;
+}
+
+/* Garantir renderização visível e com cor vibrante das barras de Gantt */
+.wx-bar {
+  border-radius: 6px !important;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.12) !important;
+}
+
+.wx-bar.wx-task, .wx-task {
+  background-color: #005daa !important;
+  border: 1px solid #004a88 !important;
+  color: #ffffff !important;
+}
+
+.wx-bar.wx-summary, .wx-summary {
+  background-color: #10b981 !important;
+  border: 1px solid #059669 !important;
+  color: #ffffff !important;
+}
+
+.wx-bar .wx-content {
+  color: #ffffff !important;
+  font-weight: 600 !important;
+  font-size: 12px !important;
+  padding: 0 8px !important;
+  display: flex !important;
+  align-items: center !important;
+  height: 100% !important;
+}
+
+

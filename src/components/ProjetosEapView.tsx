@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { EapMdImportModal } from './EapMdImportModal';
+import { CadastroEtapaModal } from './CadastroEtapaModal';
 import { compareEapCodes } from '../services/eapImporter.service';
 
 interface ProjetosEapViewProps {
@@ -15,6 +16,8 @@ export const ProjetosEapView: React.FC<ProjetosEapViewProps> = ({ authSession })
   const [editingProjeto, setEditingProjeto] = useState<any>(null);
   const [projetoForm, setProjetoForm] = useState({ nome_projeto: '', data_inicio: '' });
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [isCadastroEtapaOpen, setIsCadastroEtapaOpen] = useState(false);
+  const [itemToEditModal, setItemToEditModal] = useState<any | null>(null);
 
   // Estados para EAP
   const [eapData, setEapData] = useState<any[]>([]);
@@ -138,8 +141,8 @@ export const ProjetosEapView: React.FC<ProjetosEapViewProps> = ({ authSession })
     cleaned = cleaned.replace(/\.+/g, '.');
     if (cleaned.startsWith('.')) cleaned = cleaned.substring(1);
     const parts = cleaned.split('.');
-    if (parts.length > 3) {
-      cleaned = parts.slice(0, 3).join('.');
+    if (parts.length > 4) {
+      cleaned = parts.slice(0, 4).join('.');
     }
     return cleaned;
   };
@@ -189,48 +192,17 @@ export const ProjetosEapView: React.FC<ProjetosEapViewProps> = ({ authSession })
 
   // ----- CRUD EAP -----
   const openNewEap = () => {
-    setEditingEap(null);
-    setEapForm({
-      eap_codigo: '', descricao_servico: '', unidade_medida: '',
-      valor_total_contratado: '', valor_desembolsado: '', e_analitico: false, ordem: 0
-    });
-    setPipelineState('editing_eap');
+    setItemToEditModal(null);
+    setIsCadastroEtapaOpen(true);
   };
 
-  const openEditEap = async (eapCodigo: string) => {
+  const openEditEap = (eapCodigo: string) => {
     const id = eapItemIds[eapCodigo];
     const itemInState = eapData.find(i => i.eap_codigo === eapCodigo);
 
     if (itemInState) {
-      setEditingEap({ id: id || itemInState.id, ...itemInState });
-      setEapForm({
-        eap_codigo: itemInState.eap_codigo,
-        descricao_servico: itemInState.descricao_servico || '',
-        unidade_medida: itemInState.unidade_medida || '',
-        valor_total_contratado: (itemInState.valor_total_contratado ?? 0).toString(),
-        valor_desembolsado: (itemInState.valor_desembolsado ?? 0).toString(),
-        e_analitico: !!itemInState.e_analitico,
-        ordem: itemInState.ordem || 0
-      });
-      setPipelineState('editing_eap');
-      return;
-    }
-
-    if (id) {
-      const { data } = await supabase.from('itens_eap').select('*').eq('id', id).single();
-      if (data) {
-        setEditingEap(data);
-        setEapForm({
-          eap_codigo: data.eap_codigo,
-          descricao_servico: data.descricao_servico,
-          unidade_medida: data.unidade_medida || '',
-          valor_total_contratado: (data.valor_total_contratado ?? 0).toString(),
-          valor_desembolsado: (data.valor_desembolsado ?? 0).toString(),
-          e_analitico: data.e_analitico,
-          ordem: data.ordem
-        });
-        setPipelineState('editing_eap');
-      }
+      setItemToEditModal({ id: id || itemInState.id, ...itemInState });
+      setIsCadastroEtapaOpen(true);
     }
   };
 
@@ -241,6 +213,10 @@ export const ProjetosEapView: React.FC<ProjetosEapViewProps> = ({ authSession })
     }
     if (!eapForm.eap_codigo.trim() || !eapForm.descricao_servico.trim()) {
       alert('Campos "Código EAP" e "Descrição / Nome do Serviço" são obrigatórios.');
+      return;
+    }
+    if (eapForm.eap_codigo.split('.').length >= 3 && !eapForm.data_execucao) {
+      alert('Data de Execução é obrigatória para itens executáveis (Níveis 3 e 4).');
       return;
     }
 
@@ -271,7 +247,9 @@ export const ProjetosEapView: React.FC<ProjetosEapViewProps> = ({ authSession })
           quantidade_contratada: 1,
           valor_desembolsado: eapForm.valor_desembolsado,
           e_analitico: eapForm.e_analitico,
-          ordem: eapForm.ordem
+          ordem: eapForm.ordem,
+          data_execucao: eapForm.data_execucao,
+          duracao_dias: eapForm.duracao_dias
         })
       });
 
@@ -336,7 +314,9 @@ export const ProjetosEapView: React.FC<ProjetosEapViewProps> = ({ authSession })
       alert(`Erro inesperado ao excluir: ${e.message}`);
     }
     setDeleteModal(null);
-  };  const selectedProj = projetos.find(p => p.id === selectedProjetoId);
+  };
+
+  const selectedProj = projetos.find(p => p.id === selectedProjetoId);
 
   return (
     <div className="space-y-6">
@@ -392,11 +372,14 @@ export const ProjetosEapView: React.FC<ProjetosEapViewProps> = ({ authSession })
                 className="w-full px-3.5 py-2 bg-white border border-[#c0c7d6] rounded-lg text-[#191c1e] font-bold text-sm focus:outline-none focus:border-[#005daa] focus:ring-2 focus:ring-[#005daa]/20 shadow-xs cursor-pointer"
               >
                 {projetos.length === 0 && <option value="">Nenhum projeto cadastrado</option>}
-                {projetos.map(proj => (
-                  <option key={proj.id} value={proj.id}>
-                    {proj.nome_projeto} {proj.codigo_contrato ? `(${proj.codigo_contrato})` : ''}
-                  </option>
-                ))}
+                {projetos.map(proj => {
+                  const code = proj.codigo_contrato || proj.tenant_id;
+                  return (
+                    <option key={proj.id} value={proj.id}>
+                      {proj.nome_projeto} {code ? `(${code})` : ''}
+                    </option>
+                  );
+                })}
               </select>
             </div>
           </div>
@@ -577,6 +560,30 @@ export const ProjetosEapView: React.FC<ProjetosEapViewProps> = ({ authSession })
                   />
                 </div>
 
+                {eapForm.eap_codigo.split('.').length >= 3 && (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-label-bold text-[#191c1e] mb-1">Data Início (Nível 3/4) <span className="text-red-500">*</span></label>
+                      <input
+                        type="date"
+                        value={eapForm.data_execucao || ''}
+                        onChange={e => setEapForm({...eapForm, data_execucao: e.target.value})}
+                        className="w-full px-3.5 py-2.5 bg-white border border-[#c0c7d6] rounded-md text-[#191c1e] focus:outline-none focus:border-[#005daa] focus:ring-1 focus:ring-[#005daa] shadow-xs"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-label-bold text-[#191c1e] mb-1">Duração (Dias)</label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={eapForm.duracao_dias || 1}
+                        onChange={e => setEapForm({...eapForm, duracao_dias: parseInt(e.target.value) || 1})}
+                        className="w-full px-3.5 py-2.5 bg-white border border-[#c0c7d6] rounded-md text-[#191c1e] focus:outline-none focus:border-[#005daa] focus:ring-1 focus:ring-[#005daa] shadow-xs"
+                      />
+                    </div>
+                  </div>
+                )}
+
                 {eapForm.e_analitico && (
                   <div className="p-5 bg-[#f7f9fb] rounded-lg border border-[#c0c7d6] space-y-4 shadow-inner">
                     <h4 className="font-label-bold text-[#005daa] uppercase text-[11px] tracking-wider mb-2">Quantitativos e Valores</h4>
@@ -723,6 +730,20 @@ export const ProjetosEapView: React.FC<ProjetosEapViewProps> = ({ authSession })
           onClose={() => setIsImportModalOpen(false)}
           projetoId={selectedProjetoId}
           projetoNome={projetos.find(p => p.id === selectedProjetoId)?.nome_projeto || ''}
+          authSession={authSession}
+          onSuccess={() => fetchEap(selectedProjetoId)}
+        />
+      )}
+
+      {/* MODAL CADASTRO / EDIÇÃO DE ETAPA (EAP) */}
+      {selectedProjetoId && (
+        <CadastroEtapaModal
+          isOpen={isCadastroEtapaOpen}
+          onClose={() => setIsCadastroEtapaOpen(false)}
+          projetoId={selectedProjetoId}
+          projetoDataInicio={selectedProj?.data_inicio}
+          existingItems={eapData}
+          itemToEdit={itemToEditModal}
           authSession={authSession}
           onSuccess={() => fetchEap(selectedProjetoId)}
         />

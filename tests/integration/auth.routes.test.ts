@@ -110,11 +110,22 @@ describe('POST /api/auth/login-mfa-step1', () => {
     expect(res.status).toBe(400);
   });
 
-  it('deve retornar 403 quando e-mail não existe na base', async () => {
+  it('deve auto-registrar como VISITANTE e retornar mfaRequired=true quando e-mail não existe na base', async () => {
     const res = await request(app)
       .post('/api/auth/login-mfa-step1')
       .send({ email: 'nao.existe@email.com', password: '123456' });
+    expect(res.status).toBe(200);
+    expect(res.body.mfaRequired).toBe(true);
+    expect(res.body.mfaTicket).toBeDefined();
+  });
+
+  it('deve retornar 403 quando usuário possui status BLOQUEADO', async () => {
+    getDb().usuarios[0].status = 'BLOQUEADO';
+    const res = await request(app)
+      .post('/api/auth/login-mfa-step1')
+      .send({ email: getDb().usuarios[0].email, password: '123456' });
     expect(res.status).toBe(403);
+    expect(res.body.error).toMatch(/[Bb]loqueado/);
   });
 
   it('deve gerar OTP e retornar mfaRequired=true para usuário ativo', async () => {

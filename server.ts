@@ -90,11 +90,12 @@ async function ensureUserExists(
   const userEmail = token.email || `${token.uid}@user.com`;
 
   // 1. Check if user already exists by uid OR email
-  const { data: existingUser } = await client
+  const { data: existingUserRows } = await client
     .from('usuarios')
     .select('*')
     .or(`uid.eq.${token.uid},email.eq.${userEmail}`)
-    .maybeSingle();
+    .limit(1);
+  const existingUser = existingUserRows?.[0] || null;
 
   if (existingUser) {
     // If user exists, ensure uid matches
@@ -335,11 +336,12 @@ function startServer() {
       }
 
       // Check if user exists in Supabase
-      const { data: userData, error: userErr } = await supabase
+      const { data: userRows, error: userErr } = await supabase
         .from('usuarios')
         .select('*')
         .eq('email', email)
-        .single();
+        .limit(1);
+      const userData = userRows?.[0] || null;
 
       let contrato_id = "";
       let perfil = "";
@@ -423,11 +425,12 @@ function startServer() {
       const isDbEmpty = !countErr && count === 0;
 
       // Check if user exists in Supabase
-      const { data: userData, error: userErr } = await supabase
+      const { data: userRows, error: userErr } = await supabase
         .from('usuarios')
         .select('*')
         .eq('email', userEmail)
-        .maybeSingle();
+        .limit(1);
+      const userData = userRows?.[0] || null;
 
       let contrato_id = "";
       let empresa_id = "";
@@ -2041,7 +2044,7 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
       }
 
       const upsertData: any = {
-        codigo_contrato: tenantId,
+        tenant_id: tenantId,
         nome_projeto,
         data_inicio,
         updated_at: new Date().toISOString()
@@ -2286,7 +2289,7 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
       const client = getSupabaseClient(req);
       if (!client) return res.status(401).json({ error: "Unauthorized" });
 
-      const { id, projeto_id, eap_codigo, eap_pai_codigo, descricao_servico, unidade_medida, preco_unitario, quantidade_contratada, valor_desembolsado, e_analitico, ordem } = req.body;
+      const { id, projeto_id, eap_codigo, eap_pai_codigo, descricao_servico, unidade_medida, preco_unitario, quantidade_contratada, valor_desembolsado, e_analitico, ordem, data_execucao, duracao_dias, predecessores, data_inicio, data_fim } = req.body;
       if (!projeto_id || !eap_codigo || !descricao_servico) {
         return res.status(400).json({ error: "Campos projeto_id, eap_codigo e descricao_servico são obrigatórios." });
       }
@@ -2320,10 +2323,17 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
         preco_unitario: precoNum,
         quantidade_contratada: qtdNum,
         valor_total_contratado: valTotal,
-        valor_desembolsado: desembolsadoNum,
         e_analitico: isAnalytic,
-        ordem: isNaN(Number(ordem)) ? 0 : Number(ordem || 0)
+        ordem: isNaN(Number(ordem)) ? 0 : Number(ordem || 0),
+        data_execucao: data_execucao && String(data_execucao).trim() !== '' ? String(data_execucao).trim() : null,
+        duracao_dias: isNaN(Number(duracao_dias)) ? 1 : Number(duracao_dias || 1),
+        data_inicio: data_inicio && String(data_inicio).trim() !== '' ? String(data_inicio).trim() : null,
+        data_fim: data_fim && String(data_fim).trim() !== '' ? String(data_fim).trim() : null,
       };
+
+      if (predecessores !== undefined) {
+        upsertData.predecessores = Array.isArray(predecessores) ? predecessores : [];
+      }
 
       // Resolve existing ID if not passed to prevent duplicate errors
       let targetId = id;
@@ -2434,6 +2444,37 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
     } catch (err: any) {
       console.error("[POST /api/eap/import/execute] Error:", err);
       return res.status(500).json({ error: err.message || "Internal Error" });
+    }
+  });
+
+  // GET /api/cronograma/:projeto_id/export
+  app.get("/api/cronograma/:projeto_id/export", verifyFirebaseJWT, async (req: AuthenticatedRequest, res) => {
+    try {
+      const client = getSupabaseClient(req);
+      if (!client) return res.status(401).json({ error: "Unauthorized" });
+      const { projeto_id } = req.params;
+      const { format } = req.query; // 'xlsx' | 'xml'
+      
+      const { data: items } = await client.from("v_resumo_eap_medicao").select("*").eq("projeto_id", projeto_id).order("ordem", { ascending: true });
+      if (!items) return res.status(404).json({ error: "No items found" });
+
+      if (format === 'xlsx') {
+        const { generateXlsxBuffer } = await import('./src/utils/cronogramaExport.js');
+        const buffer = await generateXlsxBuffer(items, `Projeto-${projeto_id}`);
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', `attachment; filename="cronograma-${projeto_id}.xlsx"`);
+        return res.send(Buffer.from(buffer));
+      } else if (format === 'xml') {
+        const { generateMppXml } = await import('./src/utils/cronogramaExport.js');
+        const xml = generateMppXml(items, `Projeto-${projeto_id}`);
+        res.setHeader('Content-Type', 'application/xml');
+        res.setHeader('Content-Disposition', `attachment; filename="cronograma-${projeto_id}.xml"`);
+        return res.send(xml);
+      }
+      
+      return res.status(400).json({ error: "Formato inválido. Use format=xlsx ou format=xml" });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message });
     }
   });
 

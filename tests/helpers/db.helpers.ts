@@ -152,6 +152,10 @@ function buildQuery(tableName: string) {
       return q; // chainable
     },
 
+    limit(n?: number) {
+      return q; // chainable
+    },
+
     or(query: string) {
       // Basic mock: does nothing for now but prevents crashing
       return q; 
