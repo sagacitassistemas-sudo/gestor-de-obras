@@ -613,21 +613,59 @@ export const CronogramaExecutivoView: React.FC<CronogramaExecutivoViewProps> = (
         return a.eap_codigo.localeCompare(b.eap_codigo);
       });
 
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token || authSession?.idToken;
+
       for (const item of sortedUpdates) {
-        if (!item.item_eap_id) continue;
-        await supabase.from('itens_eap').update({
+        const targetId = item.item_eap_id || item.id;
+        const payload: any = {
+          id: targetId,
+          projeto_id: selectedProjetoId,
+          eap_codigo: item.eap_codigo,
+          descricao_servico: item.descricao_servico,
           data_inicio: item.data_inicio ?? item.data_execucao,
           data_execucao: item.data_execucao ?? item.data_inicio,
-          duracao_dias: item.duracao_dias,
-        }).eq('id', item.item_eap_id);
+          duracao_dias: Math.max(1, item.duracao_dias || 1),
+          data_fim: item.data_fim || null,
+          e_analitico: item.e_analitico,
+          predecessores: item.predecessores ?? [],
+        };
+
+        // Envia via API backend (/api/itens-eap) com autenticação JWT do usuário
+        const res = await fetch('/api/itens-eap', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify(payload),
+        });
+
+        const json = await res.json().catch(() => ({}));
+
+        if (!res.ok || (json.error && !json.success)) {
+          // Fallback direto via Supabase client checando explicitamente o objeto de erro
+          console.warn('[savePendingChanges] API POST falhou, executando fallback Supabase direct:', json.error || res.statusText);
+          const { error: dbErr } = await supabase.from('itens_eap').update({
+            data_inicio: payload.data_inicio,
+            data_execucao: payload.data_execucao,
+            duracao_dias: payload.duracao_dias,
+            data_fim: payload.data_fim,
+          }).eq('id', targetId);
+
+          if (dbErr) {
+            throw new Error(`Erro ao salvar a etapa ${item.eap_codigo}: ${dbErr.message}`);
+          }
+        }
       }
+
       pendingItemsRef.current = new Map();
       setHasPendingChanges(false);
       alert('Cronograma salvo com sucesso!');
-      fetchEapItems(selectedProjetoId);
-    } catch (err) {
+      await fetchEapItems(selectedProjetoId);
+    } catch (err: any) {
       console.error('[CronogramaExecutivoView] save error:', err);
-      alert('Erro ao salvar as alterações.');
+      alert(`Falha ao salvar as alterações: ${err?.message || err}`);
     } finally {
       setSaving(false);
     }
@@ -678,16 +716,10 @@ export const CronogramaExecutivoView: React.FC<CronogramaExecutivoViewProps> = (
   /**
    * `init` é chamado uma única vez pelo SVAR Gantt ao montar o componente,
    * passando o objeto `api`. Aqui registramos TODOS os listeners de eventos.
-   *
-   * Usando `api.on` para reação pós-processamento e `api.intercept` para
-   * poder cancelar ou transformar ações antes que o SVAR as execute.
    */
   const handleGanttInit = (api: IApi) => {
     // ── Atualização de tarefa (arrastar, redimensionar, editar inline) ─────────
-    // O SVAR dispara: { id: TID, task: Partial<ITask>, inProgress?: boolean }
-    // `inProgress: true` → durante o arrastar (intermediário), `false` → solto
     api.on('update-task', (ev: any) => {
-      // Ignorar eventos intermediários durante o arrastar para não sobrecarregar
       if (ev.inProgress) return;
       const { id, task } = ev;
       if (!id || !task) return;
@@ -695,7 +727,6 @@ export const CronogramaExecutivoView: React.FC<CronogramaExecutivoViewProps> = (
     });
 
     // ── Adição de link de dependência ─────────────────────────────────────────
-    // O SVAR dispara: { link: Partial<ILink> }
     api.on('add-link', async (ev: any) => {
       const link: Partial<ILink> = ev.link ?? ev;
       if (!link.source || !link.target) return;
@@ -707,7 +738,6 @@ export const CronogramaExecutivoView: React.FC<CronogramaExecutivoViewProps> = (
       const pmType = SVAR_TO_PM[String(link.type)] ?? 'FS';
       const lag = link.lag ?? 0;
       const lagStr = lag > 0 ? `+${lag}` : lag < 0 ? String(lag) : '';
-      // Para FS sem lag, omitir o tipo (retrocompatível com o banco)
       const predStr = pmType === 'FS' && !lag
         ? String(link.source)
         : `${link.source}${pmType}${lagStr}`;
@@ -715,26 +745,43 @@ export const CronogramaExecutivoView: React.FC<CronogramaExecutivoViewProps> = (
       const currentPreds = new Set(targetItem.predecessores ?? []);
       currentPreds.add(predStr);
       try {
-        await supabase.from('itens_eap')
-          .update({ predecessores: Array.from(currentPreds) })
-          .eq('id', targetItem.item_eap_id);
-        fetchEapItems(selectedProjetoId);
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData?.session?.access_token || authSession?.idToken;
+
+        const res = await fetch('/api/itens-eap', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({
+            id: targetItem.item_eap_id,
+            projeto_id: selectedProjetoId,
+            eap_codigo: targetItem.eap_codigo,
+            descricao_servico: targetItem.descricao_servico,
+            predecessores: Array.from(currentPreds),
+          }),
+        });
+
+        if (!res.ok) {
+          const { error: err } = await supabase.from('itens_eap')
+            .update({ predecessores: Array.from(currentPreds) })
+            .eq('id', targetItem.item_eap_id);
+          if (err) throw err;
+        }
+        await fetchEapItems(selectedProjetoId);
       } catch (err) {
         console.error('[CronogramaExecutivoView] add-link error:', err);
       }
     });
 
     // ── Remoção de link de dependência ────────────────────────────────────────
-    // O SVAR dispara: { id: TID } onde id é o id do link
-    // O formato dos nossos link ids: "lnk_{source}_{target}_{idx}" (underscores)
     api.on('delete-link', async (ev: any) => {
       const linkId = String(ev.id ?? '');
       if (!linkId.startsWith('lnk_')) return;
-      // Extrai source e target com split em _ (máximo 4 partes: lnk, src, tgt, idx)
-      const withoutPrefix = linkId.slice(4); // remove 'lnk_'
-      // O formato é src_tgt_idx, onde src e tgt podem conter '.' mas nunca '_'
+      const withoutPrefix = linkId.slice(4);
       const lastUnderscore = withoutPrefix.lastIndexOf('_');
-      const srcTgt = withoutPrefix.slice(0, lastUnderscore);  // "src_tgt"
+      const srcTgt = withoutPrefix.slice(0, lastUnderscore);
       const midUnderscore = srcTgt.indexOf('_');
       const src = srcTgt.slice(0, midUnderscore);
       const tgt = srcTgt.slice(midUnderscore + 1);
@@ -746,25 +793,60 @@ export const CronogramaExecutivoView: React.FC<CronogramaExecutivoViewProps> = (
         p => parsePredecessor(p).code !== src
       );
       try {
-        await supabase.from('itens_eap')
-          .update({ predecessores: updatedPreds })
-          .eq('id', targetItem.item_eap_id);
-        fetchEapItems(selectedProjetoId);
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData?.session?.access_token || authSession?.idToken;
+
+        const res = await fetch('/api/itens-eap', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({
+            id: targetItem.item_eap_id,
+            projeto_id: selectedProjetoId,
+            eap_codigo: targetItem.eap_codigo,
+            descricao_servico: targetItem.descricao_servico,
+            predecessores: updatedPreds,
+          }),
+        });
+
+        if (!res.ok) {
+          const { error: err } = await supabase.from('itens_eap')
+            .update({ predecessores: updatedPreds })
+            .eq('id', targetItem.item_eap_id);
+          if (err) throw err;
+        }
+        await fetchEapItems(selectedProjetoId);
       } catch (err) {
         console.error('[CronogramaExecutivoView] delete-link error:', err);
       }
     });
 
     // ── Exclusão de tarefa ────────────────────────────────────────────────────
-    // O SVAR dispara: { id: TID }
     api.on('delete-task', async (ev: any) => {
       const taskId = String(ev.id ?? '');
       const items = rawItemsRef.current;
       const item = items.find(i => i.eap_codigo === taskId);
       if (!item?.item_eap_id) return;
       try {
-        await supabase.from('itens_eap').delete().eq('id', item.item_eap_id);
-        fetchEapItems(selectedProjetoId);
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData?.session?.access_token || authSession?.idToken;
+
+        const res = await fetch('/api/itens-eap', {
+          method: 'DELETE',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({ id: item.item_eap_id }),
+        });
+
+        if (!res.ok) {
+          const { error: err } = await supabase.from('itens_eap').delete().eq('id', item.item_eap_id);
+          if (err) throw err;
+        }
+        await fetchEapItems(selectedProjetoId);
       } catch (err) {
         console.error('[CronogramaExecutivoView] delete-task error:', err);
       }
