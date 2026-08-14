@@ -14,14 +14,97 @@ export interface EapEngineItem {
   id: string;
   item_eap_id?: string;
   eap_codigo: string;
+  eap_pai_codigo?: string | null;
   descricao_servico: string;
   data_inicio: string; // YYYY-MM-DD
   data_fim: string;    // YYYY-MM-DD
   duracao_dias: number;
   e_analitico: boolean;
+  ordem?: number;
   predecessores?: string[];
   percentual_executado_financeiro?: number;
   valor_total_contratado?: number;
+}
+
+export interface EapTreeNode {
+  item: EapEngineItem;
+  parent?: EapTreeNode;
+  children: EapTreeNode[];
+  level: number; // 0 = raiz, 1 = grupo, 2 = subtarefa...
+}
+
+// ─── Passo 1: Leitura e Montagem da Árvore da EAP/WBS ─────────────────────────
+
+/**
+ * Constrói a estrutura hierárquica pai/filho (EAP/WBS) organizando as etapas em
+ * níveis de aninhamento (tarefas raiz, grupos e subtarefas).
+ */
+export function buildEapTree(items: EapEngineItem[]): {
+  roots: EapTreeNode[];
+  nodeMap: Map<string, EapTreeNode>;
+  orderedItems: EapEngineItem[];
+} {
+  const nodeMap = new Map<string, EapTreeNode>();
+
+  items.forEach(item => {
+    nodeMap.set(item.eap_codigo, {
+      item: { ...item },
+      children: [],
+      level: 0,
+    });
+  });
+
+  const roots: EapTreeNode[] = [];
+
+  nodeMap.forEach((node, code) => {
+    let parentCode = node.item.eap_pai_codigo;
+
+    if (!parentCode || !nodeMap.has(parentCode)) {
+      const parts = code.split('.');
+      while (parts.length > 1) {
+        parts.pop();
+        const candidate = parts.join('.');
+        if (nodeMap.has(candidate)) {
+          parentCode = candidate;
+          break;
+        }
+      }
+    }
+
+    if (parentCode && nodeMap.has(parentCode) && parentCode !== code) {
+      const parentNode = nodeMap.get(parentCode)!;
+      node.parent = parentNode;
+      parentNode.children.push(node);
+    } else {
+      roots.push(node);
+    }
+  });
+
+  const orderedItems: EapEngineItem[] = [];
+
+  const traverse = (node: EapTreeNode, level: number) => {
+    node.level = level;
+    orderedItems.push(node.item);
+    node.children.sort((a, b) => compareEapCodes(a.item.eap_codigo, b.item.eap_codigo));
+    node.children.forEach(child => traverse(child, level + 1));
+  };
+
+  roots.sort((a, b) => compareEapCodes(a.item.eap_codigo, b.item.eap_codigo));
+  roots.forEach(root => traverse(root, 0));
+
+  return { roots, nodeMap, orderedItems };
+}
+
+export function compareEapCodes(a: string, b: string): number {
+  const partsA = a.split('.').map(p => parseInt(p, 10));
+  const partsB = b.split('.').map(p => parseInt(p, 10));
+  const len = Math.max(partsA.length, partsB.length);
+  for (let i = 0; i < len; i++) {
+    const valA = isNaN(partsA[i]) ? 0 : partsA[i];
+    const valB = isNaN(partsB[i]) ? 0 : partsB[i];
+    if (valA !== valB) return valA - valB;
+  }
+  return a.localeCompare(b);
 }
 
 export interface ParsedPredecessor {
@@ -159,45 +242,25 @@ export function calculatePredecessorRequiredStart(
 
 /**
  * Recalcula as datas, duração e progresso ponderado de todas as tarefas sumário (pais)
- * respeitando o invariante absoluto: min(filhas.inicio) e max(filhas.fim).
+ * percorrendo a árvore EAP criada no Passo 1 (buildEapTree) dos nós mais profundos até as raízes.
  */
 export function executeSummaryRollup(itemsMap: Map<string, EapEngineItem>, projStart: string): void {
-  const validCodes = new Set(itemsMap.keys());
+  const items = Array.from(itemsMap.values());
+  const { nodeMap } = buildEapTree(items);
 
-  const getParentCode = (code: string): string | undefined => {
-    const parts = code.split('.');
-    while (parts.length > 1) {
-      parts.pop();
-      const c = parts.join('.');
-      if (validCodes.has(c)) return c;
-    }
-  };
+  // Ordena os nós por nível de aninhamento decrescente (filhos folha primeiro, depois sub-grupos, depois raízes)
+  const sortedNodes = Array.from(nodeMap.values()).sort((a, b) => b.level - a.level);
 
-  // 1. Agrupar filhos por pai
-  const childrenOf = new Map<string, EapEngineItem[]>();
-  itemsMap.forEach((item, code) => {
-    const p = getParentCode(code);
-    if (p) {
-      if (!childrenOf.has(p)) childrenOf.set(p, []);
-      childrenOf.get(p)!.push(item);
-    }
-  });
-
-  // 2. Ordenar dos mais profundos para a raiz
-  const byDepthDesc = Array.from(itemsMap.values()).sort(
-    (a, b) => b.eap_codigo.split('.').length - a.eap_codigo.split('.').length
-  );
-
-  byDepthDesc.forEach(item => {
-    const children = childrenOf.get(item.eap_codigo);
-    if (!children?.length) return;
+  sortedNodes.forEach(node => {
+    if (!node.children.length) return; // Tarefa folha ativa
 
     let minStart: string | null = null;
     let maxEnd: string | null = null;
     let totalValor = 0;
     let weightedProgressSum = 0;
 
-    children.forEach(child => {
+    node.children.forEach(childNode => {
+      const child = childNode.item;
       const s = child.data_inicio || projStart;
       const dur = Math.max(1, child.duracao_dias || 1);
       const e = child.data_fim || calculateLeafFinishDate(s, dur);
@@ -205,29 +268,32 @@ export function executeSummaryRollup(itemsMap: Map<string, EapEngineItem>, projS
       if (!minStart || s < minStart) minStart = s;
       if (!maxEnd || e > maxEnd) maxEnd = e;
 
-      const valor = child.valor_total_contratado || dur; // Usar valor contratado ou peso por duração
+      const valor = child.valor_total_contratado || dur;
       const prog = child.percentual_executado_financeiro || 0;
       totalValor += valor;
       weightedProgressSum += prog * valor;
     });
 
     if (minStart && maxEnd) {
-      item.data_inicio = minStart;
-      item.data_fim = maxEnd;
-      item.duracao_dias = Math.max(1, diffEngineDays(maxEnd, minStart) + 1);
-      item.percentual_executado_financeiro = totalValor > 0
+      node.item.data_inicio = minStart;
+      node.item.data_fim = maxEnd;
+      node.item.duracao_dias = Math.max(1, diffEngineDays(maxEnd, minStart) + 1);
+      node.item.percentual_executado_financeiro = totalValor > 0
         ? Math.round((weightedProgressSum / totalValor) * 100) / 100
         : 0;
+
+      // Sincroniza o item recalculado de volta no mapa de itens
+      itemsMap.set(node.item.eap_codigo, node.item);
     }
   });
 
-  // 3. Trava de invariante estrito em profundidade total para tarefas sintéticas
+  // Trava de invariante estrito em profundidade total para tarefas sintéticas
   itemsMap.forEach((parentItem, parentCode) => {
-    const isSummary = !parentItem.e_analitico || Array.from(itemsMap.keys()).some(k => k !== parentCode && k.startsWith(parentCode + '.'));
-    if (!isSummary) return;
+    const node = nodeMap.get(parentCode);
+    if (!node || !node.children.length) return;
 
     const leafDescendants = Array.from(itemsMap.values()).filter(
-      c => c.eap_codigo !== parentCode && c.eap_codigo.startsWith(parentCode + '.')
+      c => c.eap_codigo !== parentCode && c.eap_codigo.startsWith(parentCode + '.') && c.e_analitico
     );
     if (!leafDescendants.length) return;
 

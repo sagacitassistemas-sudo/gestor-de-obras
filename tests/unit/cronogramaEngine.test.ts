@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   EapEngineItem,
+  buildEapTree,
   classifyElementType,
   calculateLeafFinishDate,
   calculatePredecessorRequiredStart,
@@ -14,8 +15,33 @@ import {
 describe('Motor do Cronograma (Gantt Engine)', () => {
   const projStart = '2026-08-01';
 
-  // ── 1. Passos 1 & 2: Classificação de Elementos ──────────────────────────────
-  describe('Passos 1 & 2: Classificação dos Tipos de Elementos', () => {
+  // ── 1. Passos 1 & 2: Montagem da Árvore EAP & Classificação de Elementos ──────
+  describe('Passos 1 & 2: Montagem da Árvore EAP/WBS e Classificação dos Elementos', () => {
+    it('Passo 1: deve construir a árvore hierárquica EAP calculando níveis de aninhamento', () => {
+      const items: EapEngineItem[] = [
+        { id: '3', eap_codigo: '1.1.1', descricao_servico: 'Subtarefa Padrão Elétrico', data_inicio: '2026-08-01', data_fim: '2026-08-05', duracao_dias: 5, e_analitico: true },
+        { id: '1', eap_codigo: '1', descricao_servico: 'Macroetapa Mobilização', data_inicio: '2026-08-01', data_fim: '2026-08-10', duracao_dias: 10, e_analitico: false },
+        { id: '2', eap_codigo: '1.1', eap_pai_codigo: '1', descricao_servico: 'Grupo Canteiro', data_inicio: '2026-08-01', data_fim: '2026-08-05', duracao_dias: 5, e_analitico: false },
+      ];
+
+      const { roots, nodeMap, orderedItems } = buildEapTree(items);
+
+      expect(roots.length).toBe(1);
+      expect(roots[0].item.eap_codigo).toBe('1');
+      expect(roots[0].level).toBe(0); // Raiz
+
+      const grupo = nodeMap.get('1.1')!;
+      expect(grupo.parent?.item.eap_codigo).toBe('1');
+      expect(grupo.level).toBe(1); // Nível 1
+
+      const subtarefa = nodeMap.get('1.1.1')!;
+      expect(subtarefa.parent?.item.eap_codigo).toBe('1.1');
+      expect(subtarefa.level).toBe(2); // Nível 2
+
+      // Verifica ordenação hierárquica depth-first
+      expect(orderedItems.map(i => i.eap_codigo)).toEqual(['1', '1.1', '1.1.1']);
+    });
+
     it('deve classificar corretamente agrupador (summary), tarefa folha (leaf) e marco (milestone)', () => {
       const items: EapEngineItem[] = [
         { id: '1', eap_codigo: '1', descricao_servico: 'Macroetapa', data_inicio: '2026-08-01', data_fim: '2026-08-10', duracao_dias: 10, e_analitico: false },
