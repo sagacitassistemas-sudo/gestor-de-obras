@@ -180,19 +180,19 @@ export const CronogramaExecutivoView: React.FC<CronogramaExecutivoViewProps> = (
 
     items.forEach(item => {
       const pCode = parentMap.get(item.eap_codigo);
-      const isSummary = (childCount.get(item.eap_codigo) ?? 0) > 0;
+      const isSummary = (childCount.get(item.eap_codigo) ?? 0) > 0 || !item.e_analitico;
       const start = parseSafeDate(item.data_inicio ?? item.data_execucao, fallback);
       const dur = Math.max(1, item.duracao_dias || 1);
-      const end = item.data_fim
-        ? parseSafeDate(item.data_fim, new Date(start.getTime() + (dur - 1) * 86400000))
-        : new Date(start.getTime() + (dur - 1) * 86400000);
+      // Fim do item calculado estritamente a partir do seu start + duração (dias)
+      const endYMD = addDays(toYMD(start), dur - 1);
+      const end = parseSafeDate(endYMD, start);
       tmap.set(item.eap_codigo, { start, end, dur, isSummary, pCode });
     });
 
-    // Rollup bottom-up: summary tasks absorvem o span dos seus filhos
+    // Rollup bottom-up: summary tasks absorvem o span exato dos seus filhos (min start, max end)
     const byDepthDesc = [...items].sort((a, b) => b.eap_codigo.split('.').length - a.eap_codigo.split('.').length);
 
-    // Reset summary dates so they will be recalculated from children
+    // Reset summary dates
     byDepthDesc.forEach(item => {
       const t = tmap.get(item.eap_codigo)!;
       if (t.isSummary) {
@@ -207,22 +207,23 @@ export const CronogramaExecutivoView: React.FC<CronogramaExecutivoViewProps> = (
       const child = tmap.get(item.eap_codigo)!;
       const parent = tmap.get(pCode);
       if (!parent) return;
-      // Usa datas da criança apenas se ela não estiver no reset state
       if (child.start.getTime() < 8640000000000000) {
         if (child.start < parent.start) parent.start = new Date(child.start);
         if (child.end > parent.end) parent.end = new Date(child.end);
       }
     });
 
-    // Finaliza duração dos summary tasks; fallback se não tiver filhos
+    // Recalcula duração total do agrupador (span de dias entre inicio min e fim max)
     items.forEach(item => {
       const t = tmap.get(item.eap_codigo)!;
       if (t.isSummary) {
         if (t.start.getTime() > 8000000000000000) {
           t.start = parseSafeDate(item.data_inicio ?? item.data_execucao, fallback);
-          t.end = item.data_fim ? parseSafeDate(item.data_fim, t.start) : t.start;
+          t.end = t.start;
         }
-        t.dur = Math.max(1, Math.round((t.end.getTime() - t.start.getTime()) / 86400000) + 1);
+        const startYMD = toYMD(t.start);
+        const endYMD = toYMD(t.end);
+        t.dur = Math.max(1, diffDays(endYMD, startYMD) + 1);
       }
     });
 
@@ -294,8 +295,14 @@ export const CronogramaExecutivoView: React.FC<CronogramaExecutivoViewProps> = (
         }));
 
         const proj = projetos.find(p => p.id === projetoId);
-        const { ganttTasks, ganttLinks } = buildGanttData(items, proj?.data_inicio);
-        setRawItems(items);
+        const projStart = proj?.data_inicio ?? toYMD(new Date());
+
+        const itemsMap = new Map<string, ItemEap>(items.map(i => [i.eap_codigo, { ...i }]));
+        rollupSummaries(itemsMap, projStart);
+        const syncedItems = Array.from(itemsMap.values());
+
+        const { ganttTasks, ganttLinks } = buildGanttData(syncedItems, proj?.data_inicio);
+        setRawItems(syncedItems);
         setTasks(ganttTasks);
         setLinks(ganttLinks);
       } else {
