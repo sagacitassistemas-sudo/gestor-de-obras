@@ -213,10 +213,28 @@ export const CronogramaExecutivoView: React.FC<CronogramaExecutivoViewProps> = (
       }
     });
 
-    // Recalcula duração total do agrupador (span de dias entre inicio min e fim max)
-    items.forEach(item => {
+    // Invariante absoluto de consistência: Toda tarefa agrupadora DEVE englobar 100% dos seus descendentes folha
+    byDepthDesc.forEach(item => {
       const t = tmap.get(item.eap_codigo)!;
-      if (t.isSummary) {
+      if (!t.isSummary) return;
+
+      let minStart: Date | null = null;
+      let maxEnd: Date | null = null;
+
+      tmap.forEach((childT, childCode) => {
+        if (childCode !== item.eap_codigo && childCode.startsWith(item.eap_codigo + '.')) {
+          if (!minStart || childT.start < minStart) minStart = new Date(childT.start);
+          if (!maxEnd || childT.end > maxEnd) maxEnd = new Date(childT.end);
+        }
+      });
+
+      if (minStart && maxEnd) {
+        t.start = minStart;
+        t.end = maxEnd;
+        const startYMD = toYMD(minStart);
+        const endYMD = toYMD(maxEnd);
+        t.dur = Math.max(1, diffDays(endYMD, startYMD) + 1);
+      } else {
         if (t.start.getTime() > 8000000000000000) {
           t.start = parseSafeDate(item.data_inicio ?? item.data_execucao, fallback);
           t.end = t.start;
@@ -409,14 +427,45 @@ export const CronogramaExecutivoView: React.FC<CronogramaExecutivoViewProps> = (
       let maxEnd: string | null = null;
       children.forEach(c => {
         const s = c.data_inicio ?? c.data_execucao ?? projStart;
-        const e = addDays(s, Math.max(1, c.duracao_dias) - 1);
+        const dur = Math.max(1, c.duracao_dias || 1);
+        const e = addDays(s, dur - 1);
         if (!minStart || s < minStart) minStart = s;
         if (!maxEnd || e > maxEnd) maxEnd = e;
       });
       if (minStart && maxEnd) {
         item.data_inicio = minStart;
         item.data_execucao = minStart;
+        item.data_fim = maxEnd;
         item.duracao_dias = Math.max(1, diffDays(maxEnd, minStart) + 1);
+      }
+    });
+
+    // Invariante absoluto de consistência: Nenhuma tarefa agrupadora pode ser menor do que a abrangência de seus descendentes
+    itemsMap.forEach((parentItem, parentCode) => {
+      const isSummary = !parentItem.e_analitico || Array.from(itemsMap.keys()).some(k => k !== parentCode && k.startsWith(parentCode + '.'));
+      if (!isSummary) return;
+
+      const leafDescendants = Array.from(itemsMap.values()).filter(
+        c => c.eap_codigo !== parentCode && c.eap_codigo.startsWith(parentCode + '.')
+      );
+      if (!leafDescendants.length) return;
+
+      let absMinStart: string | null = null;
+      let absMaxEnd: string | null = null;
+
+      leafDescendants.forEach(leaf => {
+        const s = leaf.data_inicio ?? leaf.data_execucao ?? projStart;
+        const dur = Math.max(1, leaf.duracao_dias || 1);
+        const e = addDays(s, dur - 1);
+        if (!absMinStart || s < absMinStart) absMinStart = s;
+        if (!absMaxEnd || e > absMaxEnd) absMaxEnd = e;
+      });
+
+      if (absMinStart && absMaxEnd) {
+        parentItem.data_inicio = absMinStart;
+        parentItem.data_execucao = absMinStart;
+        parentItem.data_fim = absMaxEnd;
+        parentItem.duracao_dias = Math.max(1, diffDays(absMaxEnd, absMinStart) + 1);
       }
     });
   };

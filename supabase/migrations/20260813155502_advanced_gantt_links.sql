@@ -115,7 +115,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Trigger para recálculo automático de agrupadores (tarefas sintéticas com e_analitico = false)
+-- Trigger para recálculo automático rigoroso de agrupadores (tarefas sintéticas com e_analitico = false)
+-- Invariante estrito: Nenhuma tarefa sintética pode ter intervalo menor do que a abrangência total dos seus filhos.
 CREATE OR REPLACE FUNCTION sync_summary_eap_dates_trigger()
 RETURNS TRIGGER AS $$
 DECLARE
@@ -144,7 +145,9 @@ BEGIN
         GROUP BY parent.id
     ) sub
     WHERE s.id = sub.parent_id
-      AND (s.data_inicio IS DISTINCT FROM sub.min_start OR s.data_fim IS DISTINCT FROM sub.max_end);
+      AND (s.data_inicio IS DISTINCT FROM sub.min_start 
+        OR s.data_fim IS DISTINCT FROM sub.max_end
+        OR s.duracao_dias IS DISTINCT FROM GREATEST(1, (sub.max_end - sub.min_start + 1)));
 
     RETURN NULL;
 END;
