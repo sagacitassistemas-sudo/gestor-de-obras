@@ -310,6 +310,7 @@ export const CronogramaExecutivoView: React.FC<CronogramaExecutivoViewProps> = (
     const ganttTasks: ITask[] = items.map(item => {
       const t = tmap.get(item.eap_codigo)!;
       const hasChildren = (childCount.get(item.eap_codigo) ?? 0) > 0;
+      const isSummary = hasChildren || !item.e_analitico;
       const task: ITask = {
         id: item.eap_codigo,
         text: item.descricao_servico,
@@ -320,6 +321,8 @@ export const CronogramaExecutivoView: React.FC<CronogramaExecutivoViewProps> = (
         open: hasChildren ? true : undefined,
         progress: item.percentual_executado_financeiro ?? 0,
         rollup: hasChildren ? true : undefined,
+        // Impede edição direta visual ou na grid de tarefas sumário (calculadas 100% pelas filhas)
+        readonly: isSummary ? true : undefined,
       };
       return task;
     });
@@ -743,6 +746,31 @@ export const CronogramaExecutivoView: React.FC<CronogramaExecutivoViewProps> = (
    * passando o objeto `api`. Aqui registramos TODOS os listeners de eventos.
    */
   const handleGanttInit = (api: IApi) => {
+    // ── Interceptar e Bloquear Alteração Direta em Tarefas Sumário ────────────
+    api.intercept('update-task', (ev: any) => {
+      const { id, task } = ev;
+      const targetId = String(id || task?.id || '');
+      const items = rawItemsRef.current;
+      const item = items.find(i => i.eap_codigo === targetId);
+
+      // Bloqueia qualquer tentativa de edição direta em etapas agrupadoras / sumário
+      if (item && !item.e_analitico) {
+        return false;
+      }
+    });
+
+    api.intercept('drag-task', (ev: any) => {
+      const { id, task } = ev;
+      const targetId = String(id || task?.id || '');
+      const items = rawItemsRef.current;
+      const item = items.find(i => i.eap_codigo === targetId);
+
+      // Bloqueia qualquer tentativa de arraste direto em etapas agrupadoras / sumário
+      if (item && !item.e_analitico) {
+        return false;
+      }
+    });
+
     // ── Atualização de tarefa (arrastar, redimensionar, editar inline) ─────────
     api.on('update-task', (ev: any) => {
       if (ev.inProgress) return;
