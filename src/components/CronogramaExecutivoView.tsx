@@ -3,6 +3,11 @@ import { supabase } from '../lib/supabaseClient';
 import { AuthSession } from '../types';
 import { Gantt, ITask, ILink, IApi } from '@svar-ui/react-gantt';
 import { CadastroEtapaModal } from './CadastroEtapaModal';
+import {
+  EapEngineItem,
+  processUserInteraction,
+  InteractionType,
+} from '../utils/cronogramaEngine';
 import '@svar-ui/react-gantt/all.css';
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
@@ -530,71 +535,85 @@ export const CronogramaExecutivoView: React.FC<CronogramaExecutivoViewProps> = (
   /**
    * Chamado pelo SVAR após qualquer mudança de data/duração em uma tarefa.
    */
+  /**
+   * Chamado pelo SVAR após qualquer mudança de data/duração em uma tarefa.
+   * Executa os Passos 5, 6 e 7 do Motor do Cronograma (Auto-Scheduling & Domino Effect).
+   */
   const handleTaskUpdate = (id: string, updatedTask: Partial<ITask>) => {
     const currentItems = rawItemsRef.current;
     const currentProj = selectedProjRef.current;
     const projStart = currentProj?.data_inicio ?? toYMD(new Date());
 
-    const itemsMap = new Map<string, ItemEap>(
-      currentItems.map(i => [i.eap_codigo, { ...i }])
-    );
-    const item = itemsMap.get(id);
+    const item = currentItems.find(i => i.eap_codigo === id);
     if (!item) return;
 
-    const oldStart = item.data_inicio ?? item.data_execucao ?? projStart;
+    // Passo 5: Mapeamento da Intenção de Interação do Usuário
+    let interactionType: InteractionType = 'body_move';
+    let newStart: string | undefined;
+    let newEnd: string | undefined;
+    let newDuration: number | undefined;
 
-    // Aplicar a nova start/duration vindas do SVAR ao item
-    if (updatedTask.start) {
-      const newStart = toYMD(updatedTask.start);
-      item.data_inicio = newStart;
-      item.data_execucao = newStart;
-
-      // Se for uma tarefa agrupadora/sintética, desloca todos os filhos proporcionalmente!
-      if (!item.e_analitico) {
-        const deltaDays = diffDays(newStart, oldStart);
-        if (deltaDays !== 0) {
-          itemsMap.forEach(child => {
-            if (child.eap_codigo.startsWith(id + '.')) {
-              const childStart = child.data_inicio ?? child.data_execucao ?? projStart;
-              const shifted = addDays(childStart, deltaDays);
-              child.data_inicio = shifted;
-              child.data_execucao = shifted;
-            }
-          });
-        }
-      }
-    }
-
-    // Prioridade máxima para (start, end) ao redimensionar barras no Gantt:
-    // Se o usuário arrastou a ponta da barra (redimensionou), calcula duracao_dias = end - start + 1
     if (updatedTask.start && updatedTask.end) {
-      const s = toYMD(updatedTask.start);
-      const e = toYMD(updatedTask.end);
-      const newDur = Math.max(1, diffDays(e, s) + 1);
-      item.duracao_dias = newDur;
-      item.data_fim = e;
+      newStart = toYMD(updatedTask.start);
+      newEnd = toYMD(updatedTask.end);
+      const oldStart = item.data_inicio ?? item.data_execucao ?? projStart;
+      const oldEnd = item.data_fim ?? addDays(oldStart, Math.max(1, item.duracao_dias || 1) - 1);
+
+      if (newStart !== oldStart && newEnd !== oldEnd) {
+        interactionType = 'body_move';
+      } else if (newEnd !== oldEnd) {
+        interactionType = 'resize_right';
+      } else if (newStart !== oldStart) {
+        interactionType = 'resize_left';
+      }
+    } else if (updatedTask.start) {
+      newStart = toYMD(updatedTask.start);
+      interactionType = 'body_move';
     } else if (updatedTask.duration != null) {
-      item.duracao_dias = Math.max(1, updatedTask.duration);
-      const s = item.data_inicio ?? item.data_execucao ?? projStart;
-      item.data_fim = addDays(s, item.duracao_dias - 1);
+      newDuration = Math.max(1, updatedTask.duration);
+      interactionType = 'resize_right';
     }
 
-    // Rollup das tarefas sintéticas primeiro
-    rollupSummaries(itemsMap, projStart);
+    // Adaptar para a interface pura do motor (EapEngineItem)
+    const engineItems: EapEngineItem[] = currentItems.map(i => ({
+      ...i,
+      data_inicio: i.data_inicio ?? i.data_execucao ?? projStart,
+      data_fim: i.data_fim ?? addDays(i.data_inicio ?? projStart, Math.max(1, i.duracao_dias || 1) - 1),
+    }));
 
-    // Propagar dependências para os sucessores
-    propagateDeps(itemsMap, projStart);
+    // Processamento centralizado no Motor do Cronograma
+    const { updatedItems: engineResult, affectedItems } = processUserInteraction(
+      engineItems,
+      { eap_codigo: id, interactionType, newStart, newEnd, newDuration },
+      projStart
+    );
 
-    const updatedList = Array.from(itemsMap.values());
+    // Mapear de volta para a lista do componente
+    const updatedList: ItemEap[] = engineResult.map(e => ({
+      id: e.id,
+      item_eap_id: e.item_eap_id,
+      eap_codigo: e.eap_codigo,
+      descricao_servico: e.descricao_servico,
+      data_inicio: e.data_inicio,
+      data_execucao: e.data_inicio,
+      data_fim: e.data_fim,
+      duracao_dias: e.duracao_dias,
+      e_analitico: e.e_analitico,
+      predecessores: e.predecessores,
+      percentual_executado_financeiro: e.percentual_executado_financeiro,
+    }));
 
-    // Registrar alteração pendente (por ID do item_eap no banco)
-    itemsMap.forEach(it => {
-      if (it.item_eap_id) {
-        pendingItemsRef.current.set(it.item_eap_id, it);
+    // Registrar apenas os itens afetados para persistência em lote no banco (Passo 9)
+    affectedItems.forEach(aff => {
+      if (aff.item_eap_id) {
+        const fullItem = updatedList.find(it => it.item_eap_id === aff.item_eap_id);
+        if (fullItem) {
+          pendingItemsRef.current.set(aff.item_eap_id, fullItem);
+        }
       }
     });
 
-    // Atualização otimista na UI
+    // Passo 8: Renderização Reativa no Gráfico
     const proj = selectedProjRef.current;
     const { ganttTasks, ganttLinks } = buildGanttData(updatedList, proj?.data_inicio);
     setRawItems(updatedList);
