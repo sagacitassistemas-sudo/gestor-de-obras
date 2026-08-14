@@ -99,6 +99,60 @@ function parsePredecessor(predStr: string): { code: string; type: string; lag: n
 const PM_TO_SVAR: Record<string, string> = { FS: 'e2s', SS: 's2s', FF: 'e2e', SF: 's2e' };
 const SVAR_TO_PM: Record<string, string> = { e2s: 'FS', s2s: 'SS', e2e: 'FF', s2e: 'SF' };
 
+// ─── React Error Boundary para o Componente Gantt ────────────────────────────
+
+interface GanttErrorBoundaryProps {
+  children: React.ReactNode;
+  onReset?: () => void;
+}
+
+interface GanttErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+
+class GanttErrorBoundary extends React.Component<GanttErrorBoundaryProps, GanttErrorBoundaryState> {
+  constructor(props: GanttErrorBoundaryProps) {
+    super(props);
+    (this as any).state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error): GanttErrorBoundaryState {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error('[GanttErrorBoundary] erro no Gantt:', error, errorInfo);
+  }
+
+  render() {
+    const state = (this as any).state as GanttErrorBoundaryState;
+    const props = (this as any).props as GanttErrorBoundaryProps;
+
+    if (state?.hasError) {
+      return (
+        <div className="p-8 text-center bg-rose-50 border border-rose-200 rounded-xl space-y-4 m-4">
+          <span className="material-symbols-outlined text-[48px] text-rose-500">warning</span>
+          <h3 className="text-lg font-bold text-rose-900">Falha ao carregar visualização do Gantt</h3>
+          <p className="text-xs text-rose-700 max-w-md mx-auto font-mono bg-rose-100 p-3 rounded border border-rose-200 text-left overflow-x-auto">
+            {state.error?.message || 'Erro desconhecido'}
+          </p>
+          <button
+            onClick={() => {
+              (this as any).setState({ hasError: false, error: null });
+              if (props.onReset) props.onReset();
+            }}
+            className="px-4 py-2 bg-[#005daa] hover:bg-[#004a88] text-white font-bold text-sm rounded-lg shadow-md transition-colors cursor-pointer"
+          >
+            Recarregar Cronograma
+          </button>
+        </div>
+      );
+    }
+    return props.children;
+  }
+}
+
 // ─── Componente Principal ─────────────────────────────────────────────────────
 
 export const CronogramaExecutivoView: React.FC<CronogramaExecutivoViewProps> = ({ authSession }) => {
@@ -246,20 +300,21 @@ export const CronogramaExecutivoView: React.FC<CronogramaExecutivoViewProps> = (
     });
 
     // Monta array ITask para o SVAR Gantt
-    // IMPORTANTE: não passar `end` — o SVAR calcula a partir de start+duration.
-    // Passar `end` junto com `duration` causa conflito interno e barras de largura zero.
+    // IMPORTANTE: Uma tarefa só pode ter type: 'summary' se efetivamente possuir filhos na lista.
+    // Passar type: 'summary' em itens com 0 filhos faz a engine interna do SVAR Gantt falhar com null.forEach.
     const ganttTasks: ITask[] = items.map(item => {
       const t = tmap.get(item.eap_codigo)!;
+      const hasChildren = (childCount.get(item.eap_codigo) ?? 0) > 0;
       const task: ITask = {
         id: item.eap_codigo,
         text: item.descricao_servico,
         start: t.start,
         duration: t.dur,
-        type: t.isSummary ? 'summary' : 'task',
+        type: hasChildren ? 'summary' : 'task',
         parent: t.pCode ?? 0,  // SVAR requer 0 (não undefined) para tarefas raiz
-        open: t.isSummary ? true : undefined,
+        open: hasChildren ? true : undefined,
         progress: item.percentual_executado_financeiro ?? 0,
-        rollup: t.isSummary ? true : undefined,
+        rollup: hasChildren ? true : undefined,
       };
       return task;
     });
@@ -883,35 +938,37 @@ export const CronogramaExecutivoView: React.FC<CronogramaExecutivoViewProps> = (
           </div>
         ) : (
           <div className="wx-willow-theme w-full h-[680px]">
-            <Gantt
-              tasks={tasks}
-              links={links}
-              columns={columns as any}
-              init={handleGanttInit}
-              /* ── Flags nativas do SVAR Gantt ── */
-              undo={true}            // Ctrl+Z / Ctrl+Y nativos
-              zoom={true}            // Ctrl+scroll para zoom
-              rollups={true}         // Marcos dos filhos aparecem na barra do pai colapsado
-              wbs={false}            // Usando coluna id customizada na primeira posição
-              criticalPath={{ type: 'flexible' }}   // Destaca caminho crítico
-              markers={todayMarker}  // Linha vertical "Hoje"
-              /* ── Hierarquia / collapse automático ── */
-              summary={{ autoProgress: true, autoConvert: true }}
-              /* ── Unidade de duração e escala ── */
-              lengthUnit="day"
-              durationUnit="day"
-              /* ── Escalas de tempo ── */
-              scales={[
-                { unit: 'month', step: 1, format: '%F %Y' },
-                { unit: 'week',  step: 1, format: 'S%W' },
-                { unit: 'day',   step: 1, format: '%d' },
-              ]}
-              /* ── Largura da célula e altura de linha ── */
-              cellWidth={38}
-              cellHeight={34}
-              /* ── Modo de exibição (grid + chart) ── */
-              displayMode="all"
-            />
+            <GanttErrorBoundary onReset={() => fetchEapItems(selectedProjetoId)}>
+              <Gantt
+                tasks={tasks}
+                links={links}
+                columns={columns as any}
+                init={handleGanttInit}
+                /* ── Flags nativas do SVAR Gantt ── */
+                undo={true}            // Ctrl+Z / Ctrl+Y nativos
+                zoom={true}            // Ctrl+scroll para zoom
+                rollups={true}         // Marcos dos filhos aparecem na barra do pai colapsado
+                wbs={false}            // Usando coluna id customizada na primeira posição
+                criticalPath={{ type: 'flexible' }}   // Destaca caminho crítico
+                markers={todayMarker}  // Linha vertical "Hoje"
+                /* ── Hierarquia / collapse automático ── */
+                summary={{ autoProgress: true, autoConvert: true }}
+                /* ── Unidade de duração e escala ── */
+                lengthUnit="day"
+                durationUnit="day"
+                /* ── Escalas de tempo ── */
+                scales={[
+                  { unit: 'month', step: 1, format: '%F %Y' },
+                  { unit: 'week',  step: 1, format: 'S%W' },
+                  { unit: 'day',   step: 1, format: '%d' },
+                ]}
+                /* ── Largura da célula e altura de linha ── */
+                cellWidth={38}
+                cellHeight={34}
+                /* ── Modo de exibição (grid + chart) ── */
+                displayMode="all"
+              />
+            </GanttErrorBoundary>
           </div>
         )}
       </div>
