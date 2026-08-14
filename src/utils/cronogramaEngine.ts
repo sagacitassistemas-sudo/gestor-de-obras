@@ -206,11 +206,25 @@ export function calculatePredecessorRequiredStart(
   itemsMap: Map<string, EapEngineItem>,
   projStart: string
 ): string | null {
-  if (!item.predecessores?.length) return null;
+  // Coleta predecessores da própria tarefa e de todos os seus ancestrais hierárquicos
+  const allPreds: string[] = [...(item.predecessores ?? [])];
+
+  let currCode = item.eap_codigo;
+  while (currCode.includes('.')) {
+    const parts = currCode.split('.');
+    parts.pop();
+    currCode = parts.join('.');
+    const parent = itemsMap.get(currCode);
+    if (parent?.predecessores?.length) {
+      allPreds.push(...parent.predecessores);
+    }
+  }
+
+  if (!allPreds.length) return null;
 
   let maxReqStart: string | null = null;
 
-  item.predecessores.forEach(predRaw => {
+  allPreds.forEach(predRaw => {
     const { code, type, lag } = parsePredecessorString(predRaw);
     const pred = itemsMap.get(code);
     if (!pred) return;
@@ -334,8 +348,6 @@ export function propagateAutoScheduling(itemsMap: Map<string, EapEngineItem>, pr
     executeSummaryRollup(itemsMap, projStart);
 
     itemsMap.forEach(item => {
-      if (!item.predecessores?.length) return;
-
       const reqStart = calculatePredecessorRequiredStart(item, itemsMap, projStart);
       if (reqStart) {
         const currStart = item.data_inicio || projStart;
