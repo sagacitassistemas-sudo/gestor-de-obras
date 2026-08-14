@@ -565,12 +565,18 @@ export const CronogramaExecutivoView: React.FC<CronogramaExecutivoViewProps> = (
       }
     }
 
-    if (updatedTask.duration != null) {
-      item.duracao_dias = Math.max(1, updatedTask.duration);
-    } else if (updatedTask.start && updatedTask.end) {
+    // Prioridade máxima para (start, end) ao redimensionar barras no Gantt:
+    // Se o usuário arrastou a ponta da barra (redimensionou), calcula duracao_dias = end - start + 1
+    if (updatedTask.start && updatedTask.end) {
       const s = toYMD(updatedTask.start);
       const e = toYMD(updatedTask.end);
-      item.duracao_dias = Math.max(1, diffDays(e, s) + 1);
+      const newDur = Math.max(1, diffDays(e, s) + 1);
+      item.duracao_dias = newDur;
+      item.data_fim = e;
+    } else if (updatedTask.duration != null) {
+      item.duracao_dias = Math.max(1, updatedTask.duration);
+      const s = item.data_inicio ?? item.data_execucao ?? projStart;
+      item.data_fim = addDays(s, item.duracao_dias - 1);
     }
 
     // Rollup das tarefas sintéticas primeiro
