@@ -7,6 +7,9 @@ import {
   EapEngineItem,
   processUserInteraction,
   InteractionType,
+  executeSummaryRollup,
+  propagateAutoScheduling,
+  calculateLeafFinishDate,
 } from '../utils/cronogramaEngine';
 import '@svar-ui/react-gantt/all.css';
 
@@ -378,9 +381,47 @@ export const CronogramaExecutivoView: React.FC<CronogramaExecutivoViewProps> = (
         const proj = projetos.find(p => p.id === projetoId);
         const projStart = proj?.data_inicio ?? toYMD(new Date());
 
-        const itemsMap = new Map<string, ItemEap>(items.map(i => [i.eap_codigo, { ...i }]));
-        rollupSummaries(itemsMap, projStart);
-        const syncedItems = Array.from(itemsMap.values());
+        // Converter para a interface do Motor do Cronograma
+        const engineMap = new Map<string, EapEngineItem>(
+          items.map(i => {
+            const s = i.data_inicio ?? i.data_execucao ?? projStart;
+            const dur = Math.max(1, i.duracao_dias || 1);
+            const e = i.data_fim ?? calculateLeafFinishDate(s, dur);
+            return [
+              i.eap_codigo,
+              {
+                id: i.id,
+                item_eap_id: i.item_eap_id,
+                eap_codigo: i.eap_codigo,
+                descricao_servico: i.descricao_servico,
+                data_inicio: s,
+                data_fim: e,
+                duracao_dias: dur,
+                e_analitico: i.e_analitico,
+                predecessores: i.predecessores,
+                percentual_executado_financeiro: i.percentual_executado_financeiro,
+              },
+            ];
+          })
+        );
+
+        // Auto-scheduling de restaurações de dependências e rollup dos agrupadores
+        propagateAutoScheduling(engineMap, projStart);
+        executeSummaryRollup(engineMap, projStart);
+
+        const syncedItems: ItemEap[] = Array.from(engineMap.values()).map(e => ({
+          id: e.id,
+          item_eap_id: e.item_eap_id,
+          eap_codigo: e.eap_codigo,
+          descricao_servico: e.descricao_servico,
+          data_inicio: e.data_inicio,
+          data_execucao: e.data_inicio,
+          data_fim: e.data_fim,
+          duracao_dias: e.duracao_dias,
+          e_analitico: e.e_analitico,
+          predecessores: e.predecessores,
+          percentual_executado_financeiro: e.percentual_executado_financeiro,
+        }));
 
         const { ganttTasks, ganttLinks } = buildGanttData(syncedItems, proj?.data_inicio);
         setRawItems(syncedItems);

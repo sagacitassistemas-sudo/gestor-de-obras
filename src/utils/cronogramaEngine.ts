@@ -313,28 +313,11 @@ export function processUserInteraction(
     return { updatedItems: items, affectedItems: [] };
   }
 
-  // Critério de Aceitação 1: Tarefas sumário não aceitam alteração direta de datas pelo usuário
+  // Critério de Aceitação 1: Tarefas sumário NUNCA aceitam alteração direta de datas pelo usuário
   const isSummary = classifyElementType(item, items) === 'summary';
   if (isSummary) {
-    // Se for agrupador e o usuário moveu o corpo da barra, deslocamos seus subitens proporcionalmente
-    if (interaction.interactionType === 'body_move' && interaction.newStart) {
-      const oldStart = item.data_inicio || projStart;
-      const deltaDays = diffEngineDays(interaction.newStart, oldStart);
-      if (deltaDays !== 0) {
-        itemsMap.forEach(child => {
-          if (child.eap_codigo.startsWith(item.eap_codigo + '.')) {
-            const childStart = child.data_inicio || projStart;
-            const shiftedStart = addEngineDays(childStart, deltaDays);
-            child.data_inicio = shiftedStart;
-            child.data_fim = calculateLeafFinishDate(shiftedStart, child.duracao_dias);
-          }
-        });
-      }
-    } else {
-      // Bloqueia redimensionamento direto em tarefas agrupadoras
-      console.warn(`[CronogramaEngine] Alteração direta em tarefa sumário '${item.eap_codigo}' é rejeitada.`);
-      return { updatedItems: items, affectedItems: [] };
-    }
+    console.warn(`[CronogramaEngine] Alteração direta em tarefa sumário '${item.eap_codigo}' é rejeitada.`);
+    return { updatedItems: items, affectedItems: [] };
   } else {
     // Mapeamento dos 3 pontos de foco para tarefas folha (Passo 5 e 6)
     if (interaction.interactionType === 'body_move') {
