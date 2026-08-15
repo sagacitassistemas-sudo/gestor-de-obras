@@ -112,7 +112,7 @@ async function ensureUserExists(
     // Also clears the claims_pendentes flag set by POST /api/usuarios when profile changes
     if (SYSTEM_PARAMS.CLAIMS_SYNC_ENABLED) {
       try {
-        const adminAuth = getAdminAuth();
+        const adminAuth = getAdminApps().length > 0 ? getAdminAuth() : null;
         if (adminAuth && typeof adminAuth.setCustomUserClaims === 'function') {
           await adminAuth.setCustomUserClaims(token.uid, {
             perfil: existingUser.perfil,
@@ -2579,29 +2579,48 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
     }
   });
 
-  // POST /api/rdos
+    // POST /api/rdos
   app.post("/api/rdos", verifyFirebaseJWT, async (req: AuthenticatedRequest, res) => {
     try {
       const client = getSupabaseClient(req);
       if (!client) return res.status(401).json({ error: "Unauthorized" });
 
       const rdoData = req.body;
+      const tenantId = req.decodedToken?.contrato_id;
+      const ano = new Date(rdoData.data_rdo || new Date()).getFullYear().toString().slice(-2);
+      
+      const { data: countData } = await client.from("rdos").select("id", { count: "exact" }).eq("tenant_id", tenantId);
+      const seq = ((countData?.length || 0) + 1).toString().padStart(3, '0');
+      const numero_rdo = `RDO-${seq}-${ano}`;
+
       const payload = {
-        tenant_id: req.decodedToken?.contrato_id,
+        tenant_id: tenantId,
         projeto_id: rdoData.projeto_id,
         ordem_servico_id: rdoData.ordem_servico_id,
+        numero_rdo: numero_rdo,
         data_rdo: rdoData.data_rdo,
         clima_manha: rdoData.clima_manha,
         clima_tarde: rdoData.clima_tarde,
-        condicao_area: rdoData.condicao_area,
-        observacoes: rdoData.observacoes,
-        qtd_medida_hoje: rdoData.qtd_medida_hoje || 0,
-        status: 'Em Elaboração',
-        usuario_responsavel: req.decodedToken?.uid
+        status: 'Rascunho',
       };
-      
+
       const { data, error } = await client.from("rdos").insert(payload).select().single();
       if (error) return res.status(500).json({ error: error.message });
+      
+      // Salvar os itens do RDO
+      if (rdoData.itens && rdoData.itens.length > 0) {
+        const itensPayload = rdoData.itens.map((item: any) => ({
+          tenant_id: tenantId,
+          rdo_id: data.id,
+          item_eap_id: item.item_eap_id,
+          qtd_medida: item.qtd_medida_hoje || 0,
+          valor_unitario_contrato: 0,
+          valor_total_dia: 0
+        }));
+        const { error: itemsError } = await client.from("rdo_items").insert(itensPayload);
+        if (itemsError) console.error("Erro ao salvar rdo_items:", itemsError);
+      }
+
       return res.json({ success: true, data });
     } catch (err: any) {
       return res.status(500).json({ error: err.message });
