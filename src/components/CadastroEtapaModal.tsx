@@ -186,7 +186,8 @@ export const CadastroEtapaModal: React.FC<CadastroEtapaModalProps> = ({
     setParentCode(newPCode);
     if (!itemToEdit && !isManualEap) {
       setEapCodigo(calculateSuggestedEap(newPCode));
-      if (newPCode !== 'root' && newPCode.split('.').length >= 3) setEAnalitico(true);
+      // Se o pai for nível 2 ou mais (ex: 2.1), o filho será nível 3+, então default é Serviço Executável
+      if (newPCode !== 'root' && newPCode.split('.').length >= 2) setEAnalitico(true);
       else setEAnalitico(false);
     }
   };
@@ -419,15 +420,21 @@ export const CadastroEtapaModal: React.FC<CadastroEtapaModalProps> = ({
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5 flex items-center justify-between">
                   Duração estimada (Dias)
+                  {!eAnalitico && <span className="text-[10px] text-blue-600 bg-blue-100 px-1.5 py-0.5 rounded">Automático</span>}
                 </label>
                 <input
                   type="number"
                   min="1"
                   value={duracaoDias}
                   onChange={(e) => setDuracaoDias(parseInt(e.target.value) || 1)}
-                  className="w-full bg-white border border-slate-300 font-bold text-sm text-slate-900 rounded-lg px-3.5 py-2.5 focus:ring-2 focus:ring-[#005daa]/20 focus:border-[#005daa] outline-none transition-all"
+                  disabled={!eAnalitico}
+                  className={`w-full border font-bold text-sm rounded-lg px-3.5 py-2.5 transition-all outline-none 
+                    ${!eAnalitico 
+                      ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed' 
+                      : 'bg-white border-slate-300 text-slate-900 focus:ring-2 focus:ring-[#005daa]/20 focus:border-[#005daa]'
+                    }`}
                 />
               </div>
               <div>

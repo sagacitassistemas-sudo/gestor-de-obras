@@ -30,3 +30,6 @@ __pycache__/
 
 # Documentação
 docs/
+
+# Arquivos temporarios
+.temp/

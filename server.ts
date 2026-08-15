@@ -2043,12 +2043,25 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
         return res.status(400).json({ error: "Missing required fields" });
       }
 
+      let codigo_projeto = req.body.codigo_projeto;
+      if (!id && !codigo_projeto) {
+        // Auto-generate project code: P-[SEQUENCIAL]-[ANO]
+        const yearStr = new Date(data_inicio).getFullYear().toString().slice(-2);
+        const { count: projCount } = await client
+          .from("projetos")
+          .select("id", { count: 'exact', head: true })
+          .eq("tenant_id", tenantId);
+        const seq = (projCount !== null ? projCount : 0) + 1;
+        codigo_projeto = `P-${seq.toString().padStart(2, '0')}-${yearStr}`;
+      }
+
       const upsertData: any = {
         tenant_id: tenantId,
         nome_projeto,
         data_inicio,
         updated_at: new Date().toISOString()
       };
+      if (codigo_projeto) upsertData.codigo_projeto = codigo_projeto;
       if (id) upsertData.id = id;
 
       const { data, error } = await saveRecord(client, "projetos", upsertData);
@@ -2473,6 +2486,123 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
       }
       
       return res.status(400).json({ error: "Formato inválido. Use format=xlsx ou format=xml" });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  // GET /api/ordens-servico
+  app.get("/api/ordens-servico", verifyFirebaseJWT, async (req: AuthenticatedRequest, res) => {
+    try {
+      const client = getSupabaseClient(req);
+      if (!client) return res.status(401).json({ error: "Unauthorized" });
+
+      const { projeto_id } = req.query;
+      let query = client.from("ordens_servico").select("*, itens_eap(descricao_servico, unidade_medida)");
+      if (projeto_id) query = query.eq("projeto_id", projeto_id);
+      
+      const { data, error } = await query.order("created_at", { ascending: false });
+      if (error) {
+        console.error("[GET /api/ordens-servico] Supabase error:", error);
+        return res.status(500).json({ error: error.message, details: error.details, hint: error.hint });
+      }
+      return res.json({ success: true, data });
+    } catch (err: any) {
+      console.error("[GET /api/ordens-servico] Catch error:", err);
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  // POST /api/ordens-servico
+  app.post("/api/ordens-servico", verifyFirebaseJWT, async (req: AuthenticatedRequest, res) => {
+    try {
+      const client = getSupabaseClient(req);
+      if (!client) return res.status(401).json({ error: "Unauthorized" });
+
+      const osData = req.body;
+      const tenantId = req.decodedToken?.contrato_id;
+      const projId = osData.projeto_id;
+      const emissaoDate = osData.data_emissao ? new Date(osData.data_emissao) : new Date();
+      const yearStr = emissaoDate.getFullYear().toString().slice(-2);
+
+      const { data: projData } = await client.from("projetos").select("codigo_projeto").eq("id", projId).single();
+      const projCode = projData?.codigo_projeto || 'P-00';
+      
+      const { count: osCount } = await client.from("ordens_servico").select("id", { count: 'exact', head: true }).eq("projeto_id", projId);
+      
+      const seq = (osCount !== null ? osCount : 0) + 1;
+      const seqStr = seq.toString().padStart(3, '0');
+      
+      let shortProjCode = projCode.replace('P-', '').replace(`-${yearStr}`, ''); 
+      if (!shortProjCode || shortProjCode.length < 2) shortProjCode = '01';
+      
+      const generatedNumeroOs = `OS-${seqStr}-P${shortProjCode}-${yearStr}`;
+
+      const osPayload = {
+        tenant_id: tenantId,
+        projeto_id: projId,
+        item_eap_id: osData.item_eap_id,
+        numero_os: generatedNumeroOs,
+        descricao: osData.descricao,
+        status: 'Emitida',
+        data_emissao: emissaoDate.toISOString()
+      };
+      
+      const { data, error } = await client.from("ordens_servico").insert(osPayload).select().single();
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json({ success: true, data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  // GET /api/rdos
+  app.get("/api/rdos", verifyFirebaseJWT, async (req: AuthenticatedRequest, res) => {
+    try {
+      const client = getSupabaseClient(req);
+      if (!client) return res.status(401).json({ error: "Unauthorized" });
+
+      const { ordem_servico_id, projeto_id } = req.query;
+      let query = client.from("rdos").select("*");
+      
+      if (ordem_servico_id) {
+        query = query.eq("ordem_servico_id", ordem_servico_id);
+      } else if (projeto_id) {
+        query = query.eq("projeto_id", projeto_id);
+      }
+      
+      const { data, error } = await query.order("created_at", { ascending: false });
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json({ success: true, data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  // POST /api/rdos
+  app.post("/api/rdos", verifyFirebaseJWT, async (req: AuthenticatedRequest, res) => {
+    try {
+      const client = getSupabaseClient(req);
+      if (!client) return res.status(401).json({ error: "Unauthorized" });
+
+      const rdoData = req.body;
+      const payload = {
+        tenant_id: req.decodedToken?.contrato_id,
+        projeto_id: rdoData.projeto_id,
+        ordem_servico_id: rdoData.ordem_servico_id,
+        data_rdo: rdoData.data_rdo,
+        clima_manha: rdoData.clima_manha,
+        clima_tarde: rdoData.clima_tarde,
+        condicao_area: rdoData.condicao_area,
+        observacoes: rdoData.observacoes,
+        qtd_medida_hoje: rdoData.qtd_medida_hoje || 0,
+        status: 'Em Elaboração',
+        usuario_responsavel: req.decodedToken?.uid
+      };
+      
+      const { data, error } = await client.from("rdos").insert(payload).select().single();
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json({ success: true, data });
     } catch (err: any) {
       return res.status(500).json({ error: err.message });
     }

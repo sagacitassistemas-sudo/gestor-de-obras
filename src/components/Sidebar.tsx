@@ -99,183 +99,212 @@ export const Sidebar: React.FC<SidebarProps> = ({
         )}
 
         {/* Navigation Items */}
-        <nav className="flex-1 space-y-1.5 overflow-y-auto">
-          <button
-            onClick={() => handleNavClick('dashboard')}
-            className={`w-full text-left ${navItemClass('dashboard')}`}
-          >
-            <span
-              className="material-symbols-outlined"
-              style={{ fontVariationSettings: activeTab === 'dashboard' ? "'FILL' 1" : "'FILL' 0" }}
-            >
-              dashboard
-            </span>
-            {!isCollapsed && <span className="font-label-bold text-label-bold">Dashboard</span>}
-          </button>
-
-          {hasAccess('projetos_ler') && (
-            <>
-              <button
-                onClick={() => handleNavClick('projetos_eap')}
-                className={`w-full text-left ${navItemClass('projetos_eap')}`}
-              >
-                <span
-                  className="material-symbols-outlined"
-                  style={{ fontVariationSettings: activeTab === 'projetos_eap' ? "'FILL' 1" : "'FILL' 0" }}
-                >
-                  account_tree
-                </span>
-                {!isCollapsed && <span className="font-label-bold text-label-bold">Projetos (EAP)</span>}
-              </button>
-
-              <button
-                onClick={() => handleNavClick('cronograma_executivo')}
-                className={`w-full text-left ${navItemClass('cronograma_executivo')}`}
-              >
-                <span
-                  className="material-symbols-outlined"
-                  style={{ fontVariationSettings: activeTab === 'cronograma_executivo' ? "'FILL' 1" : "'FILL' 0" }}
-                >
-                  calendar_month
-                </span>
-                {!isCollapsed && <span className="font-label-bold text-label-bold">Cronograma</span>}
-              </button>
-            </>
-          )}
-
-          {hasAccess('medicoes_ler') && (
+        <nav className="flex-1 space-y-4 overflow-y-auto px-2">
+          
+          {/* DASHBOARD & ALERTAS */}
+          <div className="space-y-1">
             <button
-              onClick={() => handleNavClick('contratos_obra')}
-              className={`w-full text-left ${navItemClass('contratos_obra')}`}
+              onClick={() => handleNavClick('dashboard')}
+              className={`w-full text-left ${navItemClass('dashboard')}`}
             >
               <span
                 className="material-symbols-outlined"
-                style={{ fontVariationSettings: activeTab === 'contratos_obra' ? "'FILL' 1" : "'FILL' 0" }}
+                style={{ fontVariationSettings: activeTab === 'dashboard' ? "'FILL' 1" : "'FILL' 0" }}
               >
-                architecture
+                dashboard
               </span>
-              {!isCollapsed && <span className="font-label-bold text-label-bold">Medições</span>}
+              {!isCollapsed && <span className="font-label-bold text-label-bold">Dashboard</span>}
             </button>
-          )}
+            <button
+              onClick={() => handleNavClick('alertas')}
+              className={`w-full text-left relative ${navItemClass('alertas')}`}
+            >
+              <span
+                className="material-symbols-outlined"
+                style={{ fontVariationSettings: activeTab === 'alertas' ? "'FILL' 1" : "'FILL' 0" }}
+              >
+                warning
+              </span>
+              {!isCollapsed && <span className="font-label-bold text-label-bold flex-1">Alertas</span>}
+              {!isCollapsed && alertCount > 0 && (
+                <span className="px-2 py-0.5 text-[10px] bg-[#f59e0b] text-white font-bold rounded-full">
+                  {alertCount}
+                </span>
+              )}
+              {isCollapsed && alertCount > 0 && (
+                <span className="absolute top-2 right-2 w-2 h-2 bg-[#f59e0b] rounded-full"></span>
+              )}
+            </button>
+          </div>
 
+          {/* GRUPO: CADASTROS */}
           {hasAccess('empresas_ler') && (
-            <button
-              onClick={() => handleNavClick('empresas')}
-              className={`w-full text-left ${navItemClass('empresas')}`}
-            >
-              <span
-                className="material-symbols-outlined"
-                style={{ fontVariationSettings: activeTab === 'empresas' ? "'FILL' 1" : "'FILL' 0" }}
+            <div className="space-y-1">
+              {!isCollapsed && (
+                <div className="px-3 pb-1">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                    Cadastros
+                  </span>
+                </div>
+              )}
+              <button
+                onClick={() => handleNavClick('empresas')}
+                className={`w-full text-left ${navItemClass('empresas')}`}
               >
-                store
-              </span>
-              {!isCollapsed && <span className="font-label-bold text-label-bold">Empresas</span>}
-            </button>
-          )}
-
-          {hasAccess('financeiro_ler') && (
-            <button
-              onClick={() => handleNavClick('financeiro')}
-              className={`w-full text-left ${navItemClass('financeiro')}`}
-            >
-              <span
-                className="material-symbols-outlined"
-                style={{ fontVariationSettings: activeTab === 'financeiro' ? "'FILL' 1" : "'FILL' 0" }}
+                <span className="material-symbols-outlined" style={{ fontVariationSettings: activeTab === 'empresas' ? "'FILL' 1" : "'FILL' 0" }}>store</span>
+                {!isCollapsed && <span className="font-label-bold text-label-bold">Empresas</span>}
+              </button>
+              <button
+                onClick={() => handleNavClick('fornecedores')}
+                className={`w-full text-left ${navItemClass('fornecedores')}`}
               >
-                account_balance_wallet
-              </span>
-              {!isCollapsed && <span className="font-label-bold text-label-bold">Financeiro</span>}
-            </button>
-          )}
-
-          <button
-            onClick={() => handleNavClick('alertas')}
-            className={`w-full text-left relative ${navItemClass('alertas')}`}
-          >
-            <span
-              className="material-symbols-outlined"
-              style={{ fontVariationSettings: activeTab === 'alertas' ? "'FILL' 1" : "'FILL' 0" }}
-            >
-              warning
-            </span>
-            {!isCollapsed && <span className="font-label-bold text-label-bold flex-1">Alertas</span>}
-            {!isCollapsed && alertCount > 0 && (
-              <span className="px-2 py-0.5 text-[10px] bg-[#f59e0b] text-white font-bold rounded-full">
-                {alertCount}
-              </span>
-            )}
-            {isCollapsed && alertCount > 0 && (
-              <span className="absolute top-2 right-2 w-2 h-2 bg-[#f59e0b] rounded-full"></span>
-            )}
-          </button>
-
-          {!isCollapsed && (
-            <div className="pt-3 pb-1 px-3">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                Infraestrutura (Container)
-              </span>
+                <span className="material-symbols-outlined" style={{ fontVariationSettings: activeTab === 'fornecedores' ? "'FILL' 1" : "'FILL' 0" }}>local_shipping</span>
+                {!isCollapsed && <span className="font-label-bold text-label-bold">Fornecedores</span>}
+              </button>
+              <button
+                onClick={() => handleNavClick('equipes')}
+                className={`w-full text-left ${navItemClass('equipes')}`}
+              >
+                <span className="material-symbols-outlined" style={{ fontVariationSettings: activeTab === 'equipes' ? "'FILL' 1" : "'FILL' 0" }}>engineering</span>
+                {!isCollapsed && <span className="font-label-bold text-label-bold">Equipes</span>}
+              </button>
+              <button
+                onClick={() => handleNavClick('maquinas')}
+                className={`w-full text-left ${navItemClass('maquinas')}`}
+              >
+                <span className="material-symbols-outlined" style={{ fontVariationSettings: activeTab === 'maquinas' ? "'FILL' 1" : "'FILL' 0" }}>precision_manufacturing</span>
+                {!isCollapsed && <span className="font-label-bold text-label-bold">Máquinas</span>}
+              </button>
+              <button
+                onClick={() => handleNavClick('ferramentas')}
+                className={`w-full text-left ${navItemClass('ferramentas')}`}
+              >
+                <span className="material-symbols-outlined" style={{ fontVariationSettings: activeTab === 'ferramentas' ? "'FILL' 1" : "'FILL' 0" }}>build</span>
+                {!isCollapsed && <span className="font-label-bold text-label-bold">Ferramentas</span>}
+              </button>
+              <button
+                onClick={() => handleNavClick('materiais')}
+                className={`w-full text-left ${navItemClass('materiais')}`}
+              >
+                <span className="material-symbols-outlined" style={{ fontVariationSettings: activeTab === 'materiais' ? "'FILL' 1" : "'FILL' 0" }}>inventory_2</span>
+                {!isCollapsed && <span className="font-label-bold text-label-bold">Materiais</span>}
+              </button>
             </div>
           )}
 
-          {hasAccess('usuarios_ler') && (
-            <button
-              onClick={() => handleNavClick('usuarios')}
-              className={`w-full text-left ${navItemClass('usuarios')}`}
-            >
-              <span
-                className="material-symbols-outlined"
-                style={{ fontVariationSettings: activeTab === 'usuarios' ? "'FILL' 1" : "'FILL' 0" }}
-              >
-                group
-              </span>
-              {!isCollapsed && <span className="font-label-bold text-label-bold">Usuários</span>}
-            </button>
+          {/* GRUPO: OBRA */}
+          {(hasAccess('projetos_ler') || hasAccess('medicoes_ler')) && (
+            <div className="space-y-1">
+              {!isCollapsed && (
+                <div className="pt-2 px-3 pb-1">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                    Obra
+                  </span>
+                </div>
+              )}
+              {hasAccess('projetos_ler') && (
+                <button
+                  onClick={() => handleNavClick('projetos_eap')}
+                  className={`w-full text-left ${navItemClass('projetos_eap')}`}
+                >
+                  <span className="material-symbols-outlined" style={{ fontVariationSettings: activeTab === 'projetos_eap' ? "'FILL' 1" : "'FILL' 0" }}>account_tree</span>
+                  {!isCollapsed && <span className="font-label-bold text-label-bold">Projetos</span>}
+                </button>
+              )}
+              {hasAccess('projetos_ler') && (
+                <button
+                  onClick={() => handleNavClick('cronograma_executivo')}
+                  className={`w-full text-left ${navItemClass('cronograma_executivo')}`}
+                >
+                  <span className="material-symbols-outlined" style={{ fontVariationSettings: activeTab === 'cronograma_executivo' ? "'FILL' 1" : "'FILL' 0" }}>calendar_month</span>
+                  {!isCollapsed && <span className="font-label-bold text-label-bold">Cronograma</span>}
+                </button>
+              )}
+              {(hasAccess('projetos_ler') || hasAccess('medicoes_ler')) && (
+                <button
+                  onClick={() => handleNavClick('ordens_servico')}
+                  className={`w-full text-left ${navItemClass('ordens_servico')}`}
+                >
+                  <span className="material-symbols-outlined" style={{ fontVariationSettings: activeTab === 'ordens_servico' ? "'FILL' 1" : "'FILL' 0" }}>assignment</span>
+                  {!isCollapsed && <span className="font-label-bold text-label-bold">Ordens de Serviço</span>}
+                </button>
+              )}
+              {(hasAccess('projetos_ler') || hasAccess('medicoes_ler')) && (
+                <button
+                  onClick={() => handleNavClick('rdo')}
+                  className={`w-full text-left ${navItemClass('rdo')}`}
+                >
+                  <span className="material-symbols-outlined" style={{ fontVariationSettings: activeTab === 'rdo' ? "'FILL' 1" : "'FILL' 0" }}>fact_check</span>
+                  {!isCollapsed && <span className="font-label-bold text-label-bold">RDO's</span>}
+                </button>
+              )}
+              {hasAccess('medicoes_ler') && (
+                <button
+                  onClick={() => handleNavClick('contratos_obra')}
+                  className={`w-full text-left ${navItemClass('contratos_obra')}`}
+                >
+                  <span className="material-symbols-outlined" style={{ fontVariationSettings: activeTab === 'contratos_obra' ? "'FILL' 1" : "'FILL' 0" }}>architecture</span>
+                  {!isCollapsed && <span className="font-label-bold text-label-bold">Medição</span>}
+                </button>
+              )}
+            </div>
           )}
 
-          {(isAdmin || userRole === 'GESTOR') && (
-            <button
-              onClick={() => handleNavClick('matriz-acesso')}
-              className={`w-full text-left ${navItemClass('matriz-acesso')}`}
-            >
-              <span
-                className="material-symbols-outlined"
-                style={{ fontVariationSettings: activeTab === 'matriz-acesso' ? "'FILL' 1" : "'FILL' 0" }}
+          {/* GRUPO: GESTÃO */}
+          <div className="space-y-1">
+            {!isCollapsed && (
+              <div className="pt-2 px-3 pb-1">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                  Gestão
+                </span>
+              </div>
+            )}
+            {hasAccess('financeiro_ler') && (
+              <button
+                onClick={() => handleNavClick('financeiro')}
+                className={`w-full text-left ${navItemClass('financeiro')}`}
               >
-                admin_panel_settings
-              </span>
-              {!isCollapsed && <span className="font-label-bold text-label-bold">Matriz Acessos</span>}
-            </button>
-          )}
-
-          {isAdmin && (
-            <button
-              onClick={() => handleNavClick('audit-log')}
-              className={`w-full text-left ${navItemClass('audit-log')}`}
-            >
-              <span
-                className="material-symbols-outlined"
-                style={{ fontVariationSettings: activeTab === 'audit-log' ? "'FILL' 1" : "'FILL' 0" }}
+                <span className="material-symbols-outlined" style={{ fontVariationSettings: activeTab === 'financeiro' ? "'FILL' 1" : "'FILL' 0" }}>account_balance_wallet</span>
+                {!isCollapsed && <span className="font-label-bold text-label-bold">Financeiro</span>}
+              </button>
+            )}
+            {hasAccess('usuarios_ler') && (
+              <button
+                onClick={() => handleNavClick('usuarios')}
+                className={`w-full text-left ${navItemClass('usuarios')}`}
               >
-                policy
-              </span>
-              {!isCollapsed && <span className="font-label-bold text-label-bold">Auditoria</span>}
-            </button>
-          )}
-
-          {isAdmin && (
-            <button
-              onClick={() => handleNavClick('parametros')}
-              className={`w-full text-left ${navItemClass('parametros')}`}
-            >
-              <span
-                className="material-symbols-outlined"
-                style={{ fontVariationSettings: activeTab === 'parametros' ? "'FILL' 1" : "'FILL' 0" }}
+                <span className="material-symbols-outlined" style={{ fontVariationSettings: activeTab === 'usuarios' ? "'FILL' 1" : "'FILL' 0" }}>group</span>
+                {!isCollapsed && <span className="font-label-bold text-label-bold">Usuários</span>}
+              </button>
+            )}
+            {isAdmin && (
+              <button
+                onClick={() => handleNavClick('parametros')}
+                className={`w-full text-left ${navItemClass('parametros')}`}
               >
-                tune
-              </span>
-              {!isCollapsed && <span className="font-label-bold text-label-bold">Parâmetros</span>}
-            </button>
-          )}
+                <span className="material-symbols-outlined" style={{ fontVariationSettings: activeTab === 'parametros' ? "'FILL' 1" : "'FILL' 0" }}>tune</span>
+                {!isCollapsed && <span className="font-label-bold text-label-bold">Parâmetros</span>}
+              </button>
+            )}
+            {isAdmin && (
+              <button
+                onClick={() => handleNavClick('audit-log')}
+                className={`w-full text-left ${navItemClass('audit-log')}`}
+              >
+                <span className="material-symbols-outlined" style={{ fontVariationSettings: activeTab === 'audit-log' ? "'FILL' 1" : "'FILL' 0" }}>policy</span>
+                {!isCollapsed && <span className="font-label-bold text-label-bold">Auditoria</span>}
+              </button>
+            )}
+            {(isAdmin || userRole === 'GESTOR') && (
+              <button
+                onClick={() => handleNavClick('matriz-acesso')}
+                className={`w-full text-left ${navItemClass('matriz-acesso')}`}
+              >
+                <span className="material-symbols-outlined" style={{ fontVariationSettings: activeTab === 'matriz-acesso' ? "'FILL' 1" : "'FILL' 0" }}>admin_panel_settings</span>
+                {!isCollapsed && <span className="font-label-bold text-label-bold">Matriz de acessos</span>}
+              </button>
+            )}
+          </div>
         </nav>
 
         <div className="mt-auto pt-4 border-t border-[#c0c7d6] space-y-1">

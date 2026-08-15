@@ -307,7 +307,7 @@ export function executeSummaryRollup(itemsMap: Map<string, EapEngineItem>, projS
     if (!node || !node.children.length) return;
 
     const leafDescendants = Array.from(itemsMap.values()).filter(
-      c => c.eap_codigo !== parentCode && c.eap_codigo.startsWith(parentCode + '.') && c.e_analitico
+      c => c.eap_codigo !== parentCode && c.eap_codigo.startsWith(parentCode + '.')
     );
     if (!leafDescendants.length) return;
 
@@ -454,4 +454,125 @@ export function processUserInteraction(
   });
 
   return { updatedItems, affectedItems };
+}
+
+// ─── Pipeline Completo & SVAR Adapter ────────────────────────────────────────
+
+export interface GanttTask {
+  id: string | number;
+  text: string;
+  start: Date;
+  end?: Date;
+  duration?: number;
+  type?: 'task' | 'summary' | 'milestone';
+  parent?: string | number;
+  open?: boolean;
+  progress?: number;
+  rollup?: boolean;
+  readonly?: boolean;
+}
+
+export interface GanttLink {
+  id: string | number;
+  source: string | number;
+  target: string | number;
+  type: 'e2s' | 's2s' | 'e2e' | 's2e';
+  lag?: number;
+}
+
+/**
+ * Encapsula o pipeline completo: auto-scheduling -> rollup -> SVAR export
+ */
+export function computeFullSchedule(
+  items: EapEngineItem[],
+  projStart: string
+): { syncedItems: EapEngineItem[]; ganttTasks: GanttTask[]; ganttLinks: GanttLink[]; hasCorrections: boolean } {
+  // Faz backup dos valores originais para checar correções
+  const originalState = new Map<string, string>();
+  items.forEach(i => {
+    originalState.set(i.eap_codigo, `${i.data_inicio}|${i.data_fim}|${i.duracao_dias}`);
+  });
+
+  const itemsMap = new Map<string, EapEngineItem>(items.map(i => [i.eap_codigo, { ...i }]));
+  
+  // Roda o pipeline de cálculo
+  propagateAutoScheduling(itemsMap, projStart);
+  executeSummaryRollup(itemsMap, projStart);
+  
+  const syncedItems = Array.from(itemsMap.values());
+  
+  let hasCorrections = false;
+  syncedItems.forEach(i => {
+    const orig = originalState.get(i.eap_codigo);
+    const curr = `${i.data_inicio}|${i.data_fim}|${i.duracao_dias}`;
+    if (orig !== curr) hasCorrections = true;
+  });
+
+  // Determinar número de filhos para cada item
+  const childCount = new Map<string, number>();
+  syncedItems.forEach(item => {
+    const parts = item.eap_codigo.split('.');
+    if (parts.length > 1) {
+      parts.pop();
+      const pCode = parts.join('.');
+      if (itemsMap.has(pCode)) {
+        childCount.set(pCode, (childCount.get(pCode) || 0) + 1);
+      }
+    }
+  });
+
+  const ganttTasks: GanttTask[] = syncedItems.map(item => {
+    const hasChildren = (childCount.get(item.eap_codigo) || 0) > 0;
+    const isSummary = hasChildren || !item.e_analitico;
+    
+    const parts = item.eap_codigo.split('.');
+    let pCode: string | number = 0;
+    if (parts.length > 1) {
+      parts.pop();
+      pCode = parts.join('.');
+    }
+
+    const start = parseEngineDate(item.data_inicio);
+    const end = parseEngineDate(item.data_fim);
+    
+    // SVAR Gantt trata a data final como exclusiva.
+    // Para renderizar corretamente, o fim visual precisa ser +1 dia (86400000ms).
+    const visualEnd = new Date(end.getTime() + 86400000);
+
+    return {
+      id: item.eap_codigo,
+      text: item.descricao_servico,
+      start: start,
+      end: visualEnd,
+      duration: Math.max(1, item.duracao_dias || 1),
+      type: hasChildren ? 'summary' : 'task',
+      parent: pCode,
+      open: hasChildren ? true : undefined,
+      progress: item.percentual_executado_financeiro || 0,
+      rollup: hasChildren ? true : undefined,
+      readonly: isSummary ? true : undefined,
+    };
+  });
+
+  const PM_TO_SVAR: Record<string, 'e2s' | 's2s' | 'e2e' | 's2e'> = { FS: 'e2s', SS: 's2s', FF: 'e2e', SF: 's2e' };
+  const validIds = new Set(ganttTasks.map(t => String(t.id)));
+  const ganttLinks: GanttLink[] = [];
+
+  syncedItems.forEach(item => {
+    (item.predecessores || []).forEach((predRaw, idx) => {
+      const { code: src, type: ptype, lag } = parsePredecessorString(predRaw);
+      const tgt = item.eap_codigo;
+      if (validIds.has(src) && validIds.has(tgt) && src !== tgt) {
+        ganttLinks.push({
+          id: `lnk_${src}_${tgt}_${idx}`,
+          source: src,
+          target: tgt,
+          type: PM_TO_SVAR[ptype] || 'e2s',
+          lag: lag,
+        });
+      }
+    });
+  });
+
+  return { syncedItems, ganttTasks, ganttLinks, hasCorrections };
 }

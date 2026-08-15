@@ -90,14 +90,79 @@ try {
   errorCount++;
 }
 
-// ===================================================================
-// RESUMO DA INTEGRIDADE
-// ===================================================================
+
 console.log('\n======================================================');
 if (errorCount > 0) {
   console.error(`❌ Verificação de Integridade FALHOU com ${errorCount} erro(s). Corrija antes de enviar para produção.`);
   process.exit(1);
 } else {
   console.log('✨ Todas as verificações de prevenção de regressão PASSARAM com sucesso!');
+  process.exit(0);
+}
+
+// ===================================================================
+// 4. CHECK: Fonte Única de Verdade do Motor de Cronograma
+// ===================================================================
+console.log('\n4️⃣ Verificando ausência de lógica de cronograma duplicada em componentes...');
+const cronogramaViewPath = path.join(process.cwd(), 'src/components/CronogramaExecutivoView.tsx');
+if (fs.existsSync(cronogramaViewPath)) {
+  const cronoContent = fs.readFileSync(cronogramaViewPath, 'utf-8');
+  const forbiddenPatterns = [
+    'function parsePredecessor',
+    'function addDays',
+    'function diffDays',
+    'function parseSafeDate',
+    'function toYMD',
+    'const propagateDeps =',
+    'const rollupSummaries =',
+    'function buildGanttData'
+  ];
+  let foundForbidden = false;
+  forbiddenPatterns.forEach(pattern => {
+    if (cronoContent.includes(pattern) && pattern !== 'function buildGanttData') {
+      console.error(`  ❌ Lógica duplicada encontrada em CronogramaExecutivoView.tsx: "${pattern}"`);
+      foundForbidden = true;
+      errorCount++;
+    }
+  });
+  if (!foundForbidden) {
+    console.log('  ✅ Nenhuma função de cálculo matemático de Gantt duplicada na UI.');
+  }
+}
+
+// ===================================================================
+// 5. CHECK: Consistência do Trigger DB (Trust Engine)
+// ===================================================================
+console.log('\n5️⃣ Verificando integridade da trava de confiança no trigger do banco...');
+const migrationsDir = path.join(process.cwd(), 'supabase/migrations');
+if (fs.existsSync(migrationsDir)) {
+  const files = fs.readdirSync(migrationsDir).sort();
+  let foundTrustEngine = false;
+  files.forEach(file => {
+    if (file.endsWith('.sql')) {
+      const content = fs.readFileSync(path.join(migrationsDir, file), 'utf-8');
+      if (content.includes('NEW.data_inicio IS NOT NULL AND NEW.data_fim IS NOT NULL') && content.includes('calc_datas_eap_trigger')) {
+        foundTrustEngine = true;
+      }
+    }
+  });
+  
+  if (!foundTrustEngine) {
+    console.error('  ❌ Trigger calc_datas_eap_trigger NÃO contém a trava de bypass da engine. Risco de drift de datas!');
+    errorCount++;
+  } else {
+    console.log('  ✅ Trigger do banco de dados configurado para confiar nas datas da engine.');
+  }
+}
+
+// ===================================================================
+// RESUMO DA INTEGRIDADE
+// ===================================================================
+console.log("\n======================================================");
+if (errorCount > 0) {
+  console.error(`❌ Verificação de Integridade FALHOU com ${errorCount} erro(s). Corrija antes de enviar para produção.`);
+  process.exit(1);
+} else {
+  console.log("✨ Todas as verificações de prevenção de regressão PASSARAM com sucesso!");
   process.exit(0);
 }

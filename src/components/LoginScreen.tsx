@@ -232,12 +232,11 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
         <main className="w-full max-w-[480px] animate-in fade-in zoom-in duration-500">
           {/* Brand Header */}
           <div className="flex flex-col items-center mb-8">
-            <div className="mb-4 p-3 bg-white border border-[#c0c7d6] rounded-xl shadow-2xs flex items-center justify-center">
-              <span className="material-symbols-outlined text-[#005daa] text-4xl">hub</span>
-            </div>
-            <h1 className="font-headline-md text-headline-md text-[#005daa] tracking-tight">
-              Works Manager
-            </h1>
+            <img 
+              src="/logo-entrada.png" 
+              alt="Logo do Sistema" 
+              className="max-h-24 w-auto object-contain mb-4"
+            />
             <p className="font-body-md text-[#404753] mt-1.5 text-center">
               Supplier Portal Infrastructure
             </p>

@@ -34,6 +34,8 @@ import { FinanceiroView } from './components/FinanceiroView';
 import { ContratosView } from './components/ContratosView';
 import { ProjetosEapView } from './components/ProjetosEapView';
 import { CronogramaExecutivoView } from './components/CronogramaExecutivoView';
+import { RDOView } from './components/RDOView';
+import { OSView } from './components/OSView';
 import { AlertasView } from './components/AlertasView';
 import { EmpresasView } from './components/EmpresasView';
 import { EntidadesView } from './components/EntidadesView';
@@ -112,6 +114,7 @@ export default function App() {
       case 'empresas': return !!effectivePermissions.empresas_ler;
       case 'projetos_eap': return !!effectivePermissions.projetos_ler;
       case 'cronograma_executivo': return !!effectivePermissions.projetos_ler;
+      case 'rdo': return !!effectivePermissions.medicoes_ler || !!effectivePermissions.projetos_ler;
       case 'contratos_obra': return !!effectivePermissions.medicoes_ler;
       case 'usuarios': return !!effectivePermissions.usuarios_ler;
       case 'matriz-acesso': return user.role === 'GESTOR' || user.role === 'ADMIN';
@@ -402,6 +405,22 @@ export default function App() {
             ) : <div className="p-8 text-center bg-white rounded-xl border border-gray-200">Acesso Restrito: Sem permissão às Empresas</div>
           )}
 
+          {['fornecedores', 'equipes', 'maquinas', 'ferramentas', 'materiais'].includes(activeTab) && (
+            <div className="flex items-center justify-center h-full p-8 text-gray-500">
+              <div className="bg-white p-8 rounded-xl text-center border border-gray-200 max-w-md w-full shadow-sm">
+                <span className="material-symbols-outlined text-[48px] text-[#005daa] mb-4">construction</span>
+                <h3 className="text-xl font-bold text-gray-800 mb-2">Módulo em Construção</h3>
+                <p className="text-sm">A interface para a funcionalidade <strong className="uppercase">{activeTab.replace('_', ' ')}</strong> será implementada em breve.</p>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'ordens_servico' && (
+            (hasAccess('projetos_eap') || hasAccess('contratos_obra')) ? (
+              <OSView authSession={authSession} />
+            ) : <div className="p-8 text-center bg-white rounded-xl border border-gray-200">Acesso Restrito: Sem permissão às Ordens de Serviço</div>
+          )}
+
           {activeTab === 'usuarios' && (
             hasAccess('usuarios') ? (
               <UsuariosView authSession={authSession} />
@@ -431,6 +450,12 @@ export default function App() {
             hasAccess('cronograma_executivo') ? (
               <CronogramaExecutivoView authSession={authSession} />
             ) : <div className="p-8 text-center bg-white rounded-xl border border-gray-200">Acesso Restrito: Sem permissão ao Cronograma</div>
+          )}
+
+          {activeTab === 'rdo' && (
+            hasAccess('rdo') ? (
+              <RDOView authSession={authSession} />
+            ) : <div className="p-8 text-center bg-white rounded-xl border border-gray-200">Acesso Restrito: Sem permissão ao RDO</div>
           )}
 
           {activeTab === 'audit-log' && (

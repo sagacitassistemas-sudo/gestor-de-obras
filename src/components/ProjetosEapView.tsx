@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { EapMdImportModal } from './EapMdImportModal';
 import { CadastroEtapaModal } from './CadastroEtapaModal';
+import { ImportProjectXmlModal } from './ImportProjectXmlModal';
 import { compareEapCodes } from '../services/eapImporter.service';
 
 interface ProjetosEapViewProps {
@@ -14,8 +15,9 @@ export const ProjetosEapView: React.FC<ProjetosEapViewProps> = ({ authSession })
   const [selectedProjetoId, setSelectedProjetoId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [editingProjeto, setEditingProjeto] = useState<any>(null);
-  const [projetoForm, setProjetoForm] = useState({ nome_projeto: '', data_inicio: '' });
+  const [projetoForm, setProjetoForm] = useState({ nome_projeto: '', data_inicio: '', codigo_projeto: '' });
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [isXmlImportModalOpen, setIsXmlImportModalOpen] = useState(false);
   const [isCadastroEtapaOpen, setIsCadastroEtapaOpen] = useState(false);
   const [itemToEditModal, setItemToEditModal] = useState<any | null>(null);
 
@@ -150,13 +152,13 @@ export const ProjetosEapView: React.FC<ProjetosEapViewProps> = ({ authSession })
   // ----- CRUD PROJETO -----
   const openNewProjeto = () => {
     setEditingProjeto(null);
-    setProjetoForm({ nome_projeto: '', data_inicio: new Date().toISOString().split('T')[0] });
+    setProjetoForm({ nome_projeto: '', data_inicio: new Date().toISOString().split('T')[0], codigo_projeto: '' });
     setPipelineState('editing_project');
   };
 
   const openEditProjeto = (proj: any) => {
     setEditingProjeto(proj);
-    setProjetoForm({ nome_projeto: proj.nome_projeto, data_inicio: proj.data_inicio.split('T')[0] });
+    setProjetoForm({ nome_projeto: proj.nome_projeto, data_inicio: proj.data_inicio.split('T')[0], codigo_projeto: proj.codigo_projeto || '' });
     setPipelineState('editing_project');
   };
 
@@ -174,7 +176,8 @@ export const ProjetosEapView: React.FC<ProjetosEapViewProps> = ({ authSession })
         body: JSON.stringify({
           id: editingProjeto?.id,
           nome_projeto: projetoForm.nome_projeto,
-          data_inicio: projetoForm.data_inicio
+          data_inicio: projetoForm.data_inicio,
+          codigo_projeto: projetoForm.codigo_projeto || undefined
         })
       });
       if (res.ok) {
@@ -337,6 +340,13 @@ export const ProjetosEapView: React.FC<ProjetosEapViewProps> = ({ authSession })
           {selectedProjetoId && (
             <>
               <button 
+                onClick={() => setIsXmlImportModalOpen(true)}
+                className="px-4 py-2 bg-indigo-600 text-white rounded-md font-label-bold hover:bg-indigo-700 flex items-center gap-2 transition-colors cursor-pointer shadow-xs"
+              >
+                <span className="material-symbols-outlined text-[18px]">upload_file</span>
+                Importar MS Project (.xml)
+              </button>
+              <button 
                 onClick={() => setIsImportModalOpen(true)}
                 className="px-4 py-2 bg-emerald-600 text-white rounded-md font-label-bold hover:bg-emerald-700 flex items-center gap-2 transition-colors cursor-pointer shadow-xs"
               >
@@ -376,7 +386,7 @@ export const ProjetosEapView: React.FC<ProjetosEapViewProps> = ({ authSession })
                   const code = proj.codigo_contrato || proj.tenant_id;
                   return (
                     <option key={proj.id} value={proj.id}>
-                      {proj.nome_projeto} {code ? `(${code})` : ''}
+                      {proj.codigo_projeto ? `[${proj.codigo_projeto}] ` : ''}{proj.nome_projeto} {code ? `(${code})` : ''}
                     </option>
                   );
                 })}
@@ -389,7 +399,19 @@ export const ProjetosEapView: React.FC<ProjetosEapViewProps> = ({ authSession })
             <div className="flex flex-wrap items-center justify-between flex-1 gap-4 pl-0 md:pl-4 border-t md:border-t-0 md:border-l border-[#e1e2e8] pt-3 md:pt-0">
               <div>
                 <span className="text-[10px] text-[#707785] font-mono block">Data de Início: {new Date(selectedProj.data_inicio).toLocaleDateString('pt-BR')}</span>
-                <h3 className="text-title-lg font-bold text-[#191c1e] line-clamp-1">{selectedProj.nome_projeto}</h3>
+                <div className="flex items-center gap-2 mt-1">
+                  <h3 className="text-title-lg font-bold text-[#191c1e] line-clamp-1">{selectedProj.nome_projeto}</h3>
+                  {selectedProj.codigo_projeto && (
+                    <span className="bg-sky-100 text-sky-800 px-2 py-0.5 rounded text-[10px] font-bold font-mono tracking-wider">
+                      CÓD: {selectedProj.codigo_projeto}
+                    </span>
+                  )}
+                  {selectedProj.codigo_contrato && (
+                    <span className="bg-[#eff6ff] text-[#005daa] border border-[#005daa]/20 px-2 py-0.5 rounded text-[10px] font-bold font-mono uppercase tracking-wider">
+                      Contrato: {selectedProj.codigo_contrato}
+                    </span>
+                  )}
+                </div>
               </div>
 
               <div className="flex items-center gap-2">
@@ -700,6 +722,16 @@ export const ProjetosEapView: React.FC<ProjetosEapViewProps> = ({ authSession })
                   />
                 </div>
                 <div>
+                  <label className="block text-[#404753] text-sm font-bold mb-1.5">Código do Projeto</label>
+                  <input
+                    type="text"
+                    disabled
+                    value={projetoForm.codigo_projeto}
+                    placeholder="Gerado Automaticamente (P-SEQ-ANO)"
+                    className="w-full px-3.5 py-2.5 border border-[#e1e2e8] bg-[#f8fafc] text-[#707785] rounded-md outline-none text-sm cursor-not-allowed font-medium italic shadow-xs"
+                  />
+                </div>
+                <div>
                   <label className="block text-sm font-label-bold text-[#191c1e] mb-1">Data de Início <span className="text-red-500">*</span></label>
                   <input
                     type="date"
@@ -734,6 +766,19 @@ export const ProjetosEapView: React.FC<ProjetosEapViewProps> = ({ authSession })
           onSuccess={() => fetchEap(selectedProjetoId)}
         />
       )}
+
+      {/* MODAL IMPORTACAO XML */}
+      <ImportProjectXmlModal
+        isOpen={isXmlImportModalOpen}
+        onClose={() => setIsXmlImportModalOpen(false)}
+        authSession={authSession}
+        onSuccess={(newProjetoId) => {
+          fetchProjetos().then(() => {
+            setSelectedProjetoId(newProjetoId);
+            fetchEap(newProjetoId);
+          });
+        }}
+      />
 
       {/* MODAL CADASTRO / EDIÇÃO DE ETAPA (EAP) */}
       {selectedProjetoId && (

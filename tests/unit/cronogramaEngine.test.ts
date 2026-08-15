@@ -10,6 +10,7 @@ import {
   processUserInteraction,
   diffEngineDays,
   addEngineDays,
+  computeFullSchedule,
 } from '../../src/utils/cronogramaEngine';
 
 describe('Motor do Cronograma (Gantt Engine)', () => {
@@ -101,6 +102,27 @@ describe('Motor do Cronograma (Gantt Engine)', () => {
       expect(pai.data_fim).toBe('2026-08-15');    // max(2026-08-10, 2026-08-15)
       expect(pai.duracao_dias).toBe(14);          // diffDays(2026-08-15, 2026-08-02) + 1
       expect(pai.percentual_executado_financeiro).toBe(75); // (100*1000 + 50*1000) / 2000 = 75%
+    });
+
+    it('deve propagar a abrangência corretamente em múltiplos níveis de hierarquia', () => {
+      const itemsMap = new Map<string, EapEngineItem>([
+        ['1', { id: '1', eap_codigo: '1', descricao_servico: 'Macro 1', data_inicio: '2026-08-01', data_fim: '2026-08-01', duracao_dias: 1, e_analitico: false }],
+        ['1.1', { id: '2', eap_codigo: '1.1', descricao_servico: 'Submacro 1.1', data_inicio: '2026-08-01', data_fim: '2026-08-01', duracao_dias: 1, e_analitico: false }],
+        ['1.1.1', { id: '3', eap_codigo: '1.1.1', descricao_servico: 'Folha A', data_inicio: '2026-08-05', data_fim: '2026-08-09', duracao_dias: 5, e_analitico: true }],
+        ['1.1.2', { id: '4', eap_codigo: '1.1.2', descricao_servico: 'Folha B', data_inicio: '2026-08-10', data_fim: '2026-08-14', duracao_dias: 5, e_analitico: true }],
+      ]);
+
+      executeSummaryRollup(itemsMap, projStart);
+
+      const submacro = itemsMap.get('1.1')!;
+      const macro = itemsMap.get('1')!;
+
+      // Ambas devem ter start=05 e end=14 e duracao=10
+      expect(submacro.data_inicio).toBe('2026-08-05');
+      expect(submacro.data_fim).toBe('2026-08-14');
+      
+      expect(macro.data_inicio).toBe('2026-08-05');
+      expect(macro.data_fim).toBe('2026-08-14');
     });
   });
 
@@ -202,4 +224,91 @@ describe('Motor do Cronograma (Gantt Engine)', () => {
       expect(pintura.data_inicio).toBe('2026-08-16');
     });
   });
+
+  describe('Integração Completa (computeFullSchedule)', () => {
+    it('deve processar dependências e hierarquias retornando modelo SVAR Gantt', () => {
+      const items: EapEngineItem[] = [
+        { id: '1', eap_codigo: '1', descricao_servico: 'Projeto', data_inicio: '', data_fim: '', duracao_dias: 1, e_analitico: false },
+        { id: '2', eap_codigo: '1.1', descricao_servico: 'A', data_inicio: '2026-08-01', data_fim: '2026-08-05', duracao_dias: 5, e_analitico: true },
+        { id: '3', eap_codigo: '1.2', descricao_servico: 'B', data_inicio: '2026-08-06', data_fim: '2026-08-10', duracao_dias: 5, e_analitico: true, predecessores: ['1.1FS+0'] },
+      ];
+
+      const { ganttTasks, ganttLinks } = computeFullSchedule(items, '2026-08-01');
+      
+      expect(ganttTasks.length).toBe(3);
+      expect(ganttLinks.length).toBe(1);
+      
+      const proj = ganttTasks.find((t: any) => t.id === '1')!;
+      expect(proj.start.toISOString().split('T')[0]).toBe('2026-08-01');
+      expect(proj.end!.toISOString().split('T')[0]).toBe('2026-08-11');
+      expect(proj.type).toBe('summary');
+    });
+  });
 });
+
+  // ── 5. Detecção de Estados de Falha (Failure Guards) ───────────────────────
+  describe('Detecção de Estados de Falha (Failure Guards)', () => {
+    const projStart = '2026-08-01';
+    
+    it('deve garantir que a equação fundamental nunca seja quebrada para folhas', () => {
+      const items: EapEngineItem[] = [
+        { id: '1', eap_codigo: '1.1', descricao_servico: 'A', data_inicio: '2026-08-01', data_fim: '2026-08-05', duracao_dias: 5, e_analitico: true },
+        { id: '2', eap_codigo: '1.2', descricao_servico: 'B', data_inicio: '2026-08-06', data_fim: '2026-08-10', duracao_dias: 5, e_analitico: true, predecessores: ['1.1FS+0'] },
+      ];
+      const { syncedItems } = computeFullSchedule(items, projStart);
+      syncedItems.forEach(item => {
+        if (item.e_analitico) {
+          const expectedFim = calculateLeafFinishDate(item.data_inicio, item.duracao_dias);
+          expect(item.data_fim).toBe(expectedFim);
+        }
+      });
+    });
+
+    it('deve garantir que sumários nunca tenham data inicio maior que a menor de suas filhas', () => {
+      const items: EapEngineItem[] = [
+        { id: '1', eap_codigo: '1', descricao_servico: 'Macro', data_inicio: '', data_fim: '', duracao_dias: 1, e_analitico: false },
+        { id: '2', eap_codigo: '1.1', descricao_servico: 'A', data_inicio: '2026-08-05', data_fim: '2026-08-10', duracao_dias: 6, e_analitico: true },
+      ];
+      const { syncedItems } = computeFullSchedule(items, projStart);
+      const macro = syncedItems.find(i => i.eap_codigo === '1');
+      const folha = syncedItems.find(i => i.eap_codigo === '1.1');
+      expect(macro!.data_inicio <= folha!.data_inicio).toBeTruthy();
+    });
+
+    it('deve garantir que sumários nunca tenham data fim menor que a maior de suas filhas', () => {
+      const items: EapEngineItem[] = [
+        { id: '1', eap_codigo: '1', descricao_servico: 'Macro', data_inicio: '', data_fim: '', duracao_dias: 1, e_analitico: false },
+        { id: '2', eap_codigo: '1.1', descricao_servico: 'A', data_inicio: '2026-08-05', data_fim: '2026-08-10', duracao_dias: 6, e_analitico: true },
+      ];
+      const { syncedItems } = computeFullSchedule(items, projStart);
+      const macro = syncedItems.find(i => i.eap_codigo === '1');
+      const folha = syncedItems.find(i => i.eap_codigo === '1.1');
+      expect(macro!.data_fim >= folha!.data_fim).toBeTruthy();
+    });
+
+    it('deve garantir convergência sem loop infinito em caso de dependência circular', () => {
+      const items: EapEngineItem[] = [
+        { id: '1', eap_codigo: '1.1', descricao_servico: 'A', data_inicio: '2026-08-01', data_fim: '2026-08-05', duracao_dias: 5, e_analitico: true, predecessores: ['1.2FS+0'] },
+        { id: '2', eap_codigo: '1.2', descricao_servico: 'B', data_inicio: '2026-08-06', data_fim: '2026-08-10', duracao_dias: 5, e_analitico: true, predecessores: ['1.1FS+0'] },
+      ];
+      
+      // O motor tem um limite de iterações (ex: 100). Isso aqui não pode pendurar o processo.
+      expect(() => {
+        computeFullSchedule(items, projStart);
+      }).not.toThrow();
+    });
+
+    it('deve garantir round-trip idempotente (chamar 2x não altera o resultado)', () => {
+      const items: EapEngineItem[] = [
+        { id: '1', eap_codigo: '1.1', descricao_servico: 'A', data_inicio: '2026-08-01', data_fim: '2026-08-05', duracao_dias: 5, e_analitico: true },
+        { id: '2', eap_codigo: '1.2', descricao_servico: 'B', data_inicio: '2026-08-06', data_fim: '2026-08-10', duracao_dias: 5, e_analitico: true, predecessores: ['1.1FS+0'] },
+      ];
+      
+      const { syncedItems: firstRun } = computeFullSchedule(items, projStart);
+      
+      // Alimentando a saída da primeira run na segunda
+      const { syncedItems: secondRun } = computeFullSchedule(firstRun, projStart);
+      
+      expect(firstRun).toEqual(secondRun);
+    });
+  });
