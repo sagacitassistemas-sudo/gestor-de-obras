@@ -42,7 +42,7 @@ describe('POST /api/auth/oauth-login', () => {
       const db = getDb();
       const empresa = db.empresas_fornecedores.find((e: any) => e.id === 'GER-2026-SYS');
       expect(empresa).toBeDefined();
-      expect(empresa?.tipo).toBe('GESTORA');
+      expect(empresa?.tipo).toBe('CONTRATANTE');
     });
   });
 
@@ -139,3 +139,32 @@ describe('POST /api/auth/login-mfa-step1', () => {
     expect(res.body.otpCodeDemo).toMatch(/^\d{6}$/);
   });
 });
+
+describe('GET /api/auth/tenant-check', () => {
+  beforeEach(() => resetDb('default'));
+
+  it('deve retornar 401 para requisições sem token de autorização', async () => {
+    const res = await request(app).get('/api/auth/tenant-check');
+    expect(res.status).toBe(401);
+  });
+
+  it('deve retornar diagnóstico 200 OK com tenant_id para requisição autenticada', async () => {
+    // 1. Obter sessão com token
+    const loginRes = await request(app)
+      .post('/api/auth/oauth-login')
+      .send({ provider: 'google', email: 'sagacitas.sistemas@gmail.com', displayName: 'Admin', uid: 'admin-uid-001' });
+
+    const token = loginRes.body.session?.idToken;
+
+    const res = await request(app)
+      .get('/api/auth/tenant-check')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.tenant_id).toBe('CTR-2026-SYS');
+    expect(res.body.diagnostics).toBeDefined();
+    expect(res.body.diagnostics.usuarios).toBeDefined();
+  });
+});
+

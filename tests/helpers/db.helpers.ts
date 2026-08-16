@@ -20,6 +20,7 @@ export interface DbState {
   itens_eap: Record<string, any>[];
   contratos_obra: Record<string, any>[];
   convites: Record<string, any>[];
+  validacoes_desenvolvedor: Record<string, any>[];
 }
 
 // ── Wrapper mutável global ────────────────────────────────────────────────────
@@ -49,6 +50,7 @@ export function createEmptyDb(): DbState {
     itens_eap: [],
     contratos_obra: [],
     convites: [],
+    validacoes_desenvolvedor: [],
   };
 }
 
@@ -74,7 +76,7 @@ export function createDefaultDb(): DbState {
         contrato_id: 'CTR-2026-SYS',
         nome: 'Gestora do Sistema',
         cnpj_cpf: '00.000.000/0001-00',
-        tipo: 'GESTORA',
+        tipo: 'CONTRATANTE',
         status: 'ATIVO',
         total_faturado: 0,
       },
@@ -128,6 +130,8 @@ function buildQuery(tableName: string) {
   const applyFilters = () =>
     getTable(tableName).filter(r => filters.every(f => r[f.key] === f.value));
 
+  let isCountMode = false;
+
   const q = {
     _filters: filters,
 
@@ -135,6 +139,9 @@ function buildQuery(tableName: string) {
     then(resolve: Function, reject?: Function) {
       try {
         const results = applyFilters();
+        if (isCountMode) {
+          return Promise.resolve().then(() => resolve({ count: results.length, data: results, error: null }));
+        }
         return Promise.resolve().then(() => resolve({ data: results, error: null }));
       } catch (e) {
         return reject ? Promise.resolve().then(() => reject(e)) : Promise.reject(e);
@@ -143,8 +150,7 @@ function buildQuery(tableName: string) {
 
     select(cols?: string, opts?: any) {
       if (opts?.count === 'exact') {
-        const results = applyFilters();
-        return Promise.resolve({ count: results.length, error: null });
+        isCountMode = true;
       }
       return q; // chainable
     },

@@ -26,6 +26,9 @@
   - Inclusão de link seguro com token de redefinição de senha e validação de login master (`/?resetToken=...`).
 - **Assistente de Redefinição de Senha no Login (`LoginScreen.tsx`)**:
   - Reconhecimento automático do token de recuperação via URL e interface integrada para redefinição de credenciais de emergência.
+  - **Gerador de Senha Segura Automática**: Criação com 1 clique de senha de 14 caracteres com maiúsculas, minúsculas, números e símbolos, com cópia instantânea para a área de transferência.
+  - **Visualização de Senha (`visibility` / `visibility_off`)**: Alternância de visibilidade nos campos de senha e confirmação com botão de cópia direta.
+  - **Checklist de Critérios Corporativos & Medidor de Força**: Validação em tempo real de 6 critérios obrigatórios (Mínimo 10 caracteres, maiúsculas, minúsculas, números, símbolos e coincidência) e barra de progresso colorida.
   - Conexão do fluxo "Esqueceu a senha?" com disparo de e-mail real via `/api/auth/request-password-reset`.
 - **Fallback *Deny-by-Default***:
   - O cálculo de permissões em `getComputedPermissions()` adota bloqueio por padrão (`false`) para módulos sensíveis (`financeiro_ler`, `usuarios_ler`, `medicoes_ler`, `relatorios_ler`).

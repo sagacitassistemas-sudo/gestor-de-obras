@@ -44,6 +44,8 @@ import { MatrizAcessosView } from './components/MatrizAcessosView';
 import { ContratosObraView } from './components/ContratosObraView';
 import { AuditLogView } from './components/AuditLogView';
 import { ParametrosView } from './components/ParametrosView';
+import { FuncionariosView } from './components/FuncionariosView';
+import { EquipesView } from './components/EquipesView';
 
 import { NovoChamadoModal } from './components/NovoChamadoModal';
 import { ProcessamentoNotasDrawer } from './components/ProcessamentoNotasDrawer';
@@ -67,8 +69,8 @@ export default function App() {
   const [pendingPayments] = useState<PendingPayment[]>(initialPendingPayments);
   const [dreData] = useState<DRELine[]>(initialDREData);
   const [activities, setActivities] = useState<ActivityItem[]>(initialActivities);
-  const [alerts] = useState<SystemAlert[]>(initialAlerts);
-  const [, setChamados] = useState<ChamadoTicket[]>(initialChamados);
+  const [alerts, setAlerts] = useState<SystemAlert[]>(initialAlerts);
+  const [chamados, setChamados] = useState<ChamadoTicket[]>(initialChamados);
 
   // Search & Modals State
   const [searchQuery, setSearchQuery] = useState('');
@@ -79,6 +81,48 @@ export default function App() {
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [pendingValidationCount, setPendingValidationCount] = useState(0);
+
+  // Load alert list whenever user.uid or activeTab changes
+  React.useEffect(() => {
+    if (authSession?.idToken && user.uid) {
+      const loadAlerts = async () => {
+        try {
+          const res = await fetch("/api/alerts", {
+            headers: { Authorization: `Bearer ${authSession.idToken}` }
+          });
+          if (res.ok) {
+            const data = await res.json();
+            setAlerts(data.alerts || []);
+          }
+        } catch (e) {
+          console.error("Erro ao carregar alertas:", e);
+        }
+      };
+      loadAlerts();
+    }
+  }, [authSession?.idToken, user.uid, activeTab]);
+
+  // Load validations count if ADMIN
+  React.useEffect(() => {
+    if (authSession?.idToken && user.role === 'ADMIN') {
+      const loadValidations = async () => {
+        try {
+          const res = await fetch("/api/validacoes", {
+            headers: { Authorization: `Bearer ${authSession.idToken}` }
+          });
+          if (res.ok) {
+            const data = await res.json();
+            const pendentes = data.validacoes?.filter((v: any) => v.status === 'PENDENTE').length || 0;
+            setPendingValidationCount(pendentes);
+          }
+        } catch (e) {
+          console.error("Erro ao carregar validações:", e);
+        }
+      };
+      loadValidations();
+    }
+  }, [authSession?.idToken, user.role, activeTab]);
 
   // Fetch effective permissions after login
   React.useEffect(() => {
@@ -296,6 +340,7 @@ export default function App() {
         onOpenNovoChamado={() => setIsNovoChamadoOpen(true)}
         onLogout={handleLogout}
         alertCount={alerts.length}
+        pendingValidationCount={pendingValidationCount}
         mobileOpen={isMobileMenuOpen}
         onCloseMobile={() => setIsMobileMenuOpen(false)}
         permissions={effectivePermissions}
@@ -424,7 +469,19 @@ export default function App() {
             ) : <div className="p-8 text-center bg-white rounded-xl border border-gray-200">Acesso Restrito: Sem permissão às Empresas</div>
           )}
 
-          {['fornecedores', 'equipes', 'maquinas', 'ferramentas', 'materiais', 'medicoes'].includes(activeTab) && (
+          {activeTab === 'funcionarios' && (
+            hasAccess('empresas') ? (
+              <FuncionariosView authSession={authSession} />
+            ) : <div className="p-8 text-center bg-white rounded-xl border border-gray-200">Acesso Restrito: Sem permissão aos Funcionários</div>
+          )}
+
+          {activeTab === 'equipes' && (
+            hasAccess('empresas') ? (
+              <EquipesView authSession={authSession} />
+            ) : <div className="p-8 text-center bg-white rounded-xl border border-gray-200">Acesso Restrito: Sem permissão às Equipes</div>
+          )}
+
+          {['fornecedores', 'maquinas', 'ferramentas', 'materiais', 'medicoes'].includes(activeTab) && (
             <div className="flex items-center justify-center h-full p-8 text-gray-500">
               <div className="bg-white p-8 rounded-xl text-center border border-gray-200 max-w-md w-full shadow-sm">
                 <span className="material-symbols-outlined text-[48px] text-[#005daa] mb-4">construction</span>

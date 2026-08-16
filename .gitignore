@@ -33,3 +33,4 @@ docs/
 
 # Arquivos temporarios
 .temp/
+serviceAccountKey.json

@@ -21,6 +21,8 @@ Estruturar o tipo de empresa **`GESTORA`** no cadastro de empresas, garantir pri
   - Solicitação de redefinição de senha conectada ao botão "Esqueceu a senha?" do login.
 - **`POST /api/auth/reset-password-with-token`**:
   - Validação do token JWT e atualização segura da senha do usuário.
+  - Implementado o helper de resiliência `getSafeAdminAuth()` em todo o backend para evitar erros `500 Internal Error` quando o Firebase Admin SDK opera em modo de desenvolvimento local ou fallback sem chave de serviço.
+  - Sincronização e persistência de senhas na base do Supabase/banco local.
 
 ### 3. Frontend ([EmpresasView.tsx](file:///mnt/46F84CA3F84C935B/Atividades_2026/Natan/Sistema/gestor-de-obras/src/components/EmpresasView.tsx) & [LoginScreen.tsx](file:///mnt/46F84CA3F84C935B/Atividades_2026/Natan/Sistema/gestor-de-obras/src/components/LoginScreen.tsx))
 - **Badge e Ações em `EmpresasView.tsx`**:
@@ -28,6 +30,16 @@ Estruturar o tipo de empresa **`GESTORA`** no cadastro de empresas, garantir pri
   - Ação rápida na tabela (`mark_email_read`) e card completo no modal de detalhes com botão **"Enviar E-mail de Reconhecimento & Recuperação Master"**.
 - **Assistente de Recuperação no Login (`LoginScreen.tsx`)**:
   - Leitura automática do token na URL e tela dedicada de redefinição com validação de senha.
+  - **Gerador de Senha Automática (14 caracteres)**: Gera instantaneamente senha forte contendo letras maiúsculas, minúsculas, números e símbolos especiais, copiando automaticamente para a área de transferência com toast de confirmação.
+  - **Visualização de Senha**: Botões de alternância de visibilidade (`visibility` / `visibility_off`) nos campos de nova senha e confirmação.
+  - **Indicador de Força & Checklist de Critérios**: Barra dinâmica de força (Fraca / Média / Excelente) e grid de validação em tempo real de 6 critérios corporativos:
+    - Mínimo de 10 caracteres
+    - Letra maiúscula (A-Z)
+    - Letra minúscula (a-z)
+    - Número (0-9)
+    - Símbolo especial (!@#$...)
+    - Senhas coincidentes
+  - Botão de envio desabilitado até que todos os critérios de segurança sejam rigorosamente satisfeitos.
 
 ---
 

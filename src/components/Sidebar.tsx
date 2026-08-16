@@ -7,6 +7,7 @@ interface SidebarProps {
   onOpenNovoChamado: () => void;
   onLogout: () => void;
   alertCount?: number;
+  pendingValidationCount?: number;
   mobileOpen?: boolean;
   onCloseMobile?: () => void;
   permissions?: Record<string, boolean> | null;
@@ -21,6 +22,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onOpenNovoChamado,
   onLogout,
   alertCount = 4,
+  pendingValidationCount = 0,
   mobileOpen = false,
   onCloseMobile,
   permissions,
@@ -171,10 +173,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 </button>
               )}
               <button
+                onClick={() => handleNavClick('funcionarios')}
+                className={`w-full text-left ${navItemClass('funcionarios')}`}
+              >
+                <span className="material-symbols-outlined" style={{ fontVariationSettings: activeTab === 'funcionarios' ? "'FILL' 1" : "'FILL' 0" }}>badge</span>
+                {!isCollapsed && <span className="font-label-bold text-label-bold">Funcionários</span>}
+              </button>
+              <button
                 onClick={() => handleNavClick('equipes')}
                 className={`w-full text-left ${navItemClass('equipes')}`}
               >
-                <span className="material-symbols-outlined" style={{ fontVariationSettings: activeTab === 'equipes' ? "'FILL' 1" : "'FILL' 0" }}>engineering</span>
+                <span className="material-symbols-outlined" style={{ fontVariationSettings: activeTab === 'equipes' ? "'FILL' 1" : "'FILL' 0" }}>groups</span>
                 {!isCollapsed && <span className="font-label-bold text-label-bold">Equipes</span>}
               </button>
               <button
@@ -298,10 +307,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
             {isAdmin && (
               <button
                 onClick={() => handleNavClick('audit-log')}
-                className={`w-full text-left ${navItemClass('audit-log')}`}
+                className={`w-full text-left ${navItemClass('audit-log')} relative`}
               >
                 <span className="material-symbols-outlined" style={{ fontVariationSettings: activeTab === 'audit-log' ? "'FILL' 1" : "'FILL' 0" }}>policy</span>
                 {!isCollapsed && <span className="font-label-bold text-label-bold">Auditoria</span>}
+                {pendingValidationCount && pendingValidationCount > 0 ? (
+                  <span className="absolute right-3 bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
+                    {pendingValidationCount} {isCollapsed ? '' : 'Pendentes'}
+                  </span>
+                ) : null}
               </button>
             )}
             {(isAdmin || userRole === 'GESTOR') && (

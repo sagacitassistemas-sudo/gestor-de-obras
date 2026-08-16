@@ -66,6 +66,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
   const [resetLoading, setResetLoading] = useState(false);
   const [resetSuccess, setResetSuccess] = useState(false);
   const [forgotLoading, setForgotLoading] = useState(false);
+  const [forgotPreviewUrl, setForgotPreviewUrl] = useState<string | null>(null);
+  const [forgotResetUrl, setForgotResetUrl] = useState<string | null>(null);
 
   // Check URL for invite or reset token on mount
   useEffect(() => {
@@ -303,10 +305,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
       const data = await res.json();
       if (res.ok) {
         setForgotSubmitted(true);
-        setTimeout(() => {
-          setForgotSubmitted(false);
-          setForgotModalOpen(false);
-        }, 3000);
+        if (data.previewUrl) setForgotPreviewUrl(data.previewUrl);
+        if (data.resetUrl) setForgotResetUrl(data.resetUrl);
       } else {
         setErrorMessage(data.error || 'Erro ao enviar e-mail de recuperação.');
       }
@@ -317,14 +317,82 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     }
   };
 
+  // Recovery / Reset Password UI & Generator state
+  const [showResetNewPassword, setShowResetNewPassword] = useState(false);
+  const [showResetConfirmPassword, setShowResetConfirmPassword] = useState(false);
+  const [passwordCopied, setPasswordCopied] = useState(false);
+
+  const generateStrongPassword = () => {
+    const uppers = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+    const lowers = 'abcdefghijkmnopqrstuvwxyz';
+    const numbers = '23456789';
+    const specials = '!@#$%&*+?';
+    const all = uppers + lowers + numbers + specials;
+
+    let pwd = '';
+    const getRandomChar = (chars: string) => {
+      const array = new Uint32Array(1);
+      window.crypto.getRandomValues(array);
+      return chars[array[0] % chars.length];
+    };
+
+    // Pick at least 2 of each category for maximum strength
+    pwd += getRandomChar(uppers) + getRandomChar(uppers);
+    pwd += getRandomChar(lowers) + getRandomChar(lowers);
+    pwd += getRandomChar(numbers) + getRandomChar(numbers);
+    pwd += getRandomChar(specials) + getRandomChar(specials);
+
+    while (pwd.length < 14) {
+      pwd += getRandomChar(all);
+    }
+
+    // Shuffle characters
+    const arr = pwd.split('');
+    for (let i = arr.length - 1; i > 0; i--) {
+      const randArr = new Uint32Array(1);
+      window.crypto.getRandomValues(randArr);
+      const j = randArr[0] % (i + 1);
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    const finalPassword = arr.join('');
+
+    setResetNewPassword(finalPassword);
+    setResetConfirmPassword(finalPassword);
+    setShowResetNewPassword(true);
+    setShowResetConfirmPassword(true);
+
+    try {
+      navigator.clipboard.writeText(finalPassword);
+      setPasswordCopied(true);
+      setTimeout(() => setPasswordCopied(false), 3500);
+    } catch (e) {
+      console.warn('Clipboard write error:', e);
+    }
+  };
+
+  // Password requirements criteria
+  const hasMinLength = resetNewPassword.length >= 10;
+  const hasUpper = /[A-Z]/.test(resetNewPassword);
+  const hasLower = /[a-z]/.test(resetNewPassword);
+  const hasNumber = /[0-9]/.test(resetNewPassword);
+  const hasSpecial = /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(resetNewPassword);
+  const passwordsMatch = resetNewPassword.length > 0 && resetNewPassword === resetConfirmPassword;
+
+  const validCount = [hasMinLength, hasUpper, hasLower, hasNumber, hasSpecial].filter(Boolean).length;
+  const isFormValid = hasMinLength && hasUpper && hasLower && hasNumber && hasSpecial && passwordsMatch;
+
   // ─── Reset Password with Token Handler ───
   const handleResetPasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (resetNewPassword.length < 6) {
-      setErrorMessage('A nova senha deve ter no mínimo 6 caracteres.');
+    if (!hasMinLength) {
+      setErrorMessage('A nova senha deve ter no mínimo 10 caracteres.');
       return;
     }
-    if (resetNewPassword !== resetConfirmPassword) {
+    if (!hasUpper || !hasLower || !hasNumber || !hasSpecial) {
+      setErrorMessage('A senha deve conter letras maiúsculas, minúsculas, números e caracteres especiais.');
+      return;
+    }
+    if (!passwordsMatch) {
       setErrorMessage('A confirmação de senha não coincide com a nova senha.');
       return;
     }
@@ -358,19 +426,30 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
   if (resetToken) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4 bg-[#f7f9fb] font-body-md text-[#191c1e]">
-        <div className="w-full max-w-[480px] bg-white p-8 rounded-xl border border-[#c0c7d6] shadow-sm animate-in zoom-in-95">
-          <div className="flex justify-center mb-6">
-            <span className="material-symbols-outlined text-[48px] text-[#005daa]">vpn_key</span>
+        <div className="w-full max-w-[500px] bg-white p-8 rounded-xl border border-[#c0c7d6] shadow-sm animate-in zoom-in-95">
+          <div className="flex justify-center mb-4">
+            <span className="material-symbols-outlined text-[44px] text-[#005daa]">vpn_key</span>
           </div>
-          <h2 className="font-headline-sm text-center text-[#191c1e] mb-2">Redefinição de Senha & Acesso Master</h2>
-          <p className="text-center text-[#404753] text-sm mb-6">
-            {resetEmail ? `Defina uma nova senha para ${resetEmail}` : 'Crie sua nova senha de acesso'}
+          <h2 className="font-headline-sm text-center text-[#191c1e] mb-1">Redefinição de Senha & Acesso Master</h2>
+          <p className="text-center text-[#404753] text-xs mb-5">
+            {resetEmail ? (
+              <>Defina uma nova credencial segura para <strong className="text-[#005daa]">{resetEmail}</strong></>
+            ) : (
+              'Defina sua nova credencial de segurança corporativa'
+            )}
           </p>
 
           {errorMessage && (
-            <div className="mb-6 p-3 bg-red-50 border border-red-200 text-red-700 rounded-md text-sm font-bold flex items-center gap-2">
+            <div className="mb-5 p-3 bg-red-50 border border-red-200 text-red-700 rounded-md text-xs font-bold flex items-center gap-2">
               <span className="material-symbols-outlined text-[18px]">error</span>
               {errorMessage}
+            </div>
+          )}
+
+          {passwordCopied && (
+            <div className="mb-5 p-2.5 bg-emerald-50 border border-emerald-300 text-emerald-800 rounded-md text-xs font-bold flex items-center justify-center gap-2 animate-in fade-in">
+              <span className="material-symbols-outlined text-[16px] text-emerald-600">content_copy</span>
+              <span>Senha forte gerada e copiada para a área de transferência!</span>
             </div>
           )}
 
@@ -382,35 +461,169 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
             </div>
           ) : (
             <form onSubmit={handleResetPasswordSubmit} className="space-y-4">
+              {/* Gerador de Senha Automática Button */}
+              <div className="flex items-center justify-between p-2.5 bg-blue-50/70 border border-blue-200 rounded-lg">
+                <div className="flex items-center gap-1.5 text-xs text-[#005daa] font-bold">
+                  <span className="material-symbols-outlined text-base">security</span>
+                  <span>Gerador de Senha Segura</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={generateStrongPassword}
+                  className="px-3 py-1 bg-[#005daa] hover:bg-[#0075d5] text-white text-xs font-bold rounded-md flex items-center gap-1.5 cursor-pointer shadow-2xs transition-all"
+                  title="Gerar automaticamente uma senha com 14 caracteres incluindo maiúsculas, minúsculas, números e símbolos"
+                >
+                  <span className="material-symbols-outlined text-[15px]">auto_fix_high</span>
+                  <span>Gerar Senha Forte (14 car.)</span>
+                </button>
+              </div>
+
+              {/* Campo 1: Nova Senha */}
               <div>
                 <label className="font-label-bold text-[11px] uppercase text-[#404753] block mb-1">
                   Nova Senha <span className="text-red-500">*</span>
                 </label>
-                <input
-                  type="password"
-                  minLength={6}
-                  required
-                  placeholder="Mínimo 6 caracteres"
-                  value={resetNewPassword}
-                  onChange={(e) => setResetNewPassword(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-white border border-[#c0c7d6] rounded-md font-body-md outline-none focus:border-[#005daa]"
-                />
+                <div className="relative">
+                  <input
+                    type={showResetNewPassword ? 'text' : 'password'}
+                    required
+                    placeholder="Mínimo 10 caracteres"
+                    value={resetNewPassword}
+                    onChange={(e) => setResetNewPassword(e.target.value)}
+                    className="w-full pl-3.5 pr-20 py-2.5 bg-white border border-[#c0c7d6] rounded-md font-body-md text-sm outline-none focus:border-[#005daa]"
+                  />
+                  <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
+                    {resetNewPassword && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(resetNewPassword);
+                          setPasswordCopied(true);
+                          setTimeout(() => setPasswordCopied(false), 3000);
+                        }}
+                        className="p-1 text-slate-400 hover:text-[#005daa] transition-colors"
+                        title="Copiar senha"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">content_copy</span>
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setShowResetNewPassword(!showResetNewPassword)}
+                      className="p-1 text-slate-400 hover:text-slate-700 transition-colors"
+                      title={showResetNewPassword ? 'Ocultar senha' : 'Visualizar senha'}
+                    >
+                      <span className="material-symbols-outlined text-[18px]">
+                        {showResetNewPassword ? 'visibility_off' : 'visibility'}
+                      </span>
+                    </button>
+                  </div>
+                </div>
               </div>
+
+              {/* Força da Senha Progress Bar */}
+              {resetNewPassword.length > 0 && (
+                <div className="space-y-1">
+                  <div className="flex justify-between text-[10px] font-bold">
+                    <span className="text-slate-500">Força da Senha:</span>
+                    <span className={
+                      validCount <= 2 ? 'text-rose-600' :
+                      validCount <= 4 ? 'text-amber-600' : 'text-emerald-600'
+                    }>
+                      {validCount <= 2 ? 'Fraca' :
+                       validCount <= 4 ? 'Média / Boa' : 'Excelente (Muito Forte)'}
+                    </span>
+                  </div>
+                  <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden flex gap-1">
+                    {[1, 2, 3, 4, 5].map((level) => (
+                      <div
+                        key={level}
+                        className={`flex-1 h-full rounded-full transition-all duration-300 ${
+                          validCount >= level
+                            ? validCount <= 2
+                              ? 'bg-rose-500'
+                              : validCount <= 4
+                              ? 'bg-amber-500'
+                              : 'bg-emerald-500'
+                            : 'bg-slate-200'
+                        }`}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Campo 2: Confirmar Nova Senha */}
               <div>
                 <label className="font-label-bold text-[11px] uppercase text-[#404753] block mb-1">
                   Confirmar Nova Senha <span className="text-red-500">*</span>
                 </label>
-                <input
-                  type="password"
-                  minLength={6}
-                  required
-                  placeholder="Repita a nova senha"
-                  value={resetConfirmPassword}
-                  onChange={(e) => setResetConfirmPassword(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-white border border-[#c0c7d6] rounded-md font-body-md outline-none focus:border-[#005daa]"
-                />
+                <div className="relative">
+                  <input
+                    type={showResetConfirmPassword ? 'text' : 'password'}
+                    required
+                    placeholder="Repita a nova senha"
+                    value={resetConfirmPassword}
+                    onChange={(e) => setResetConfirmPassword(e.target.value)}
+                    className="w-full pl-3.5 pr-10 py-2.5 bg-white border border-[#c0c7d6] rounded-md font-body-md text-sm outline-none focus:border-[#005daa]"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowResetConfirmPassword(!showResetConfirmPassword)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-700 transition-colors"
+                    title={showResetConfirmPassword ? 'Ocultar senha' : 'Visualizar senha'}
+                  >
+                    <span className="material-symbols-outlined text-[18px]">
+                      {showResetConfirmPassword ? 'visibility_off' : 'visibility'}
+                    </span>
+                  </button>
+                </div>
               </div>
 
+              {/* Requisitos Checklist */}
+              <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-1.5 text-[11px]">
+                <div className="text-slate-500 font-bold uppercase text-[10px] mb-1">Critérios de Segurança Obrigatórios:</div>
+                <div className="grid grid-cols-2 gap-x-2 gap-y-1 text-slate-600">
+                  <div className={`flex items-center gap-1.5 ${hasMinLength ? 'text-emerald-700 font-bold' : 'text-slate-500'}`}>
+                    <span className="material-symbols-outlined text-[14px]">
+                      {hasMinLength ? 'check_circle' : 'radio_button_unchecked'}
+                    </span>
+                    <span>Mínimo 10 caracteres</span>
+                  </div>
+                  <div className={`flex items-center gap-1.5 ${hasUpper ? 'text-emerald-700 font-bold' : 'text-slate-500'}`}>
+                    <span className="material-symbols-outlined text-[14px]">
+                      {hasUpper ? 'check_circle' : 'radio_button_unchecked'}
+                    </span>
+                    <span>1 Maiúscula (A-Z)</span>
+                  </div>
+                  <div className={`flex items-center gap-1.5 ${hasLower ? 'text-emerald-700 font-bold' : 'text-slate-500'}`}>
+                    <span className="material-symbols-outlined text-[14px]">
+                      {hasLower ? 'check_circle' : 'radio_button_unchecked'}
+                    </span>
+                    <span>1 Minúscula (a-z)</span>
+                  </div>
+                  <div className={`flex items-center gap-1.5 ${hasNumber ? 'text-emerald-700 font-bold' : 'text-slate-500'}`}>
+                    <span className="material-symbols-outlined text-[14px]">
+                      {hasNumber ? 'check_circle' : 'radio_button_unchecked'}
+                    </span>
+                    <span>1 Número (0-9)</span>
+                  </div>
+                  <div className={`flex items-center gap-1.5 ${hasSpecial ? 'text-emerald-700 font-bold' : 'text-slate-500'}`}>
+                    <span className="material-symbols-outlined text-[14px]">
+                      {hasSpecial ? 'check_circle' : 'radio_button_unchecked'}
+                    </span>
+                    <span>1 Símbolo (!@#$...)</span>
+                  </div>
+                  <div className={`flex items-center gap-1.5 ${passwordsMatch ? 'text-emerald-700 font-bold' : 'text-slate-500'}`}>
+                    <span className="material-symbols-outlined text-[14px]">
+                      {passwordsMatch ? 'check_circle' : 'radio_button_unchecked'}
+                    </span>
+                    <span>Senhas coincidem</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Botões de Ação */}
               <div className="pt-2 flex gap-3">
                 <button
                   type="button"
@@ -418,18 +631,18 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                     setResetToken(null);
                     window.history.replaceState({}, document.title, window.location.pathname);
                   }}
-                  className="flex-1 py-2.5 border border-[#c0c7d6] rounded-md font-label-bold text-[#404753] hover:bg-[#f2f4f6] cursor-pointer"
+                  className="flex-1 py-2.5 border border-[#c0c7d6] rounded-md font-label-bold text-[#404753] hover:bg-[#f2f4f6] cursor-pointer text-xs"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  disabled={resetLoading}
-                  className="flex-1 py-2.5 bg-[#005daa] text-white rounded-md font-label-bold hover:bg-[#0075d5] disabled:opacity-60 flex items-center justify-center gap-2 cursor-pointer shadow-2xs"
+                  disabled={resetLoading || !isFormValid}
+                  className="flex-1 py-2.5 bg-[#005daa] text-white rounded-md font-label-bold hover:bg-[#0075d5] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer shadow-2xs text-xs transition-all"
                 >
                   {resetLoading ? (
                     <>
-                      <span className="material-symbols-outlined animate-spin text-[18px]">progress_activity</span>
+                      <span className="material-symbols-outlined animate-spin text-[16px]">progress_activity</span>
                       <span>Salvando...</span>
                     </>
                   ) : (
@@ -923,12 +1136,63 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
               </button>
             </div>
             {forgotSubmitted ? (
-              <div className="p-4 bg-[#ecfdf5] border border-[#10b981]/30 rounded-lg text-center space-y-2">
+              <div className="p-4 bg-[#ecfdf5] border border-[#10b981]/30 rounded-lg text-center space-y-3">
                 <span className="material-symbols-outlined text-[#10b981] text-3xl">check_circle</span>
-                <p className="font-bold text-[#10b981]">Instruções enviadas!</p>
-                <p className="text-body-sm text-[#404753]">
-                  Verifique sua caixa de entrada no e-mail informado para redefinir sua senha.
+                <p className="font-bold text-[#10b981] text-sm">Instruções enviadas com sucesso!</p>
+                <p className="text-body-sm text-[#404753] text-xs">
+                  O link de redefinição de acesso foi gerado para <strong>{forgotEmail}</strong>.
                 </p>
+
+                {forgotResetUrl && (
+                  <div className="pt-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const url = new URL(forgotResetUrl);
+                        const token = url.searchParams.get('resetToken');
+                        if (token) {
+                          setResetToken(token);
+                          setResetEmail(forgotEmail);
+                          setForgotModalOpen(false);
+                          setForgotSubmitted(false);
+                        }
+                      }}
+                      className="w-full py-2.5 bg-[#005daa] text-white rounded-md font-bold text-xs hover:bg-[#0075d5] flex items-center justify-center gap-2 cursor-pointer shadow-2xs"
+                    >
+                      <span className="material-symbols-outlined text-base">vpn_key</span>
+                      <span>Abrir Tela de Redefinição Imediata</span>
+                    </button>
+                  </div>
+                )}
+
+                {forgotPreviewUrl && (
+                  <div className="pt-1">
+                    <a
+                      href={forgotPreviewUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center justify-center gap-1 text-xs text-[#005daa] font-bold hover:underline"
+                    >
+                      <span className="material-symbols-outlined text-sm">visibility</span>
+                      <span>Visualizar E-mail no Ethereal (Ambiente de Testes)</span>
+                    </a>
+                  </div>
+                )}
+
+                <div className="pt-2 border-t border-emerald-200">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setForgotModalOpen(false);
+                      setForgotSubmitted(false);
+                      setForgotPreviewUrl(null);
+                      setForgotResetUrl(null);
+                    }}
+                    className="px-4 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-md cursor-pointer"
+                  >
+                    Fechar
+                  </button>
+                </div>
               </div>
             ) : (
               <form onSubmit={handleForgotSubmit} className="space-y-4">
@@ -956,9 +1220,17 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                   </button>
                   <button
                     type="submit"
-                    className="px-4 py-2 bg-[#005daa] text-white rounded-md font-label-bold hover:bg-[#0075d5]"
+                    disabled={forgotLoading}
+                    className="px-4 py-2 bg-[#005daa] text-white rounded-md font-label-bold hover:bg-[#0075d5] disabled:opacity-60 flex items-center gap-1.5"
                   >
-                    Enviar Link
+                    {forgotLoading ? (
+                      <>
+                        <span className="material-symbols-outlined animate-spin text-[16px]">progress_activity</span>
+                        <span>Enviando...</span>
+                      </>
+                    ) : (
+                      'Enviar Link'
+                    )}
                   </button>
                 </div>
               </form>

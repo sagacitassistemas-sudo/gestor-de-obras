@@ -221,6 +221,7 @@ export const UsuariosView: React.FC<UsuariosViewProps> = ({ authSession }) => {
           perfil: formData.perfil,
           status: formData.status,
           empresa_id: finalEmpresaId,
+          empresa_nome: formData.selectedEmpresaOption === 'OUTRO' ? sanitizeInput(formData.customEmpresaNome) : undefined,
           senha: formData.senha || undefined
         };
         
@@ -270,7 +271,12 @@ export const UsuariosView: React.FC<UsuariosViewProps> = ({ authSession }) => {
       const res = await fetch('/api/convites', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ email: cleanEmail, perfil: formData.perfil, empresa_id: finalEmpresaId })
+        body: JSON.stringify({
+          email: cleanEmail,
+          perfil: formData.perfil,
+          empresa_id: finalEmpresaId,
+          empresa_nome: formData.selectedEmpresaOption === 'OUTRO' ? sanitizeInput(formData.customEmpresaNome) : undefined
+        })
       });
 
       const data = await res.json();

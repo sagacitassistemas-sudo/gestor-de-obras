@@ -166,7 +166,7 @@ describe('🛡️ Segurança: Reconhecimento de Acesso da Empresa Gestora & Rede
     expect(resetRes.body.message).toMatch(/sucesso/i);
   });
 
-  it('🔴 deve rejeitar redefinição com senha curta (< 6 caracteres)', async () => {
+  it('🔴 deve rejeitar redefinição com senha curta (< 10 caracteres)', async () => {
     const res = await request(app)
       .post('/api/auth/reset-password-with-token')
       .send({ token: 'qualquer-token', newPassword: '123' });

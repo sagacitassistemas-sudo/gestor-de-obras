@@ -31,6 +31,10 @@ vi.mock('firebase-admin/auth', () => ({
   getAuth: vi.fn(() => ({
     verifyIdToken: vi.fn().mockRejectedValue(new Error('firebase/no-app')),
     createCustomToken: vi.fn().mockResolvedValue('mock-custom-token'),
+    updateUser: vi.fn().mockResolvedValue({ uid: 'mock-uid' }),
+    getUserByEmail: vi.fn().mockResolvedValue({ uid: 'mock-uid', email: 'test@example.com' }),
+    createUser: vi.fn().mockResolvedValue({ uid: 'mock-new-uid' }),
+    setCustomUserClaims: vi.fn().mockResolvedValue(undefined),
   })),
 }));
 

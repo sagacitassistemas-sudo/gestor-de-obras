@@ -1,4 +1,4 @@
-export type NavigationTab = 'login' | 'dashboard' | 'financeiro' | 'contratos' | 'alertas' | 'onboarding' | 'auth-debug' | 'empresas' | 'fornecedores' | 'equipes' | 'maquinas' | 'ferramentas' | 'materiais' | 'entidades' | 'matriz-acesso' | 'usuarios' | 'projetos_eap' | 'ordens_servico' | 'contratos_obra' | 'audit-log' | 'parametros' | 'cronograma_executivo' | 'rdo' | 'medicoes';
+export type NavigationTab = 'login' | 'dashboard' | 'financeiro' | 'contratos' | 'alertas' | 'onboarding' | 'auth-debug' | 'empresas' | 'fornecedores' | 'equipes' | 'funcionarios' | 'maquinas' | 'ferramentas' | 'materiais' | 'entidades' | 'matriz-acesso' | 'usuarios' | 'projetos_eap' | 'ordens_servico' | 'contratos_obra' | 'audit-log' | 'parametros' | 'cronograma_executivo' | 'rdo' | 'medicoes';
 
 // Re-exports dos tipos modularizados para manter compatibilidade com o frontend
 export type { FirebaseCustomClaims as CustomClaims } from './types/firebase.types';
@@ -9,6 +9,70 @@ export type { CerneEmpresa as EmpresaItem } from './types/cerne.types';
 export * from './types/firebase.types';
 export * from './types/cerne.types';
 export * from './types/middleware.types';
+
+export interface EspecialidadeItem {
+  id: string;
+  tenant_id: string;
+  nome: string;
+  descricao?: string;
+  cor?: string;
+  icone?: string;
+  status: 'ATIVO' | 'INATIVO';
+  created_at?: string;
+}
+
+export interface FuncionarioEquipeAllocation {
+  equipe_id: string;
+  equipe_nome: string;
+  funcao_na_equipe: string;
+}
+
+export interface FuncionarioItem {
+  id: string;
+  tenant_id: string;
+  empresa_id: string;
+  empresa_nome?: string;
+  nome: string;
+  cpf?: string;
+  cargo?: string;
+  telefone?: string;
+  email?: string;
+  especialidade_id?: string;
+  especialidade_nome?: string;
+  especialidade_cor?: string;
+  especialidade_icone?: string;
+  data_admissao?: string;
+  status: 'ATIVO' | 'INATIVO' | 'AFASTADO';
+  foto_url?: string;
+  created_at?: string;
+  equipes?: FuncionarioEquipeAllocation[];
+}
+
+export interface EquipeMembroItem {
+  id?: string;
+  funcionario_id: string;
+  funcao_na_equipe: 'LIDER' | 'COORDENADOR' | 'MEMBRO' | 'SUPORTE_TECNICO' | 'AUXILIAR';
+  adicionado_em?: string;
+  nome?: string;
+  cargo?: string;
+  especialidade_nome?: string;
+  especialidade_cor?: string;
+  especialidade_icone?: string;
+}
+
+export interface EquipeItem {
+  id: string;
+  tenant_id: string;
+  empresa_id: string;
+  empresa_nome?: string;
+  nome: string;
+  descricao?: string;
+  lider_id?: string;
+  lider_nome?: string;
+  status: 'ATIVA' | 'INATIVA' | 'EM_CAMPO';
+  created_at?: string;
+  membros?: EquipeMembroItem[];
+}
 
 export interface UserRecord {
   id: string;
@@ -141,3 +205,17 @@ export interface SystemErrorEntry {
     categoria: string;
   };
 }
+
+export interface ValidacaoTarefaEntry {
+  id: string;
+  titulo: string;
+  descricao: string;
+  agente: string;
+  status: 'PENDENTE' | 'VALIDADO' | 'FALHOU';
+  notas_validacao?: string;
+  link_referencia?: string;
+  criado_em: string;
+  validado_em?: string;
+  responsavel_uid?: string;
+}
+

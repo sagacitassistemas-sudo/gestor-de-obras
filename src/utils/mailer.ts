@@ -4,15 +4,30 @@ dotenv.config();
 
 let transporter: nodemailer.Transporter | null = null;
 
+export const isProduction = () =>
+  process.env.NODE_ENV === 'production' || process.env.APP_ENV === 'production';
+
+/**
+ * Resolve o endereço SMTP do Inbucket/Mailpit do Supabase local.
+ * Como a porta 1025 do container não é exposta ao host, usamos o IP interno da rede Docker.
+ * Fallback: tenta a variável INBUCKET_SMTP_HOST do .env, depois o IP padrão do container.
+ */
+const resolveInbucketSmtpHost = (): string => {
+  return process.env.INBUCKET_SMTP_HOST || '172.25.0.7';
+};
+
 const createTransporter = async () => {
   if (transporter) return transporter;
 
-  // Use real SMTP if configured
-  if (process.env.SMTP_HOST && process.env.SMTP_USER) {
+  const hasSMTPConfig = Boolean(process.env.SMTP_HOST && process.env.SMTP_USER);
+
+  // ─── PRODUÇÃO: SMTP real obrigatório ───
+  if (hasSMTPConfig) {
+    console.log(`📧 [PROD SMTP] Configurando serviço de e-mail SMTP (${process.env.SMTP_HOST})...`);
     transporter = nodemailer.createTransport({
       host: process.env.SMTP_HOST,
       port: Number(process.env.SMTP_PORT) || 587,
-      secure: process.env.SMTP_SECURE === 'true', // true for 465, false for other ports
+      secure: process.env.SMTP_SECURE === 'true',
       auth: {
         user: process.env.SMTP_USER,
         pass: process.env.SMTP_PASS,
@@ -21,43 +36,68 @@ const createTransporter = async () => {
     return transporter;
   }
 
-  // Fallback to Ethereal Email for testing
-  console.log('⚠️ Nenhuma configuração SMTP encontrada no .env. Gerando conta Ethereal para testes...');
-  const testAccount = await nodemailer.createTestAccount();
+  if (isProduction()) {
+    console.error('❌ ERRO CRÍTICO: Nenhuma chave SMTP_HOST/SMTP_USER configurada em ambiente de PRODUÇÃO!');
+    throw new Error('Serviço de e-mail não configurado em ambiente de Produção.');
+  }
+
+  // ─── DESENVOLVIMENTO: Inbucket/Mailpit do Supabase local ───
+  const inbucketHost = resolveInbucketSmtpHost();
+  const inbucketPort = Number(process.env.INBUCKET_SMTP_PORT) || 1025;
+  const inbucketWebPort = process.env.INBUCKET_WEB_PORT || '54644';
+
+  console.log(`📬 [DEV SMTP] Conectando ao Inbucket/Mailpit do Supabase local (${inbucketHost}:${inbucketPort})...`);
   transporter = nodemailer.createTransport({
-    host: 'smtp.ethereal.email',
-    port: 587,
+    host: inbucketHost,
+    port: inbucketPort,
     secure: false,
-    auth: {
-      user: testAccount.user,
-      pass: testAccount.pass,
-    },
+    tls: { rejectUnauthorized: false },
   });
-  console.log('✅ Ethereal configurado! E-mails enviados poderão ser vistos na URL do console.');
+
+  console.log(`✅ [DEV SMTP] Inbucket configurado! Visualize os e-mails em: http://localhost:${inbucketWebPort}`);
   return transporter;
 };
 
-export const sendEmail = async ({ to, subject, html }: { to: string; subject: string; html: string }) => {
+export const sendEmail = async ({
+  to,
+  subject,
+  html,
+  from
+}: {
+  to: string;
+  subject: string;
+  html: string;
+  from?: string;
+}) => {
   try {
     const tp = await createTransporter();
-    
+
+    const defaultFrom = process.env.SMTP_FROM || '"Gestor de Obras" <no-reply@gestordeobras.com>';
+    const sender = from || defaultFrom;
+
     const info = await tp.sendMail({
-      from: process.env.SMTP_FROM || '"Gestor de Obras" <no-reply@gestordeobras.com>',
+      from: sender,
       to,
       subject,
       html,
     });
 
-    console.log(`📩 E-mail disparado para ${to}. Message ID: ${info.messageId}`);
-    
-    // Log ethereal url if using ethereal
-    if (info.messageId && !process.env.SMTP_HOST) {
-      console.log(`👁️‍🗨️ Preview URL do E-mail (Ethereal Test): ${nodemailer.getTestMessageUrl(info)}`);
+    const env = isProduction() ? 'PROD' : 'DEV';
+    const inbucketWebPort = process.env.INBUCKET_WEB_PORT || '54644';
+
+    console.log(`📩 [${env}] E-mail disparado de [${sender}] para [${to}]. Message ID: ${info.messageId}`);
+
+    if (!isProduction()) {
+      console.log(`👁️‍🗨️ [DEV] Visualize em: http://localhost:${inbucketWebPort}`);
     }
 
-    return true;
+    return {
+      success: true,
+      messageId: info.messageId,
+      previewUrl: !isProduction() ? `http://localhost:${inbucketWebPort}` : undefined
+    };
   } catch (error) {
     console.error("❌ Erro ao enviar e-mail:", error);
-    return false;
+    return { success: false, error };
   }
 };

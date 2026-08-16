@@ -24,11 +24,16 @@ interface OS {
   descricao: string;
   status: string;
   item_eap_id: string;
+  equipe_id?: string;
   data_emissao: string;
   created_at: string;
   itens_eap?: {
     descricao_servico: string;
     unidade_medida: string;
+  };
+  equipes?: {
+    id: string;
+    nome: string;
   };
 }
 
@@ -41,8 +46,9 @@ export const OSView: React.FC<OSViewProps> = ({ authSession }) => {
   const [ordensServico, setOrdensServico] = useState<OS[]>([]);
   const [selectedOs, setSelectedOs] = useState<OS | null>(null);
 
-  // EAP Disponível (para dropdown de criação)
+  // EAP e Equipes Disponíveis (para dropdown de criação)
   const [itensEap, setItensEap] = useState<ItemEAP[]>([]);
+  const [equipes, setEquipes] = useState<any[]>([]);
 
   // Controle de Visualização
   const [isCreating, setIsCreating] = useState(false);
@@ -52,14 +58,16 @@ export const OSView: React.FC<OSViewProps> = ({ authSession }) => {
   const [numeroOs, setNumeroOs] = useState<string>('');
   const [descricao, setDescricao] = useState<string>('');
   const [selectedEapId, setSelectedEapId] = useState<string>('');
+  const [selectedEquipeId, setSelectedEquipeId] = useState<string>('');
   
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  // Carregar Projetos Iniciais
+  // Carregar Projetos Iniciais e Equipes
   useEffect(() => {
     if (!authSession) return;
     setLoading(true);
+
     fetch('/api/projetos', {
       headers: { Authorization: `Bearer ${authSession.idToken}` }
     })
@@ -70,6 +78,16 @@ export const OSView: React.FC<OSViewProps> = ({ authSession }) => {
         }
       })
       .finally(() => setLoading(false));
+
+    fetch('/api/equipes', {
+      headers: { Authorization: `Bearer ${authSession.idToken}` }
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && data.data) {
+          setEquipes(data.data);
+        }
+      });
   }, [authSession]);
 
   // Carregar OS e itens EAP ao selecionar Projeto
@@ -112,6 +130,7 @@ export const OSView: React.FC<OSViewProps> = ({ authSession }) => {
     setNumeroOs('');
     setDescricao('');
     setSelectedEapId('');
+    setSelectedEquipeId('');
   };
 
   const handleSalvarNovaOs = async () => {
@@ -123,7 +142,8 @@ export const OSView: React.FC<OSViewProps> = ({ authSession }) => {
       const payload = {
         projeto_id: selectedProjetoId,
         item_eap_id: selectedEapId,
-        numero_os: numeroOs.trim() || undefined, // undefined sends fallback to auto-gen
+        equipe_id: selectedEquipeId || undefined,
+        numero_os: numeroOs.trim() || undefined,
         descricao: descricao,
         data_emissao: dataEmissao
       };
@@ -293,6 +313,22 @@ export const OSView: React.FC<OSViewProps> = ({ authSession }) => {
                 </select>
               </div>
 
+              <div className="mb-4">
+                <label className="block text-xs font-bold text-[#707785] uppercase mb-1">Equipe Responsável de Execução (Opcional)</label>
+                <select 
+                  value={selectedEquipeId} 
+                  onChange={e => setSelectedEquipeId(e.target.value)} 
+                  className="w-full border border-[#c0c7d6] rounded-lg p-2.5 outline-none focus:border-[#005daa] text-sm"
+                >
+                  <option value="">Selecione a equipe alocada...</option>
+                  {equipes.map((eq: any) => (
+                    <option key={eq.id} value={eq.id}>
+                      {eq.nome} ({eq.empresa_nome})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               <div className="mb-8">
                 <label className="block text-xs font-bold text-[#707785] uppercase mb-1">Descrição / Instruções (Opcional)</label>
                 <textarea 
@@ -333,14 +369,28 @@ export const OSView: React.FC<OSViewProps> = ({ authSession }) => {
                 </span>
               </div>
 
-              <div className="bg-[#f8fafc] border border-[#e1e2e8] rounded-xl p-5 mb-6">
-                <p className="text-xs font-bold text-[#707785] uppercase tracking-wider mb-1">Serviço Autorizado (EAP)</p>
-                <p className="text-lg font-bold text-[#005daa] mb-1">
-                  {selectedOs.itens_eap?.descricao_servico || 'N/A'}
-                </p>
-                <p className="text-sm font-medium text-[#404753] bg-white border border-[#e1e2e8] inline-block px-2 py-0.5 rounded">
-                  Unidade: {selectedOs.itens_eap?.unidade_medida || '-'}
-                </p>
+              <div className="bg-[#f8fafc] border border-[#e1e2e8] rounded-xl p-5 mb-6 space-y-4">
+                <div>
+                  <p className="text-xs font-bold text-[#707785] uppercase tracking-wider mb-1">Serviço Autorizado (EAP)</p>
+                  <p className="text-lg font-bold text-[#005daa] mb-1">
+                    {selectedOs.itens_eap?.descricao_servico || 'N/A'}
+                  </p>
+                  <p className="text-sm font-medium text-[#404753] bg-white border border-[#e1e2e8] inline-block px-2 py-0.5 rounded">
+                    Unidade: {selectedOs.itens_eap?.unidade_medida || '-'}
+                  </p>
+                </div>
+
+                {selectedOs.equipes && (
+                  <div className="pt-3 border-t border-[#e1e2e8]">
+                    <p className="text-xs font-bold text-[#707785] uppercase tracking-wider mb-1">Equipe Executora Designada</p>
+                    <div className="flex items-center gap-2">
+                      <span className="px-3 py-1 bg-blue-50 border border-blue-200 text-[#005daa] font-bold text-xs rounded-lg flex items-center gap-1.5">
+                        <span className="material-symbols-outlined text-sm">groups</span>
+                        {selectedOs.equipes.nome}
+                      </span>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="mb-6">
