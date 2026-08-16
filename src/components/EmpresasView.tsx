@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { AuthSession, EmpresaItem } from '../types';
+import { supabase } from '../lib/supabaseClient';
 
 interface EmpresasViewProps {
   authSession?: AuthSession | null;
@@ -16,7 +17,7 @@ export const EmpresasView: React.FC<EmpresasViewProps> = ({ authSession, empresa
   const [filterStatus, setFilterStatus] = useState<string>('TODOS');
 
   // Sub-tabs in EmpresasView
-  const [activeSubTab, setActiveSubTab] = useState<'CONTRATANTE' | 'LISTA'>('CONTRATANTE');
+  const [activeSubTab, setActiveSubTab] = useState<'LISTA' | 'CONTRATANTE'>('LISTA');
 
   // Empresa Contratante (Proprietária) State - Initialized empty to eliminate mock data as requested
   const [empresaContratante, setEmpresaContratante] = useState({
@@ -39,6 +40,52 @@ export const EmpresasView: React.FC<EmpresasViewProps> = ({ authSession, empresa
   const [supabaseSynced, setSupabaseSynced] = useState<boolean | null>(null);
   const [supabaseError, setSupabaseError] = useState<string | null>(null);
   const [showSqlHelp, setShowSqlHelp] = useState(false);
+
+  // Gestora Confirmation Email State
+  const [sendingGestoraEmail, setSendingGestoraEmail] = useState<string | null>(null);
+  const [gestoraFeedback, setGestoraFeedback] = useState<{ id: string; success: boolean; message: string } | null>(null);
+
+  const handleSendGestoraConfirmation = async (empresa: EmpresaItem) => {
+    setSendingGestoraEmail(empresa.id);
+    setGestoraFeedback(null);
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      const token = session?.session?.access_token || authSession?.idToken;
+      const res = await fetch('/api/gestora/send-confirmation', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token || ''}`
+        },
+        body: JSON.stringify({
+          empresa_id: empresa.id,
+          email: empresa.emailContato
+        })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setGestoraFeedback({
+          id: empresa.id,
+          success: true,
+          message: data.message || `E-mail de confirmação e recuperação enviado com sucesso!`
+        });
+      } else {
+        setGestoraFeedback({
+          id: empresa.id,
+          success: false,
+          message: data.error || 'Erro ao disparar e-mail de confirmação da Gestora.'
+        });
+      }
+    } catch (err: any) {
+      setGestoraFeedback({
+        id: empresa.id,
+        success: false,
+        message: err.message || 'Erro de conexão ao enviar e-mail.'
+      });
+    } finally {
+      setSendingGestoraEmail(null);
+    }
+  };
 
   // Load contracting company data from Supabase (Full stack backend client proxy)
   useEffect(() => {
@@ -75,9 +122,11 @@ export const EmpresasView: React.FC<EmpresasViewProps> = ({ authSession, empresa
   useEffect(() => {
     const fetchEmpresas = async () => {
       try {
+        const { data: session } = await supabase.auth.getSession();
+        const token = session?.session?.access_token || authSession?.idToken;
         const response = await fetch(`/api/empresas?contrato_id=${encodeURIComponent(contratoId)}`, {
           headers: {
-            'Authorization': `Bearer ${authSession?.idToken || ''}`
+            'Authorization': `Bearer ${token || ''}`
           }
         });
         const json = await response.json();
@@ -89,7 +138,7 @@ export const EmpresasView: React.FC<EmpresasViewProps> = ({ authSession, empresa
       }
     };
     fetchEmpresas();
-  }, [contratoId, setEmpresas]);
+  }, [contratoId, authSession, setEmpresas]);
 
   const handleStartEditingContratante = () => {
     setTempContratante({ ...empresaContratante });
@@ -186,7 +235,7 @@ export const EmpresasView: React.FC<EmpresasViewProps> = ({ authSession, empresa
   });
 
   // Sanitizer gegen XSS
-  const sanitizeInput = (str: string) => str.replace(/[<>]/g, '').trim();
+  const sanitizeInput = (str: string | null | undefined) => (str || '').replace(/[<>]/g, '').trim();
 
   // Open Create Modal
   const handleOpenCreateModal = () => {
@@ -399,12 +448,22 @@ export const EmpresasView: React.FC<EmpresasViewProps> = ({ authSession, empresa
   };
 
   // Filter Computation (R)
-  const filteredEmpresas = empresas.filter((item) => {
+  const filteredEmpresas = (empresas || []).map((item) => ({
+    ...item,
+    id: item.id || '',
+    nome: item.nome || '',
+    cnpj_cpf: item.cnpj_cpf || '',
+    emailContato: item.emailContato || '',
+    tipo: item.tipo || 'FORNECEDOR',
+    status: item.status || 'ATIVO',
+    totalFaturado: Number(item.totalFaturado || 0)
+  })).filter((item) => {
+    const s = (search || '').toLowerCase();
     const matchesSearch =
-      item.nome.toLowerCase().includes(search.toLowerCase()) ||
-      item.cnpj_cpf.includes(search) ||
-      item.emailContato.toLowerCase().includes(search.toLowerCase()) ||
-      item.id.toLowerCase().includes(search.toLowerCase());
+      item.nome.toLowerCase().includes(s) ||
+      item.cnpj_cpf.includes(s) ||
+      item.emailContato.toLowerCase().includes(s) ||
+      item.id.toLowerCase().includes(s);
 
     const matchesTipo = filterTipo === 'TODOS' || item.tipo === filterTipo;
     const matchesStatus = filterStatus === 'TODOS' || item.status === filterStatus;
@@ -883,9 +942,11 @@ export const EmpresasView: React.FC<EmpresasViewProps> = ({ authSession, empresa
                 className="p-2 border border-slate-200 rounded-md text-xs font-bold bg-white text-slate-700"
               >
                 <option value="TODOS">Todos os Tipos</option>
+                <option value="GESTORA">Gestora do Sistema</option>
                 <option value="FORNECEDOR">Fornecedores</option>
                 <option value="CLIENTE">Clientes</option>
                 <option value="PARCEIRO">Parceiros</option>
+                <option value="CONTRATANTE">Contratante</option>
               </select>
             </div>
 
@@ -944,13 +1005,16 @@ export const EmpresasView: React.FC<EmpresasViewProps> = ({ authSession, empresa
                     <td className="p-3">
                       <span
                         className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
-                          item.tipo === 'FORNECEDOR'
+                          item.tipo === 'GESTORA'
+                            ? 'bg-amber-100 text-amber-800 border border-amber-300 flex items-center gap-1 w-fit'
+                            : item.tipo === 'FORNECEDOR'
                             ? 'bg-blue-50 text-blue-700 border border-blue-200'
                             : item.tipo === 'CLIENTE'
                             ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                             : 'bg-purple-50 text-purple-700 border border-purple-200'
                         }`}
                       >
+                        {item.tipo === 'GESTORA' && <span className="material-symbols-outlined text-[12px]">shield_person</span>}
                         {item.tipo}
                       </span>
                     </td>
@@ -981,6 +1045,20 @@ export const EmpresasView: React.FC<EmpresasViewProps> = ({ authSession, empresa
 
                     <td className="p-3 text-right">
                       <div className="flex items-center justify-end gap-1">
+                        {/* Send Gestora Master Confirmation Email */}
+                        {item.tipo === 'GESTORA' && (
+                          <button
+                            onClick={() => handleSendGestoraConfirmation(item)}
+                            disabled={sendingGestoraEmail === item.id}
+                            className="p-1.5 text-amber-600 hover:text-amber-800 hover:bg-amber-50 rounded-md transition-all cursor-pointer disabled:opacity-50"
+                            title="Disparar e-mail de reconhecimento de acesso & contingência master"
+                          >
+                            <span className={`material-symbols-outlined text-base ${sendingGestoraEmail === item.id ? 'animate-spin' : ''}`}>
+                              {sendingGestoraEmail === item.id ? 'sync' : 'mark_email_read'}
+                            </span>
+                          </button>
+                        )}
+
                         {/* View Details Modal */}
                         <button
                           onClick={() => setViewingEmpresa(item)}
@@ -1247,6 +1325,37 @@ export const EmpresasView: React.FC<EmpresasViewProps> = ({ authSession, empresa
                 <div className="text-slate-700">E-mail: <strong>{viewingEmpresa.emailContato || 'Não informado'}</strong></div>
                 <div className="text-slate-700">Telefone: <strong className="font-mono">{viewingEmpresa.telefone || 'Não informado'}</strong></div>
               </div>
+
+              {/* Empresa Gestora Master Recognition & Recovery Section */}
+              {viewingEmpresa.tipo === 'GESTORA' && (
+                <div className="p-3.5 bg-amber-50 rounded-md border border-amber-200 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <span className="material-symbols-outlined text-amber-600 text-base">shield_person</span>
+                      <span className="font-bold text-amber-900 text-xs uppercase">Gestora do Sistema (Acesso Master)</span>
+                    </div>
+                    <span className="px-2 py-0.5 bg-amber-200 text-amber-800 text-[10px] font-bold rounded">19 Permissões Ativas</span>
+                  </div>
+                  <p className="text-[11px] text-amber-800 leading-relaxed">
+                    Esta é a empresa administradora global do sistema. Em caso de perda de senha, falha no login ou necessidade de troca, envie o certificado de contingência com link de redefinição imediata.
+                  </p>
+                  {gestoraFeedback && gestoraFeedback.id === viewingEmpresa.id && (
+                    <div className={`p-2 rounded text-[11px] font-bold ${gestoraFeedback.success ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-rose-100 text-rose-800 border border-rose-300'}`}>
+                      {gestoraFeedback.message}
+                    </div>
+                  )}
+                  <button
+                    onClick={() => handleSendGestoraConfirmation(viewingEmpresa)}
+                    disabled={sendingGestoraEmail === viewingEmpresa.id}
+                    className="w-full py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-md font-bold text-xs flex items-center justify-center gap-2 cursor-pointer shadow-2xs transition-all disabled:opacity-60"
+                  >
+                    <span className={`material-symbols-outlined text-sm ${sendingGestoraEmail === viewingEmpresa.id ? 'animate-spin' : ''}`}>
+                      {sendingGestoraEmail === viewingEmpresa.id ? 'sync' : 'outgoing_mail'}
+                    </span>
+                    {sendingGestoraEmail === viewingEmpresa.id ? 'Disparando Certificado...' : 'Enviar E-mail de Reconhecimento & Recuperação Master'}
+                  </button>
+                </div>
+              )}
 
               <div className="p-3 bg-blue-50/60 rounded-md border border-blue-200 space-y-1">
                 <span className="text-[10px] font-bold text-blue-800 uppercase block">

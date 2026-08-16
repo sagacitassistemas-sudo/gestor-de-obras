@@ -106,6 +106,24 @@ export default function App() {
     }
   }, [authSession?.idToken, user.uid]);
 
+  // Fetch companies after login
+  React.useEffect(() => {
+    if (authSession?.idToken) {
+      fetch('/api/empresas', {
+        headers: { Authorization: `Bearer ${authSession.idToken}` }
+      })
+        .then(res => res.json())
+        .then(data => {
+          if (data.success && Array.isArray(data.data)) {
+            setEmpresas(data.data);
+          }
+        })
+        .catch(err => {
+          console.error("Error fetching companies in App:", err);
+        });
+    }
+  }, [authSession?.idToken]);
+
   // Permission helper
   const hasAccess = (tab: NavigationTab) => {
     if (user.role === 'ADMIN') return true;
@@ -116,6 +134,7 @@ export default function App() {
       case 'cronograma_executivo': return !!effectivePermissions.projetos_ler;
       case 'rdo': return !!effectivePermissions.medicoes_ler || !!effectivePermissions.projetos_ler;
       case 'contratos_obra': return !!effectivePermissions.medicoes_ler;
+      case 'medicoes': return !!effectivePermissions.medicoes_ler;
       case 'usuarios': return !!effectivePermissions.usuarios_ler;
       case 'matriz-acesso': return user.role === 'GESTOR' || user.role === 'ADMIN';
       case 'audit-log': return user.role === 'ADMIN';
@@ -405,7 +424,7 @@ export default function App() {
             ) : <div className="p-8 text-center bg-white rounded-xl border border-gray-200">Acesso Restrito: Sem permissão às Empresas</div>
           )}
 
-          {['fornecedores', 'equipes', 'maquinas', 'ferramentas', 'materiais'].includes(activeTab) && (
+          {['fornecedores', 'equipes', 'maquinas', 'ferramentas', 'materiais', 'medicoes'].includes(activeTab) && (
             <div className="flex items-center justify-center h-full p-8 text-gray-500">
               <div className="bg-white p-8 rounded-xl text-center border border-gray-200 max-w-md w-full shadow-sm">
                 <span className="material-symbols-outlined text-[48px] text-[#005daa] mb-4">construction</span>
@@ -514,6 +533,7 @@ export default function App() {
         onClose={() => setIsSettingsOpen(false)}
         user={user}
         onUpdateProfile={setUser}
+        authSession={authSession}
       />
 
       <NotificationsDrawer

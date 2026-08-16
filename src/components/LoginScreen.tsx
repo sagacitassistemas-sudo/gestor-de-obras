@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { MFAModal } from './MFAModal';
 import { AuthSession } from '../types';
 import { auth } from '../lib/firebase';
@@ -49,6 +49,85 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
 
   // Error message
   const [errorMessage, setErrorMessage] = useState('');
+
+  // Invite state
+  const [inviteToken, setInviteToken] = useState<string | null>(null);
+  const [inviteData, setInviteData] = useState<any>(null);
+  const [inviteLoading, setInviteLoading] = useState(false);
+  const [inviteName, setInviteName] = useState('');
+  const [invitePassword, setInvitePassword] = useState('');
+  const [inviteSuccess, setInviteSuccess] = useState(false);
+
+  // Recovery / Reset Password state
+  const [resetToken, setResetToken] = useState<string | null>(null);
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetNewPassword, setResetNewPassword] = useState('');
+  const [resetConfirmPassword, setResetConfirmPassword] = useState('');
+  const [resetLoading, setResetLoading] = useState(false);
+  const [resetSuccess, setResetSuccess] = useState(false);
+  const [forgotLoading, setForgotLoading] = useState(false);
+
+  // Check URL for invite or reset token on mount
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('inviteToken');
+    if (token) {
+      setInviteToken(token);
+      validateInvite(token);
+    }
+    const rToken = params.get('resetToken');
+    const rEmail = params.get('email');
+    if (rToken) {
+      setResetToken(rToken);
+      if (rEmail) setResetEmail(decodeURIComponent(rEmail));
+    }
+  }, []);
+
+  const validateInvite = async (token: string) => {
+    setInviteLoading(true);
+    setErrorMessage('');
+    try {
+      const res = await fetch(`/api/convites/${token}`);
+      const data = await res.json();
+      if (res.ok) {
+        setInviteData(data);
+      } else {
+        setErrorMessage(data.error || 'Convite inválido ou expirado.');
+      }
+    } catch (err) {
+      setErrorMessage('Erro ao validar convite.');
+    } finally {
+      setInviteLoading(false);
+    }
+  };
+
+  const handleAcceptInvite = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (invitePassword.length < 6) {
+      setErrorMessage('A senha deve ter no mínimo 6 caracteres.');
+      return;
+    }
+    setInviteLoading(true);
+    setErrorMessage('');
+    try {
+      const res = await fetch('/api/convites/accept', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: inviteToken, nome: inviteName, senha: invitePassword })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setInviteSuccess(true);
+        setInviteToken(null);
+      } else {
+        setErrorMessage(data.error || 'Erro ao aceitar convite.');
+      }
+    } catch (err) {
+      setErrorMessage('Erro de conexão ao aceitar convite.');
+    } finally {
+      setInviteLoading(false);
+    }
+  };
 
   // Derived: any auth operation in progress
   const isLoading = isEmailLoading || isOAuthLoading || isOAuthConfirming;
@@ -210,14 +289,211 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
   };
 
   // ─── Forgot Password Handler ───
-  const handleForgotSubmit = (e: React.FormEvent) => {
+  const handleForgotSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setForgotSubmitted(true);
-    setTimeout(() => {
-      setForgotSubmitted(false);
-      setForgotModalOpen(false);
-    }, 2000);
+    if (!forgotEmail) return;
+    setForgotLoading(true);
+    setErrorMessage('');
+    try {
+      const res = await fetch('/api/auth/request-password-reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: forgotEmail })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setForgotSubmitted(true);
+        setTimeout(() => {
+          setForgotSubmitted(false);
+          setForgotModalOpen(false);
+        }, 3000);
+      } else {
+        setErrorMessage(data.error || 'Erro ao enviar e-mail de recuperação.');
+      }
+    } catch (err) {
+      setErrorMessage('Erro ao solicitar redefinição de senha.');
+    } finally {
+      setForgotLoading(false);
+    }
   };
+
+  // ─── Reset Password with Token Handler ───
+  const handleResetPasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (resetNewPassword.length < 6) {
+      setErrorMessage('A nova senha deve ter no mínimo 6 caracteres.');
+      return;
+    }
+    if (resetNewPassword !== resetConfirmPassword) {
+      setErrorMessage('A confirmação de senha não coincide com a nova senha.');
+      return;
+    }
+    setResetLoading(true);
+    setErrorMessage('');
+    try {
+      const res = await fetch('/api/auth/reset-password-with-token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: resetToken, newPassword: resetNewPassword })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setResetSuccess(true);
+        setTimeout(() => {
+          setResetToken(null);
+          setResetSuccess(false);
+          window.history.replaceState({}, document.title, window.location.pathname);
+        }, 3000);
+      } else {
+        setErrorMessage(data.error || 'Erro ao redefinir a senha.');
+      }
+    } catch (err) {
+      setErrorMessage('Erro de conexão ao redefinir a senha.');
+    } finally {
+      setResetLoading(false);
+    }
+  };
+
+  // ─── Render: Reset Password Screen ───
+  if (resetToken) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4 bg-[#f7f9fb] font-body-md text-[#191c1e]">
+        <div className="w-full max-w-[480px] bg-white p-8 rounded-xl border border-[#c0c7d6] shadow-sm animate-in zoom-in-95">
+          <div className="flex justify-center mb-6">
+            <span className="material-symbols-outlined text-[48px] text-[#005daa]">vpn_key</span>
+          </div>
+          <h2 className="font-headline-sm text-center text-[#191c1e] mb-2">Redefinição de Senha & Acesso Master</h2>
+          <p className="text-center text-[#404753] text-sm mb-6">
+            {resetEmail ? `Defina uma nova senha para ${resetEmail}` : 'Crie sua nova senha de acesso'}
+          </p>
+
+          {errorMessage && (
+            <div className="mb-6 p-3 bg-red-50 border border-red-200 text-red-700 rounded-md text-sm font-bold flex items-center gap-2">
+              <span className="material-symbols-outlined text-[18px]">error</span>
+              {errorMessage}
+            </div>
+          )}
+
+          {resetSuccess ? (
+            <div className="p-6 bg-emerald-50 border border-emerald-200 rounded-lg text-center space-y-2 animate-in fade-in">
+              <span className="material-symbols-outlined text-emerald-600 text-4xl">check_circle</span>
+              <h3 className="font-bold text-emerald-800 text-base">Senha Redefinida com Sucesso!</h3>
+              <p className="text-xs text-emerald-700">Redirecionando para a tela de login...</p>
+            </div>
+          ) : (
+            <form onSubmit={handleResetPasswordSubmit} className="space-y-4">
+              <div>
+                <label className="font-label-bold text-[11px] uppercase text-[#404753] block mb-1">
+                  Nova Senha <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="password"
+                  minLength={6}
+                  required
+                  placeholder="Mínimo 6 caracteres"
+                  value={resetNewPassword}
+                  onChange={(e) => setResetNewPassword(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-white border border-[#c0c7d6] rounded-md font-body-md outline-none focus:border-[#005daa]"
+                />
+              </div>
+              <div>
+                <label className="font-label-bold text-[11px] uppercase text-[#404753] block mb-1">
+                  Confirmar Nova Senha <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="password"
+                  minLength={6}
+                  required
+                  placeholder="Repita a nova senha"
+                  value={resetConfirmPassword}
+                  onChange={(e) => setResetConfirmPassword(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-white border border-[#c0c7d6] rounded-md font-body-md outline-none focus:border-[#005daa]"
+                />
+              </div>
+
+              <div className="pt-2 flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setResetToken(null);
+                    window.history.replaceState({}, document.title, window.location.pathname);
+                  }}
+                  className="flex-1 py-2.5 border border-[#c0c7d6] rounded-md font-label-bold text-[#404753] hover:bg-[#f2f4f6] cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={resetLoading}
+                  className="flex-1 py-2.5 bg-[#005daa] text-white rounded-md font-label-bold hover:bg-[#0075d5] disabled:opacity-60 flex items-center justify-center gap-2 cursor-pointer shadow-2xs"
+                >
+                  {resetLoading ? (
+                    <>
+                      <span className="material-symbols-outlined animate-spin text-[18px]">progress_activity</span>
+                      <span>Salvando...</span>
+                    </>
+                  ) : (
+                    'Salvar Senha'
+                  )}
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (inviteToken && !inviteSuccess) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4 bg-[#f7f9fb] font-body-md text-[#191c1e]">
+        <div className="w-full max-w-[480px] bg-white p-8 rounded-xl border border-[#c0c7d6] shadow-sm animate-in zoom-in-95">
+          <div className="flex justify-center mb-6">
+            <span className="material-symbols-outlined text-[48px] text-[#005daa]">mark_email_read</span>
+          </div>
+          <h2 className="font-headline-sm text-center text-[#191c1e] mb-2">Completar Cadastro</h2>
+          <p className="text-center text-[#404753] text-sm mb-6">Você recebeu um convite para acessar o Gestor de Obras.</p>
+          
+          {errorMessage && (
+            <div className="mb-6 p-3 bg-red-50 border border-red-200 text-red-700 rounded-md text-sm font-bold flex items-center gap-2">
+              <span className="material-symbols-outlined text-[18px]">error</span>
+              {errorMessage}
+            </div>
+          )}
+          
+          {inviteLoading ? (
+            <div className="flex justify-center py-8">
+              <span className="material-symbols-outlined animate-spin text-[32px] text-[#005daa]">progress_activity</span>
+            </div>
+          ) : inviteData ? (
+            <form onSubmit={handleAcceptInvite} className="space-y-4">
+              <div>
+                <label className="font-label-bold text-[11px] uppercase text-[#404753] block mb-1">E-mail</label>
+                <input type="email" value={inviteData.email} disabled className="w-full px-3.5 py-2.5 bg-slate-100 border border-[#c0c7d6] rounded-md font-body-md text-slate-500 cursor-not-allowed outline-none" />
+              </div>
+              <div>
+                <label className="font-label-bold text-[11px] uppercase text-[#404753] block mb-1">Nome Completo <span className="text-red-500">*</span></label>
+                <input type="text" value={inviteName} onChange={(e) => setInviteName(e.target.value)} required className="w-full px-3.5 py-2.5 bg-white border border-[#c0c7d6] rounded-md font-body-md outline-none focus:border-[#005daa]" />
+              </div>
+              <div>
+                <label className="font-label-bold text-[11px] uppercase text-[#404753] block mb-1">Criar Senha <span className="text-red-500">*</span></label>
+                <input type="password" minLength={6} placeholder="Mínimo 6 caracteres" value={invitePassword} onChange={(e) => setInvitePassword(e.target.value)} required className="w-full px-3.5 py-2.5 bg-white border border-[#c0c7d6] rounded-md font-body-md outline-none focus:border-[#005daa]" />
+              </div>
+              <button type="submit" disabled={inviteLoading} className="w-full py-3 mt-2 bg-[#005daa] text-white rounded-md font-label-bold hover:bg-[#0075d5] transition-colors flex items-center justify-center gap-2">
+                Concluir Cadastro e Criar Conta
+              </button>
+            </form>
+          ) : (
+            <div className="text-center mt-4">
+              <button onClick={() => { setInviteToken(null); setErrorMessage(''); }} className="text-[#005daa] hover:underline text-sm font-label-bold cursor-pointer">
+                Voltar para o Login
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4 bg-[#f7f9fb] relative overflow-hidden font-body-md text-[#191c1e]">
@@ -244,6 +520,17 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
 
           {/* Login Card */}
           <div className="bg-white border border-[#c0c7d6] rounded-xl shadow-sm p-8 md:p-10 relative">
+            
+            {inviteSuccess && (
+              <div className="mb-6 p-4 bg-green-50 border border-green-200 text-green-800 rounded-md flex items-start gap-3">
+                <span className="material-symbols-outlined text-green-600 mt-0.5">check_circle</span>
+                <div>
+                  <h4 className="font-bold text-sm">Conta criada com sucesso!</h4>
+                  <p className="text-sm mt-1 text-green-700">Seu cadastro foi concluído e ativado. Utilize seu e-mail e a senha que você acabou de criar para entrar no sistema.</p>
+                </div>
+              </div>
+            )}
+
             <header className="mb-8">
               <div className="flex justify-between items-center mb-2">
                 <h2 className="font-headline-sm text-headline-sm text-[#191c1e]">

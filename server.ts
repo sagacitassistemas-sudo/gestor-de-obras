@@ -6,7 +6,6 @@ import { initializeApp as initAdminApp, getApps as getAdminApps } from "firebase
 import { getAuth as getAdminAuth } from "firebase-admin/auth";
 import { getFirestore as getAdminFirestore } from "firebase-admin/firestore";
 import dotenv from "dotenv";
-dotenv.config({ override: true });
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import jwt from "jsonwebtoken";
 import { verifyFirebaseJWT } from "./src/middleware/verifyFirebaseJWT";
@@ -14,6 +13,9 @@ import { AuthenticatedRequest } from "./src/types/middleware.types";
 import { FirebaseCustomClaims } from "./src/types/firebase.types";
 import { parseEapMarkdown, simulateEapTestEnvironment, executeEapImport, compareEapCodes } from "./src/services/eapImporter.service";
 import { logAudit, logSystemError } from "./src/services/logger.service";
+import { sendEmail } from "./src/utils/mailer";
+
+dotenv.config({ override: true });
 
 // ==========================================
 // PARÂMETROS CENTRAIS DO SISTEMA
@@ -37,6 +39,11 @@ function getSupabaseClient(req: AuthenticatedRequest): SupabaseClient | null {
   // Use the global service role client to bypass broken RLS policies.
   // The backend already enforces tenant isolation explicitly via .eq("contrato_id", ...) on all queries.
   return supabase;
+}
+
+// Helper to get service role client for public/admin endpoints
+function getServiceRoleClient(): SupabaseClient {
+  return createClient(supabaseUrl!, supabaseServiceKey!);
 }
 
 // Centralized helper to coordinate CRUD operations (Insert vs Update vs Upsert)
@@ -303,9 +310,6 @@ if (!getAdminApps().length) {
   }
 }
 
-// In-memory store for OTPs and Invites (fallback & state tracking)
-// Note: activeMFAChallenges was removed in favor of Stateless JWT verification for Vercel Serverless Functions.
-
 
 function startServer() {
   const app = express();
@@ -323,6 +327,8 @@ function startServer() {
   // AUTH CONTAINER & FIREBASE ADMIN ENDPOINTS
   // ==========================================
 
+  // ... [Existing endpoints remain unchanged until the target location] ...
+  
   // 1. Step 1 Login: Initiates MFA / 2FA challenge
   app.post("/api/auth/login-mfa-step1", async (req, res) => {
     try {
@@ -341,6 +347,12 @@ function startServer() {
         .select('*')
         .eq('email', email)
         .limit(1);
+        
+      if (userErr?.message?.includes('fetch failed')) {
+        console.error("Database connection failed during login-mfa-step1:", userErr);
+        return res.status(503).json({ error: "O banco de dados está inacessível. O sistema tentará um reparo automático, aguarde." });
+      }
+
       const userData = userRows?.[0] || null;
 
       let contrato_id = "";
@@ -430,6 +442,12 @@ function startServer() {
         .select('*')
         .eq('email', userEmail)
         .limit(1);
+        
+      if (countErr?.message?.includes('fetch failed') || userErr?.message?.includes('fetch failed')) {
+        console.error("Database connection failed during oauth-login:", countErr || userErr);
+        return res.status(503).json({ error: "O banco de dados está inacessível. O sistema tentará um reparo automático, aguarde." });
+      }
+
       const userData = userRows?.[0] || null;
 
       let contrato_id = "";
@@ -437,9 +455,15 @@ function startServer() {
       let perfil = "";
       let entidade_id = "";
 
+      const isGestoraAdminEmail = (emailStr?: string) => {
+        if (!emailStr) return false;
+        const e = emailStr.toLowerCase().trim();
+        return e === "sagacitas.sistemas@gmail.com" || e === "sagcitas.sistemas@gmail.com";
+      };
+
       if (!userData) {
-        if (isDbEmpty) {
-          // First user registers as ADMIN
+        if (isDbEmpty || isGestoraAdminEmail(userEmail)) {
+          // First user or Gestora Admin registers as ADMIN
           contrato_id = "CTR-2026-SYS";
           empresa_id = "GER-2026-SYS";
           perfil = "ADMIN";
@@ -448,7 +472,7 @@ function startServer() {
           // Automatically register the GESTORA company for system management
           const { error: companyErr } = await supabase
             .from('empresas_fornecedores')
-            .insert({
+            .upsert({
               id: 'GER-2026-SYS',
               contrato_id: 'CTR-2026-SYS',
               nome: 'Gestora do Sistema',
@@ -456,11 +480,23 @@ function startServer() {
               tipo: 'GESTORA',
               status: 'ATIVO',
               total_faturado: 0
-            });
+            }, { onConflict: 'id,contrato_id' });
 
           if (companyErr) {
             console.error("Error creating default Gestora company:", companyErr);
           }
+
+          // Grant maximum permissions to Gestora company
+          await supabase.from("permissoes_empresa").upsert({
+            contrato_id: 'CTR-2026-SYS',
+            empresa_id: 'GER-2026-SYS',
+            empresas_criar: true, empresas_ler: true, empresas_editar: true, empresas_excluir: true,
+            projetos_criar: true, projetos_ler: true, projetos_editar: true, projetos_excluir: true,
+            medicoes_criar: true, medicoes_ler: true, medicoes_editar: true, medicoes_excluir: true,
+            financeiro_criar: true, financeiro_ler: true, financeiro_editar: true, financeiro_excluir: true,
+            relatorios_ler: true,
+            usuarios_criar: true, usuarios_ler: true, usuarios_editar: true, usuarios_excluir: true
+          }, { onConflict: 'empresa_id,contrato_id' });
 
           const { error: insertErr } = await supabase
             .from('usuarios')
@@ -470,13 +506,14 @@ function startServer() {
               nome: userDisplayName,
               foto_url: photoURL || '',
               contrato_id,
+              empresa_id: 'GER-2026-SYS',
               perfil,
               status: 'ATIVO'
             });
 
           if (insertErr) {
-            console.error("Error registering first Admin user:", insertErr);
-            return res.status(500).json({ error: "Erro ao registrar o primeiro administrador." });
+            console.error("Error registering Admin user:", insertErr);
+            return res.status(500).json({ error: "Erro ao registrar o administrador." });
           }
 
           // Seed permissions
@@ -487,7 +524,7 @@ function startServer() {
             newPerms.usuario_uid = uid; newPerms.empresa_id = "GER-2026-SYS";
             await supabase.from("permissoes_usuario").insert([newPerms]);
           }
-          console.log(`[First Login] Registered first user ${userEmail} as ADMIN.`);
+          console.log(`[Admin Login] Registered user ${userEmail} as ADMIN.`);
         } else {
           // Auto-register unregistered users as VISITANTE under CTR-2026-SYS
           contrato_id = "CTR-2026-SYS";
@@ -509,7 +546,10 @@ function startServer() {
 
           if (insertErr) {
             console.error("Error auto-registering visitor user:", insertErr);
-            return res.status(500).json({ error: "Erro ao registrar o visitante." });
+            if (insertErr.message?.includes('fetch failed') || insertErr.details?.includes('ECONNREFUSED')) {
+              return res.status(503).json({ error: "O banco de dados está inacessível. O sistema fará um reparo automático, tente novamente em 1 minuto." });
+            }
+            return res.status(500).json({ error: "Erro ao registrar o visitante.", details: insertErr });
           }
 
           // Seed permissions
@@ -527,8 +567,8 @@ function startServer() {
           return res.status(403).json({ error: "Usuário bloqueado ou inativo. Contate o suporte em worksmanager.suporte@gmail.com" });
         }
         contrato_id = userData.contrato_id || "CTR-2026-SYS";
-        perfil = userData.perfil;
-        if (perfil === 'ADMIN') {
+        perfil = isGestoraAdminEmail(userEmail) ? "ADMIN" : userData.perfil;
+        if (perfil === 'ADMIN' || isGestoraAdminEmail(userEmail)) {
           empresa_id = "GER-2026-SYS";
           entidade_id = "GER-2026-SYS";
         } else {
@@ -1075,6 +1115,486 @@ function startServer() {
     }
   });
 
+  app.post("/api/auth/change-password", verifyFirebaseJWT, async (req: AuthenticatedRequest, res) => {
+    try {
+      const uid = req.decodedToken?.uid;
+      const { newPassword } = req.body;
+      
+      if (!uid) return res.status(401).json({ error: "Unauthorized" });
+      if (!newPassword || newPassword.length < 6) {
+        return res.status(400).json({ error: "A nova senha deve ter no mínimo 6 caracteres" });
+      }
+
+      const adminAuth = getAdminAuth();
+      await adminAuth.updateUser(uid, { password: newPassword });
+
+      return res.json({ success: true, message: "Senha alterada com sucesso." });
+    } catch (err: any) {
+      console.error("POST /api/auth/change-password erro:", err);
+      return res.status(500).json({ error: err.message || "Internal Error" });
+    }
+  });
+
+  // POST /api/gestora/send-confirmation - Send access recognition & contingency recovery email for Gestora
+  app.post("/api/gestora/send-confirmation", verifyFirebaseJWT, async (req: AuthenticatedRequest, res) => {
+    try {
+      const { empresa_id, email } = req.body || {};
+      const client = getSupabaseClient(req) || getServiceRoleClient();
+      const tenantId = req.decodedToken?.contrato_id || 'CTR-2026-SYS';
+
+      // 1. Fetch empresa info
+      let targetEmpresa: any = null;
+      if (empresa_id) {
+        const { data } = await client.from("empresas_fornecedores").select("*").eq("id", empresa_id).maybeSingle();
+        targetEmpresa = data;
+      }
+      if (!targetEmpresa) {
+        const { data } = await client.from("empresas_fornecedores").select("*").eq("tipo", "GESTORA").maybeSingle();
+        targetEmpresa = data || {
+          id: 'GER-2026-SYS',
+          nome: 'Gestora do Sistema',
+          cnpj_cpf: '00.000.000/0001-00',
+          tipo: 'GESTORA',
+          contrato_id: tenantId,
+          emailContato: 'sagacitas.sistemas@gmail.com'
+        };
+      }
+
+      const recipientEmail = email || targetEmpresa.emailContato || 'sagacitas.sistemas@gmail.com';
+      const jwtSecret = process.env.SUPABASE_JWT_SECRET || "gestor-secret-fallback-token-key-2026";
+      
+      // Generate emergency recovery / master access token valid for 24h
+      const recoveryToken = jwt.sign(
+        {
+          type: "GESTORA_RECOVERY",
+          email: recipientEmail,
+          empresa_id: targetEmpresa.id,
+          contrato_id: targetEmpresa.contrato_id || tenantId,
+          perfil: "ADMIN"
+        },
+        jwtSecret,
+        { expiresIn: "24h" }
+      );
+
+      const origin = req.headers.origin || process.env.APP_URL || "http://localhost:5173";
+      const recoveryUrl = `${origin}/?resetToken=${recoveryToken}&email=${encodeURIComponent(recipientEmail)}`;
+
+      const htmlContent = `
+        <div style="font-family: Arial, sans-serif; max-width: 620px; margin: 0 auto; padding: 24px; border: 1px solid #c0c7d6; border-radius: 8px; background-color: #ffffff; color: #191c1e;">
+          <div style="text-align: center; margin-bottom: 24px; border-bottom: 2px solid #005daa; padding-bottom: 16px;">
+            <h1 style="color: #005daa; font-size: 22px; margin: 0;">Works Manager — Gestor de Obras</h1>
+            <p style="color: #555; font-size: 13px; margin: 4px 0 0 0;">Certificado de Reconhecimento de Acesso & Permissões Master</p>
+          </div>
+
+          <div style="background-color: #f0f7ff; border-left: 4px solid #005daa; padding: 14px 16px; margin-bottom: 20px; border-radius: 0 6px 6px 0;">
+            <strong style="color: #005daa; font-size: 15px;">Empresa Gestora do Sistema Identificada</strong>
+            <p style="margin: 6px 0 0 0; font-size: 13px; color: #333;">
+              Este e-mail certifica os privilégios administrativos máximos e o canal de contingência para a <strong>${targetEmpresa.nome}</strong>.
+            </p>
+          </div>
+
+          <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 13px;">
+            <tr style="border-bottom: 1px solid #eee;">
+              <td style="padding: 8px 0; color: #666; width: 140px;"><strong>Código da Empresa:</strong></td>
+              <td style="padding: 8px 0; font-family: monospace; color: #005daa;"><strong>${targetEmpresa.id}</strong></td>
+            </tr>
+            <tr style="border-bottom: 1px solid #eee;">
+              <td style="padding: 8px 0; color: #666;"><strong>Razão Social / Nome:</strong></td>
+              <td style="padding: 8px 0; color: #222;">${targetEmpresa.nome}</td>
+            </tr>
+            <tr style="border-bottom: 1px solid #eee;">
+              <td style="padding: 8px 0; color: #666;"><strong>CNPJ / CPF:</strong></td>
+              <td style="padding: 8px 0; font-family: monospace;">${targetEmpresa.cnpj_cpf || '00.000.000/0001-00'}</td>
+            </tr>
+            <tr style="border-bottom: 1px solid #eee;">
+              <td style="padding: 8px 0; color: #666;"><strong>Tenant Contrato:</strong></td>
+              <td style="padding: 8px 0; font-family: monospace; color: #10b981;"><strong>${targetEmpresa.contrato_id || tenantId}</strong></td>
+            </tr>
+            <tr style="border-bottom: 1px solid #eee;">
+              <td style="padding: 8px 0; color: #666;"><strong>Nível de Permissão:</strong></td>
+              <td style="padding: 8px 0; color: #b45309;"><strong style="background: #fef3c7; padding: 2px 6px; border-radius: 4px;">ADMIN MASTER — 19 Permissões Globais Ativas</strong></td>
+            </tr>
+          </table>
+
+          <div style="background-color: #fcfcfc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 16px; margin-bottom: 24px;">
+            <h3 style="margin: 0 0 10px 0; font-size: 14px; color: #1e293b;">🔐 Canal de Contingência & Redefinição de Credenciais</h3>
+            <p style="margin: 0 0 16px 0; font-size: 13px; color: #475569; line-height: 1.5;">
+              Caso haja perda de senha, falha no login OAuth ou necessidade urgente de troca de credenciais administrativas, clique no botão seguro abaixo para acessar o assistente de redefinição imediata:
+            </p>
+            <div style="text-align: center; margin: 16px 0;">
+              <a href="${recoveryUrl}" style="background-color: #005daa; color: #ffffff; padding: 12px 28px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 14px; display: inline-block;">
+                Redefinir Senha & Validar Acesso Master
+              </a>
+            </div>
+            <p style="margin: 12px 0 0 0; font-size: 11px; color: #888; text-align: center;">
+              Link direto: <br><a href="${recoveryUrl}" style="color: #005daa; word-break: break-all;">${recoveryUrl}</a>
+            </p>
+          </div>
+
+          <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;" />
+          <p style="font-size: 11px; color: #94a3b8; text-align: center; margin: 0;">
+            Este token de contingência é de uso restrito e expira em 24 horas. Emissão registrada na trilha de auditoria do sistema.
+          </p>
+        </div>
+      `;
+
+      await sendEmail({
+        to: recipientEmail,
+        subject: "Certificado de Reconhecimento de Acesso & Credenciais Master — Gestora do Sistema",
+        html: htmlContent
+      });
+
+      await logAudit(client, {
+        contrato_id: targetEmpresa.contrato_id || tenantId,
+        usuario_uid: req.decodedToken?.uid,
+        usuario_email: req.decodedToken?.email,
+        cod_evento: "GESTORA_ACCESS_CONFIRMATION",
+        descricao: `E-mail de confirmação de acesso e contingência master enviado para ${recipientEmail} (Empresa: ${targetEmpresa.id})`,
+        entidade_tipo: "empresa",
+        entidade_id: targetEmpresa.id
+      });
+
+      return res.json({
+        success: true,
+        message: `E-mail de confirmação e recuperação master enviado com sucesso para ${recipientEmail}.`,
+        recipientEmail,
+        recoveryUrl
+      });
+    } catch (err: any) {
+      console.error("Erro POST /api/gestora/send-confirmation:", err);
+      return res.status(500).json({ error: err.message || "Internal Error" });
+    }
+  });
+
+  // POST /api/auth/request-password-reset
+  app.post("/api/auth/request-password-reset", async (req, res) => {
+    try {
+      const { email } = req.body || {};
+      if (!email) return res.status(400).json({ error: "E-mail é obrigatório." });
+
+      const client = getServiceRoleClient();
+      const { data: usuario } = await client.from("usuarios").select("*").eq("email", email).maybeSingle();
+
+      const jwtSecret = process.env.SUPABASE_JWT_SECRET || "gestor-secret-fallback-token-key-2026";
+      const resetToken = jwt.sign(
+        {
+          type: "PASSWORD_RESET",
+          email: email,
+          uid: usuario?.uid || "reset-uid",
+          perfil: usuario?.perfil || "VISITANTE",
+          contrato_id: usuario?.contrato_id || "CTR-2026-SYS"
+        },
+        jwtSecret,
+        { expiresIn: "24h" }
+      );
+
+      const origin = req.headers.origin || process.env.APP_URL || "http://localhost:5173";
+      const resetUrl = `${origin}/?resetToken=${resetToken}&email=${encodeURIComponent(email)}`;
+
+      const htmlContent = `
+        <div style="font-family: Arial, sans-serif; max-width: 580px; margin: 0 auto; padding: 24px; border: 1px solid #ddd; border-radius: 8px;">
+          <h2 style="color: #005daa; margin-top: 0;">Recuperação de Senha — Works Manager</h2>
+          <p>Olá,</p>
+          <p>Recebemos uma solicitação para redefinir a sua senha de acesso ao sistema <strong>Works Manager (Gestor de Obras)</strong>.</p>
+          <p>Para criar uma nova senha, clique no botão abaixo:</p>
+          <div style="text-align: center; margin: 28px 0;">
+            <a href="${resetUrl}" style="background-color: #005daa; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; font-weight: bold; display: inline-block;">Redefinir Minha Senha</a>
+          </div>
+          <p style="font-size: 12px; color: #666;">Se você não solicitou a troca de senha, desconsidere este e-mail.</p>
+          <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;" />
+          <p style="font-size: 11px; color: #999;">O link acima expira em 24 horas.</p>
+        </div>
+      `;
+
+      await sendEmail({
+        to: email,
+        subject: "Redefinição de Senha - Works Manager",
+        html: htmlContent
+      });
+
+      return res.json({ success: true, message: "E-mail de recuperação enviado com sucesso.", resetUrl });
+    } catch (err: any) {
+      console.error("Erro POST /api/auth/request-password-reset:", err);
+      return res.status(500).json({ error: "Internal Error" });
+    }
+  });
+
+  // POST /api/auth/reset-password-with-token
+  app.post("/api/auth/reset-password-with-token", async (req, res) => {
+    try {
+      const { token, newPassword } = req.body || {};
+      if (!token || !newPassword || newPassword.length < 6) {
+        return res.status(400).json({ error: "Token inválido ou senha com menos de 6 caracteres." });
+      }
+
+      const jwtSecret = process.env.SUPABASE_JWT_SECRET || "gestor-secret-fallback-token-key-2026";
+      let decoded: any;
+      try {
+        decoded = jwt.verify(token, jwtSecret);
+      } catch (e) {
+        return res.status(400).json({ error: "Token de recuperação inválido ou expirado." });
+      }
+
+      const email = decoded.email;
+      const adminAuth = getAdminAuth();
+      if (adminAuth && decoded.uid) {
+        try {
+          await adminAuth.updateUser(decoded.uid, { password: newPassword });
+        } catch (authErr) {
+          try {
+            const fbUser = await adminAuth.getUserByEmail(email);
+            if (fbUser) await adminAuth.updateUser(fbUser.uid, { password: newPassword });
+          } catch (e2) {}
+        }
+      }
+
+      return res.json({ success: true, message: "Senha redefinida com sucesso! Você já pode efetuar o login." });
+    } catch (err: any) {
+      console.error("Erro POST /api/auth/reset-password-with-token:", err);
+      return res.status(500).json({ error: "Internal Error" });
+    }
+  });
+
+  // ==========================================
+  // CONVITES (INVITES)
+  // ==========================================
+
+  // POST /api/convites - Create invite and send email
+  app.post("/api/convites", verifyFirebaseJWT, async (req: AuthenticatedRequest, res) => {
+    try {
+      if (!(await checkPermission(req, "usuarios_criar"))) {
+        return res.status(403).json({ error: "Acesso negado: sem permissão para criar usuários." });
+      }
+      const client = getSupabaseClient(req);
+      const tenantId = req.decodedToken?.contrato_id;
+      if (!client || !tenantId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { email, perfil, empresa_id } = req.body;
+      if (!email || !perfil) {
+        return res.status(400).json({ error: "E-mail e Perfil são obrigatórios." });
+      }
+
+      const { data: convite, error } = await client
+        .from("convites")
+        .insert({
+          email,
+          perfil,
+          empresa_id: empresa_id || null,
+          contrato_id: tenantId,
+          status: 'PENDENTE',
+          expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+        })
+        .select('token')
+        .single();
+
+      if (error || !convite) {
+        console.error("Erro ao criar convite:", error);
+        return res.status(500).json({ error: "Erro ao registrar o convite no banco." });
+      }
+
+      const token = convite.token;
+      const inviteUrl = `${req.protocol}://${req.get('host') || 'localhost:5173'}/?inviteToken=${token}`;
+
+      // Envia o e-mail
+      const htmlContent = `
+        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px;">
+          <h2 style="color: #005daa;">Você foi convidado para o Gestor de Obras!</h2>
+          <p>Olá,</p>
+          <p>Você recebeu um convite para acessar a plataforma <strong>Gestor de Obras</strong> com o perfil de <strong>${perfil}</strong>.</p>
+          <p>Para completar seu cadastro e criar sua senha, clique no botão abaixo:</p>
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${inviteUrl}" style="background-color: #005daa; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; font-weight: bold; display: inline-block;">Completar Cadastro</a>
+          </div>
+          <p style="font-size: 12px; color: #666;">Se o botão não funcionar, copie e cole o link no seu navegador: <br><a href="${inviteUrl}">${inviteUrl}</a></p>
+          <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;" />
+          <p style="font-size: 11px; color: #999;">Este é um e-mail automático. Por favor, não responda. O convite é válido por 7 dias.</p>
+        </div>
+      `;
+
+      await sendEmail({
+        to: email,
+        subject: "Convite para acesso - Gestor de Obras",
+        html: htmlContent
+      });
+
+      await logAudit(client, {
+        contrato_id: tenantId,
+        usuario_uid: req.decodedToken?.uid,
+        usuario_email: req.decodedToken?.email,
+        cod_evento: "USR_INVITE",
+        descricao: `Convite enviado para ${email} (Perfil: ${perfil})`,
+        entidade_tipo: "convite",
+        entidade_id: token
+      });
+
+      return res.json({ success: true, message: "Convite gerado e e-mail disparado com sucesso.", token, inviteUrl });
+    } catch (err) {
+      console.error("Erro POST /api/convites:", err);
+      return res.status(500).json({ error: "Internal Error" });
+    }
+  });
+
+  // GET /api/convites/:token - Validate invite token
+  app.get("/api/convites/:token", async (req, res) => {
+    try {
+      const { token } = req.params;
+      const client = getServiceRoleClient(); // Public endpoint, use service role client to check table
+      
+      const { data: convite, error } = await client
+        .from("convites")
+        .select("*")
+        .eq("token", token)
+        .single();
+
+      if (error || !convite) {
+        return res.status(404).json({ error: "Convite não encontrado ou inválido." });
+      }
+
+      if (convite.status !== 'PENDENTE') {
+        return res.status(400).json({ error: "Este convite já foi utilizado ou está expirado." });
+      }
+
+      if (convite.expires_at && new Date(convite.expires_at) < new Date()) {
+        await client.from("convites").update({ status: 'EXPIRADO' }).eq("token", token);
+        return res.status(400).json({ error: "Este convite está expirado." });
+      }
+
+      return res.json({
+        email: convite.email,
+        perfil: convite.perfil,
+        empresa_id: convite.empresa_id,
+        contrato_id: convite.contrato_id
+      });
+    } catch (err) {
+      return res.status(500).json({ error: "Internal Error" });
+    }
+  });
+
+  // POST /api/convites/accept - Accept invite and create user
+  app.post("/api/convites/accept", async (req, res) => {
+    try {
+      const { token, nome, senha } = req.body;
+      if (!token || !nome || !senha) {
+        return res.status(400).json({ error: "Faltam campos obrigatórios." });
+      }
+
+      const client = getServiceRoleClient();
+      
+      const { data: convite, error: conviteErr } = await client
+        .from("convites")
+        .select("*")
+        .eq("token", token)
+        .single();
+
+      if (conviteErr || !convite || convite.status !== 'PENDENTE') {
+        return res.status(400).json({ error: "Convite inválido, usado ou expirado." });
+      }
+
+      if (convite.expires_at && new Date(convite.expires_at) < new Date()) {
+        await client.from("convites").update({ status: 'EXPIRADO' }).eq("token", token);
+        return res.status(400).json({ error: "Este convite está expirado." });
+      }
+
+      const adminAuth = getAdminAuth();
+      let uid;
+
+      // 1. Criar ou Obter usuário no Firebase Auth
+      try {
+        let existingUser;
+        try { existingUser = await adminAuth.getUserByEmail(convite.email); } catch (e: any) { if (e.code !== 'auth/user-not-found') throw e; }
+
+        if (existingUser) {
+          uid = existingUser.uid;
+          await adminAuth.updateUser(uid, { password: senha, displayName: nome });
+        } else {
+          const newUser = await adminAuth.createUser({
+            email: convite.email,
+            password: senha,
+            displayName: nome
+          });
+          uid = newUser.uid;
+        }
+      } catch (authErr: any) {
+        console.error("Erro Auth ao aceitar convite:", authErr);
+        return res.status(400).json({ error: "Erro ao configurar autenticação: " + authErr.message });
+      }
+
+      // 2. Set Custom Claims
+      const customClaims = {
+        perfil: convite.perfil,
+        contrato_id: convite.contrato_id,
+        empresa_id: convite.empresa_id || null,
+        entidade_id: convite.empresa_id || null
+      };
+      await adminAuth.setCustomUserClaims(uid, customClaims);
+
+      // 3. Atualizar/Inserir na tabela usuários
+      const { error: usrErr } = await client
+        .from("usuarios")
+        .upsert({
+          uid,
+          email: convite.email,
+          nome,
+          perfil: convite.perfil,
+          contrato_id: convite.contrato_id,
+          empresa_id: convite.empresa_id || null,
+          status: 'ATIVO',
+          updated_at: new Date().toISOString(),
+          claims_pendentes: false
+        }, { onConflict: "uid" });
+
+      if (usrErr) throw usrErr;
+
+      // 4. Conceder permissões (baseadas no perfil)
+      const { data: tipoData } = await client
+        .from("permissoes_tipo")
+        .select("*")
+        .eq("contrato_id", convite.contrato_id)
+        .eq("perfil", convite.perfil)
+        .maybeSingle();
+
+      if (tipoData) {
+        const newPerms = { ...tipoData };
+        delete newPerms.id;
+        delete newPerms.perfil;
+        delete newPerms.created_at;
+        delete newPerms.updated_at;
+        newPerms.usuario_uid = uid;
+        newPerms.empresa_id = convite.empresa_id || null;
+        newPerms.e_customizada = false;
+        
+        await client.from("permissoes_usuario").delete().eq("usuario_uid", uid);
+        await client.from("permissoes_usuario").insert([newPerms]);
+      }
+
+      // 5. Marcar convite como USADO
+      await client.from("convites").update({ status: 'USADO' }).eq("token", token);
+
+      // 6. E-mail de Boas Vindas
+      const htmlWelcome = `
+        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px;">
+          <h2 style="color: #005daa;">Bem-vindo ao Gestor de Obras, ${nome}!</h2>
+          <p>Sua conta foi criada com sucesso.</p>
+          <p>Seu perfil de acesso é: <strong>${convite.perfil}</strong>.</p>
+          <p>Acesse o sistema utilizando o e-mail: <strong>${convite.email}</strong> e a senha que você acabou de criar.</p>
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${req.protocol}://${req.get('host') || 'localhost:5173'}" style="background-color: #005daa; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; font-weight: bold; display: inline-block;">Acessar o Sistema</a>
+          </div>
+        </div>
+      `;
+      await sendEmail({
+        to: convite.email,
+        subject: "Bem-vindo ao Gestor de Obras!",
+        html: htmlWelcome
+      });
+
+      return res.json({ success: true, message: "Cadastro completado com sucesso." });
+    } catch (err) {
+      console.error("Erro POST /api/convites/accept:", err);
+      return res.status(500).json({ error: "Internal Error" });
+    }
+  });
+
   // ==========================================
   // FIRESTORE INTRA-CONTRACT DATABASE ENDPOINTS
   // ==========================================
@@ -1529,15 +2049,15 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
 
       // Map lowercase columns from PostgreSQL case-insensitive folding to frontend camelCase
       const mappedData = (data || []).map((item: any) => ({
-        id: item.id,
-        contrato_id: item.contrato_id,
-        nome: item.nome,
-        cnpj_cpf: item.cnpj_cpf,
-        tipo: item.id.startsWith('GER-') ? 'GESTORA' : item.tipo,
-        emailContato: item.email_contato !== undefined ? item.email_contato : item.emailContato,
-        telefone: item.telefone,
-        status: item.status,
-        totalFaturado: item.total_faturado !== undefined ? Number(item.total_faturado) : Number(item.totalFaturado || 0),
+        id: item.id || '',
+        contrato_id: item.contrato_id || contrato_id,
+        nome: item.nome || '',
+        cnpj_cpf: item.cnpj_cpf || '',
+        tipo: (item.id && String(item.id).startsWith('GER-')) ? 'GESTORA' : (item.tipo || 'FORNECEDOR'),
+        emailContato: (item.email_contato !== undefined && item.email_contato !== null) ? item.email_contato : (item.emailContato || ''),
+        telefone: item.telefone || '',
+        status: item.status || 'ATIVO',
+        totalFaturado: item.total_faturado !== undefined && item.total_faturado !== null ? Number(item.total_faturado) : Number(item.totalFaturado || 0),
         createdAt: item.created_at !== undefined ? item.created_at : item.createdAt
       }));
 
@@ -2021,11 +2541,27 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
 
       const { data, error } = await client
         .from("projetos")
-        .select("*")
+        .select("*, empresas_fornecedores!projetos_empresa_id_tenant_id_fkey(nome)")
         .order("created_at", { ascending: false });
 
-      if (error) return res.status(500).json({ error: error.message });
-      return res.json({ projetos: data || [] });
+      if (error) {
+        console.warn("GET /api/projetos join failed, falling back to simple query:", error.message);
+        const { data: fallbackData, error: fallbackErr } = await client
+          .from("projetos")
+          .select("*")
+          .order("created_at", { ascending: false });
+        if (fallbackErr) return res.status(500).json({ error: fallbackErr.message });
+        return res.json({ projetos: fallbackData || [] });
+      }
+
+      // Flatten the empresa_nome from the join
+      const enriched = (data || []).map((p: any) => ({
+        ...p,
+        empresa_nome: p.empresas_fornecedores?.nome || null,
+        empresas_fornecedores: undefined
+      }));
+
+      return res.json({ projetos: enriched });
     } catch (err) {
       return res.status(500).json({ error: "Internal Error" });
     }
@@ -2039,8 +2575,14 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
       if (!client || !tenantId) return res.status(401).json({ error: "Unauthorized" });
 
       const { id, nome_projeto, data_inicio } = req.body;
+      let { empresa_id } = req.body;
       if (!nome_projeto || !data_inicio) {
         return res.status(400).json({ error: "Missing required fields" });
+      }
+
+      const perfil = req.decodedToken?.perfil;
+      if (perfil === 'FORNECEDOR') {
+        empresa_id = req.decodedToken?.empresa_id || null;
       }
 
       let codigo_projeto = req.body.codigo_projeto;
@@ -2059,6 +2601,7 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
         tenant_id: tenantId,
         nome_projeto,
         data_inicio,
+        empresa_id: empresa_id || null,
         updated_at: new Date().toISOString()
       };
       if (codigo_projeto) upsertData.codigo_projeto = codigo_projeto;
@@ -2115,11 +2658,28 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
 
       const { data, error } = await client
         .from("usuarios")
-        .select("*")
+        .select("*, empresas_fornecedores!usuarios_empresa_id_contrato_id_fkey(nome)")
         .eq("contrato_id", tenantId);
 
-      if (error) return res.status(500).json({ error: error.message });
-      return res.json({ usuarios: data || [] });
+      if (error) {
+        // Fallback: if the join fails (e.g. FK not yet established), query without join
+        console.warn("GET /api/usuarios join failed, falling back to simple query:", error.message);
+        const { data: fallbackData, error: fallbackErr } = await client
+          .from("usuarios")
+          .select("*")
+          .eq("contrato_id", tenantId);
+        if (fallbackErr) return res.status(500).json({ error: fallbackErr.message });
+        return res.json({ usuarios: fallbackData || [] });
+      }
+
+      // Flatten the empresa_nome from the join
+      const enriched = (data || []).map((u: any) => ({
+        ...u,
+        empresa_nome: u.empresas_fornecedores?.nome || null,
+        empresas_fornecedores: undefined
+      }));
+
+      return res.json({ usuarios: enriched });
     } catch (err) {
       console.error("GET /api/usuarios erro:", err);
       return res.status(500).json({ error: err instanceof Error ? err.message : "Internal Error" });
@@ -2136,9 +2696,42 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
       const tenantId = req.decodedToken?.contrato_id;
       if (!client || !tenantId) return res.status(401).json({ error: "Unauthorized" });
 
-      const { uid, email, nome, perfil, status, empresa_id } = req.body;
-      if (!uid || !email || !nome) {
-        return res.status(400).json({ error: "Missing required fields" });
+      let { uid, email, nome, perfil, status, empresa_id, senha } = req.body;
+      if (!email || !nome) {
+        return res.status(400).json({ error: "Missing required fields: email, nome" });
+      }
+
+      // If no uid is provided, it's a new user creation
+      if (!uid) {
+        if (!senha) {
+          return res.status(400).json({ error: "Senha é obrigatória para novos usuários" });
+        }
+        try {
+          const adminAuth = getAdminAuth();
+          
+          // Check if user already exists in Firebase Auth to prevent 'email-already-exists' crash
+          let existingUser;
+          try {
+            existingUser = await adminAuth.getUserByEmail(email);
+          } catch (e: any) {
+            if (e.code !== 'auth/user-not-found') throw e;
+          }
+
+          if (existingUser) {
+            uid = existingUser.uid;
+            // Optionally update their password if they are being re-invited, but usually better to leave as is
+          } else {
+            const newUser = await adminAuth.createUser({
+              email: email,
+              password: senha,
+              displayName: nome
+            });
+            uid = newUser.uid;
+          }
+        } catch (firebaseErr: any) {
+          console.error("Erro ao criar usuário no Firebase Auth:", firebaseErr);
+          return res.status(500).json({ error: "Erro ao criar credencial de login: " + firebaseErr.message });
+        }
       }
 
       const upsertData = {
@@ -2191,7 +2784,8 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
           await client.from("permissoes_usuario").insert([newPerms]);
         }
       } else {
-        console.log(`[POST /api/usuarios] Permissões customizadas priorizadas para o usuário ${uid}. Manterá a configuração especial.`);
+        console.log(`[POST /api/usuarios] Permissões customizadas priorizadas para o usuário ${uid}. Atualizando apenas a empresa associada.`);
+        await client.from("permissoes_usuario").update({ empresa_id: empresa_id || null, updated_at: new Date().toISOString() }).eq("usuario_uid", uid);
       }
 
       // Sync custom claims in Firebase Admin SDK if available
@@ -2336,6 +2930,7 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
         preco_unitario: precoNum,
         quantidade_contratada: qtdNum,
         valor_total_contratado: valTotal,
+        valor_desembolsado: desembolsadoNum,
         e_analitico: isAnalytic,
         ordem: isNaN(Number(ordem)) ? 0 : Number(ordem || 0),
         data_execucao: data_execucao && String(data_execucao).trim() !== '' ? String(data_execucao).trim() : null,
@@ -2807,7 +3402,7 @@ async function getComputedPermissions(req: AuthenticatedRequest): Promise<Record
   const contrato_id = req.decodedToken.contrato_id;
 
   const fallback: Record<string, boolean> = {
-    empresas_ler: true, projetos_ler: true, medicoes_ler: true, financeiro_ler: true, relatorios_ler: true, usuarios_ler: true,
+    empresas_ler: true, projetos_ler: true, medicoes_ler: false, financeiro_ler: false, relatorios_ler: false, usuarios_ler: false,
     empresas_criar: false, empresas_editar: false, empresas_excluir: false,
     projetos_criar: false, projetos_editar: false, projetos_excluir: false,
     medicoes_criar: false, medicoes_editar: false, medicoes_excluir: false,

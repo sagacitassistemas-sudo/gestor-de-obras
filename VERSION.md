@@ -1,5 +1,40 @@
 # Histórico de Versões e Releases - Works Manager (Gestor de Obras)
 
+## Versão 1.2.0 (2026-08-16) - Auditoria de Segurança, Hardening de RLS e Governança de Acesso
+
+### 🛡️ 1. Hardening e Unificação do Row-Level Security (RLS)
+- **Isolamento de Tenant Padronizado**:
+  - Migradas todas as tabelas operacionais (`rdos`, `rdo_items`, `rdo_photos`, `ordens_servico`) para o padrão JWT `(request.jwt.claims->>'contrato_id')`, eliminando a dependência legada de `app.current_tenant`.
+- **Governança Estrita em `empresas_fornecedores`**:
+  - Removidas 3 policies conflitantes e estabelecidas `ef_tenant_select` (leitura para usuários do mesmo tenant) e `ef_tenant_modify` (escrita restrita exclusivamente a `ADMIN` e `GESTOR`).
+- **Proteção da Matriz de Usuários em `permissoes_usuario`**:
+  - Implementada a policy `pu_admin_modify` que impede via banco que usuários comuns alterem seus próprios tetos de acesso.
+
+### ⏱️ 2. Ciclo de Vida e Expiração de Convites
+- **Validade Temporal de 7 Dias**:
+  - Adicionada a coluna `expires_at` na tabela `convites`.
+  - Os endpoints `GET /api/convites/:token` e `POST /api/convites/accept` barram convites expirados, marcando o status para `EXPIRADO`.
+- **Correção de Typo na Policy**:
+  - Corrigido `jwt.claim.sub` para `request.jwt.claims` na policy `tenant_admin_convites`.
+
+### 🏢 3. Empresa Gestora do Sistema, Reconhecimento de Acesso & Contingência Master
+- **Tipo de Empresa `GESTORA`**:
+  - Cadastrada a empresa `GER-2026-SYS` ("Gestora do Sistema") com permissões máximas irrestritas (19 permissões habilitadas em `permissoes_empresa`).
+  - Mapeamento automático de `sagacitas.sistemas@gmail.com` como `ADMIN` vinculado à Gestora.
+- **E-mail de Reconhecimento & Recuperação Master (`/api/gestora/send-confirmation`)**:
+  - Disparo de certificado oficial com identificação da empresa, contrato, nível de permissão (19 permissões ativas) e canal de contingência.
+  - Inclusão de link seguro com token de redefinição de senha e validação de login master (`/?resetToken=...`).
+- **Assistente de Redefinição de Senha no Login (`LoginScreen.tsx`)**:
+  - Reconhecimento automático do token de recuperação via URL e interface integrada para redefinição de credenciais de emergência.
+  - Conexão do fluxo "Esqueceu a senha?" com disparo de e-mail real via `/api/auth/request-password-reset`.
+- **Fallback *Deny-by-Default***:
+  - O cálculo de permissões em `getComputedPermissions()` adota bloqueio por padrão (`false`) para módulos sensíveis (`financeiro_ler`, `usuarios_ler`, `medicoes_ler`, `relatorios_ler`).
+
+### 🧪 4. Suíte de Testes de Segurança
+- Criada e expandida a suíte de testes de integração (`tests/integration/security.routes.test.ts`), totalizando 9 suítes e 94 testes passando com 100% de sucesso.
+
+---
+
 ## Versão 1.1.1 (2026-08-07) - Travas de Integridade & Mecanismo Antirregressão
 
 ### 🛡️ 1. Pipeline de Verificação Automática de Integridade (`scripts/check-integrity.mjs`)

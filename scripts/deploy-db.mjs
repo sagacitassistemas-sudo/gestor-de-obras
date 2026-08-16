@@ -5,7 +5,12 @@ const isVercel = process.env.VERCEL === '1' || process.env.CI === 'true' || proc
 try {
   if (!isVercel) {
     console.log('Ambiente local detectado. Executando db push --linked...');
-    execSync('npx --yes supabase db push --linked', { stdio: 'inherit' });
+    try {
+      execSync('npx --yes supabase db push --linked', { stdio: 'inherit' });
+    } catch (e) {
+      console.log('npx supabase falhou, tentando usar binário nativo em ~/.local/bin/supabase...');
+      execSync('~/.local/bin/supabase db push --linked', { stdio: 'inherit' });
+    }
   } else {
     console.log('Ambiente Vercel (CI) detectado. Verificando credenciais para sincronismo do banco...');
     

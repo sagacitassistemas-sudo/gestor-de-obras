@@ -19,6 +19,7 @@ export interface DbState {
   projetos: Record<string, any>[];
   itens_eap: Record<string, any>[];
   contratos_obra: Record<string, any>[];
+  convites: Record<string, any>[];
 }
 
 // ── Wrapper mutável global ────────────────────────────────────────────────────
@@ -47,6 +48,7 @@ export function createEmptyDb(): DbState {
     projetos: [],
     itens_eap: [],
     contratos_obra: [],
+    convites: [],
   };
 }
 

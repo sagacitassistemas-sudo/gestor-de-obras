@@ -152,7 +152,7 @@ export function parseMsProjectXml(xmlString: string): MspImportResult {
   // Verificar erros de parsing
   const parseError = doc.getElementsByTagName('parsererror')[0];
   if (parseError) {
-    throw new Error(`Erro ao interpretar o arquivo XML: ${parseError.textContent}`);
+    throw new Error(`Erro ao interpretar o arquivo. Certifique-se de que exportou o projeto como "XML" no MS Project (não utilize o arquivo binário .mpp direto). Detalhes técnicos: ${parseError.textContent}`);
   }
 
   // ── Metadados do Projeto ─────────────────────────────────────────────────

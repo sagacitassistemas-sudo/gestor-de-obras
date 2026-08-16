@@ -6,14 +6,51 @@ interface SettingsModalProps {
   onClose: () => void;
   user: UserProfile;
   onUpdateProfile?: (updated: UserProfile) => void;
+  authSession?: any;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
   isOpen,
   onClose,
-  user
+  user,
+  authSession
 }) => {
+  const [newPassword, setNewPassword] = React.useState('');
+  const [isChangingPassword, setIsChangingPassword] = React.useState(false);
+  const [passwordMessage, setPasswordMessage] = React.useState<{type: 'success'|'error', text: string} | null>(null);
+
   if (!isOpen) return null;
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newPassword.length < 6) {
+      setPasswordMessage({ type: 'error', text: 'A senha deve ter pelo menos 6 caracteres.' });
+      return;
+    }
+    
+    setIsChangingPassword(true);
+    setPasswordMessage(null);
+    try {
+      const res = await fetch('/api/auth/change-password', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authSession?.idToken}`
+        },
+        body: JSON.stringify({ newPassword })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setPasswordMessage({ type: 'success', text: 'Senha alterada com sucesso!' });
+        setNewPassword('');
+      } else {
+        setPasswordMessage({ type: 'error', text: data.error || 'Erro ao alterar senha.' });
+      }
+    } catch (err) {
+      setPasswordMessage({ type: 'error', text: 'Erro de conexão.' });
+    }
+    setIsChangingPassword(false);
+  };
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
@@ -84,9 +121,43 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </span>
           </div>
 
-          <p className="text-[11px] text-[#707785] italic text-center">
+          <p className="text-[11px] text-[#707785] italic text-center mb-6">
             * Estes dados são de leitura exclusiva para consulta de credenciais ativas.
           </p>
+
+          {/* Trocar Senha */}
+          <div className="pt-4 border-t border-[#e2e8f0]">
+            <h4 className="font-headline-sm text-[#005daa] text-sm mb-3">Alterar Senha</h4>
+            <form onSubmit={handleChangePassword} className="space-y-3">
+              <div>
+                <label className="font-label-bold text-[11px] uppercase text-[#404753] block mb-1">Nova Senha</label>
+                <input
+                  type="password"
+                  required
+                  minLength={6}
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="Mínimo de 6 caracteres"
+                  className="w-full px-3.5 py-2 border border-[#cbd5e1] rounded-md font-body-md text-[#475569] outline-none focus:border-[#005daa] focus:ring-1 focus:ring-[#005daa]"
+                />
+              </div>
+              {passwordMessage && (
+                <div className={`p-2 text-xs font-bold rounded ${passwordMessage.type === 'success' ? 'bg-[#d1fae5] text-[#065f46]' : 'bg-red-50 text-red-600'}`}>
+                  {passwordMessage.text}
+                </div>
+              )}
+              <div className="flex justify-end">
+                <button
+                  type="submit"
+                  disabled={isChangingPassword}
+                  className="px-4 py-2 bg-slate-800 text-white rounded-md font-label-bold hover:bg-slate-900 transition-colors cursor-pointer text-xs disabled:opacity-50 flex items-center gap-2"
+                >
+                  {isChangingPassword && <span className="material-symbols-outlined text-[14px] animate-spin">progress_activity</span>}
+                  Atualizar Senha
+                </button>
+              </div>
+            </form>
+          </div>
 
           {/* Footer Action */}
           <div className="flex justify-end pt-3 border-t border-[#e2e8f0]">

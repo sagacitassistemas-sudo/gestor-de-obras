@@ -48,9 +48,21 @@ flowchart TD
 ### 1.2. Camada de Autorização (AuthZ & Supabase JWT Handoff)
 - **Base Proprietária (PostgreSQL / Supabase)**: Assume 100% da responsabilidade sobre regras de negócio e autorização de operações CRUD.
 - **Cliente Escopado por JWT Handoff (`supabase.auth.setSession`)**: O backend Express utiliza a biblioteca `jsonwebtoken` para assinar um JWT contendo as claims de negócio usando o segredo `SUPABASE_JWT_SECRET`. Este token é devolvido ao frontend após a autenticação e injetado diretamente no Cliente Supabase via `supabase.auth.setSession()`. O Tempo de Vida (TTL) do JWT de sessão é de **4 horas** (reduzido para acelerar o sincronismo e garantir maior segurança), enquanto o ticket temporário MFA possui TTL de **10 minutos**. Esses valores de configuração são controlados globalmente via `SYSTEM_PARAMS`.
-- **Segurança de Acesso (Row-Level Security - RLS Nativo)**: O isolamento multitenant de dados é forçado nativamente pelo PostgreSQL via RLS:
-  - Leituras (`SELECT`) validam se `contrato_id = (current_setting('request.jwt.claims', true)::jsonb ->> 'contrato_id')`.
-  - Mutações (`INSERT`, `UPDATE`, `DELETE`) validam adicionalmente o perfil ou as permissões efetivas computadas.
+- **Segurança de Acesso (Row-Level Security - RLS Nativo e Unificado)**: O isolamento multitenant de dados é forçado nativamente pelo PostgreSQL via RLS em todas as tabelas:
+  - **Padrão Unificado de Tenant**: Todas as consultas e operações em tabelas transacionais (`rdos`, `rdo_items`, `rdo_photos`, `ordens_servico`, `contratos_obra`, `medicoes`, `itens_eap`, `empresas_fornecedores`, `usuarios`, `convites`, `permissoes_usuario`) utilizam a claim padronizada `(current_setting('request.jwt.claims', true)::jsonb ->> 'contrato_id')` ou `::json`.
+  - **Políticas de Empresas (`empresas_fornecedores`)**:
+    - `ef_tenant_select`: Leitura autorizada a qualquer usuário autenticado do mesmo tenant.
+    - `ef_tenant_modify`: Escrita (`INSERT`, `UPDATE`, `DELETE`) restrita exclusivamente a perfis `ADMIN` e `GESTOR` do tenant.
+  - **Políticas de Permissões (`permissoes_usuario`)**:
+    - `pu_tenant_select`: Leitura permitida para operadores do tenant.
+    - `pu_admin_modify`: Modificações restritas obrigatoriamente a administradores (`ADMIN`), impedindo que operadores alterem seus próprios tetos via cliente direto.
+  - **Gestão Segura de Convites (`convites`)**:
+    - `expires_at`: Controle temporal com validade de 7 dias a partir da emissão.
+    - `tenant_admin_convites`: Gestão restrita a administradores via RLS.
+    - `public_read_convite_by_token`: Consulta anônima por token para validação pública de onboarding com expiração automática.
+  - **Empresa Gestora do Sistema (`GER-2026-SYS`)**:
+    - Empresa cadastrada sob o tipo `GESTORA`, com permissões máximas irrestritas (19 permissões habilitadas em `permissoes_empresa`).
+    - O e-mail gestor master (`sagacitas.sistemas@gmail.com`) é automaticamente mapeado como `ADMIN` vinculado à `GER-2026-SYS`.
 
 ---
 
@@ -87,7 +99,7 @@ No backend Express, a função `getComputedPermissions(req)` avalia as permissõ
 1. **ADMIN Bypass**: Usuários com `perfil === 'ADMIN'` recebem todas as permissões (`true`) automaticamente.
 2. **Consulta à View `v_permissoes_efetivas`**: O backend executa a query na view PostgreSQL que unifica e aplica a interseção booleana (AND lógico) entre o teto do tenant, teto da empresa e permissões do usuário.
 3. **Fallback `permissoes_tipo`**: Caso o usuário ainda não possua registro em `v_permissoes_efetivas`, o sistema lê as regras de `permissoes_tipo` para o seu perfil.
-4. **Fallback de Segurança Padrão**: Se nenhum registro for encontrado, aplica-se permissão de leitura às rotas básicas e negação total (`false`) para operações de mutação (`criar`, `editar`, `excluir`).
+4. **Fallback Seguro Padrão (*Deny-by-Default*)**: Se nenhum registro for encontrado na view ou no template, aplica-se permissão de leitura exclusivamente para módulos essenciais (`empresas_ler: true`, `projetos_ler: true`) e bloqueio total (`false`) para módulos sensíveis (`financeiro_ler`, `usuarios_ler`, `medicoes_ler`, `relatorios_ler`) e para todas as operações de mutação (`criar`, `editar`, `excluir`).
 
 ### 2.3. Mapeamento de Chaves de Permissão
 

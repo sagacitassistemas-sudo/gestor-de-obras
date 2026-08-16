@@ -41,6 +41,14 @@ Este arquivo define as skills, responsabilidades e regras de raciocínio que a I
 - `shadow-2xs` para cards; `shadow-md` para modais.
 - Paleta: `#005daa` (primário), emerald (sucesso), amber (alerta), red (erro), indigo (tech).
 
+### SECURITY & COMPLIANCE — Isolamento RLS e Governança de Acesso
+- **Garantir** que toda tabela transacional no PostgreSQL possua RLS habilitado e utilize o padrão unificado `(request.jwt.claims->>'contrato_id')`.
+- **Validar** que convites possuam controle de ciclo de vida (`expires_at` com 7 dias e status `PENDENTE`/`USADO`/`EXPIRADO`).
+- **Respeitar** o princípio do *Deny-by-Default* no fallback de permissões para módulos sensíveis (`financeiro`, `usuarios`, `medicoes`, `relatorios`).
+- **Bloquear** edições em `permissoes_usuario` para perfis não-administradores no nível de banco via policy `pu_admin_modify`.
+- **Reconhecer** a empresa `GER-2026-SYS` do tipo `GESTORA` como administradora do sistema com permissões máximas irrestritas.
+- **Registrar** em `audit_log` e `system_error_log` qualquer tentativa de acesso não autorizado ou violação de permissão.
+
 ---
 
 ## 🔧 Técnicas Operacionais
@@ -64,6 +72,19 @@ Este arquivo define as skills, responsabilidades e regras de raciocínio que a I
 4. Atualizar o `getComputedPermissions()` no `server.ts` para incluir o fallback da nova chave.
 5. Atualizar a `MatrizAcessosView.tsx` para renderizar o novo campo na matriz.
 
+### Ao concluir qualquer implementação, correção ou release (Rotina Mandatória):
+1. **Validação Obrigatória dos Testes (Gate de Qualidade)**:
+   - Executar a checagem estática de tipos: `npx tsc --noEmit` (deve retornar 0 erros).
+   - Executar a suíte completa de testes automatizados: `npm run test` (100% dos testes devem passar).
+   - **REGRA ESTRITA**: Se houver qualquer falha ou erro, **NÃO** arquivar no `.history/`. Corrigir as falhas primeiro e re-executar os testes até obter aprovação total.
+2. **Gerar Walkthrough de Entrega**:
+   - Consolidar as alterações técnicas, arquivos modificados e os resultados dos testes executados.
+3. **Arquivamento Condicional na pasta [`.history/`](file:///mnt/46F84CA3F84C935B/Atividades_2026/Natan/Sistema/gestor-de-obras/.history)**:
+   - Somente após os testes estarem 100% verdes, salvar o arquivo no formato: `.history/AAAA-MM-DD_nome_descritivo_da_tarefa.md`.
+   - Atualizar a tabela de índice no [`.history/README.md`](file:///mnt/46F84CA3F84C935B/Atividades_2026/Natan/Sistema/gestor-de-obras/.history/README.md) com data, link relativo, domínio e resumo.
+4. **Registro de Release**:
+   - Atualizar o arquivo [VERSION.md](file:///mnt/46F84CA3F84C935B/Atividades_2026/Natan/Sistema/gestor-de-obras/VERSION.md) com as notas da release.
+
 ---
 
 ## 🚫 Anti-Padrões Proibidos
@@ -76,6 +97,8 @@ Este arquivo define as skills, responsabilidades e regras de raciocínio que a I
 | Usar `rounded-xl` ou `rounded-2xl` em painéis | Quebra o design system corporativo |
 | Criar usuário sem sedar `permissoes_usuario` | Usuário fica sem permissões até ser configurado manualmente |
 | Usar `req.body.contrato_id` para filtrar dados | Zero Trust — apenas `req.decodedToken.contrato_id` é confiável |
+| Arquivar no `.history/` antes da aprovação total dos testes | Poluição da memória histórica com código potencialmente quebrado |
+| Concluir tarefas sem arquivar o walkthrough em `.history/` após os testes | Perda de rastreabilidade técnica e memória de engenharia |
 
 ---
 
@@ -88,3 +111,6 @@ Antes de submeter qualquer mudança:
 - [ ] A UI usa o design system (rounded-md, shadow-2xs, paleta correta)?
 - [ ] O isolamento por `contrato_id` foi respeitado em todas as queries?
 - [ ] A view `v_permissoes_efetivas` está atualizada com novos campos?
+- [ ] Todos os testes (`npm run test`) e checagem de tipos (`tsc`) passaram com 100% de sucesso?
+- [ ] O walkthrough da entrega foi salvo na pasta [`.history/`](file:///mnt/46F84CA3F84C935B/Atividades_2026/Natan/Sistema/gestor-de-obras/.history) e indexado no [`.history/README.md`](file:///mnt/46F84CA3F84C935B/Atividades_2026/Natan/Sistema/gestor-de-obras/.history/README.md) SOMENTE após a aprovação dos testes?
+- [ ] O arquivo [VERSION.md](file:///mnt/46F84CA3F84C935B/Atividades_2026/Natan/Sistema/gestor-de-obras/VERSION.md) foi atualizado com a release?

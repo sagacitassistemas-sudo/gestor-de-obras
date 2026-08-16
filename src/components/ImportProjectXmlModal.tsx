@@ -168,7 +168,7 @@ export const ImportProjectXmlModal: React.FC<ImportProjectXmlModalProps> = ({
           <div className="flex items-center gap-3">
             <span className="material-symbols-outlined text-[#005daa] text-[24px]">upload_file</span>
             <h2 className="text-title-lg font-display font-bold text-[#191c1e]">
-              Importar MS Project XML
+              Importar MS Project (.xml / .mpp)
             </h2>
           </div>
           <button 
@@ -194,13 +194,13 @@ export const ImportProjectXmlModal: React.FC<ImportProjectXmlModalProps> = ({
           {!xmlResult ? (
             <div className="text-center">
               <p className="text-body-md text-[#404753] mb-6">
-                Selecione um arquivo .xml exportado do Microsoft Project. 
+                Selecione um arquivo .xml ou .mpp exportado do Microsoft Project. 
                 Isso criará um <strong>Novo Projeto</strong> no sistema com todas as tarefas e dependências contidas no arquivo.
               </p>
               
               <input 
                 type="file" 
-                accept=".xml" 
+                accept=".xml,.mpp" 
                 ref={fileInputRef} 
                 onChange={handleFileChange} 
                 className="hidden" 
@@ -219,7 +219,7 @@ export const ImportProjectXmlModal: React.FC<ImportProjectXmlModalProps> = ({
                 ) : (
                   <>
                     <span className="material-symbols-outlined text-[48px] text-[#707785]">upload</span>
-                    <span className="font-bold text-[#404753]">Clique para buscar o arquivo .xml</span>
+                    <span className="font-bold text-[#404753]">Clique para buscar o arquivo (.xml ou .mpp)</span>
                   </>
                 )}
               </button>

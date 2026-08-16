@@ -15,9 +15,10 @@ export const ProjetosEapView: React.FC<ProjetosEapViewProps> = ({ authSession })
   const [selectedProjetoId, setSelectedProjetoId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [editingProjeto, setEditingProjeto] = useState<any>(null);
-  const [projetoForm, setProjetoForm] = useState({ nome_projeto: '', data_inicio: '', codigo_projeto: '' });
+  const [projetoForm, setProjetoForm] = useState({ nome_projeto: '', data_inicio: '', codigo_projeto: '', empresa_id: '' });
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isXmlImportModalOpen, setIsXmlImportModalOpen] = useState(false);
+  const [empresasDisponiveis, setEmpresasDisponiveis] = useState<any[]>([]);
   const [isCadastroEtapaOpen, setIsCadastroEtapaOpen] = useState(false);
   const [itemToEditModal, setItemToEditModal] = useState<any | null>(null);
 
@@ -72,8 +73,25 @@ export const ProjetosEapView: React.FC<ProjetosEapViewProps> = ({ authSession })
     }
   };
 
+  const fetchEmpresas = async () => {
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      const token = session?.session?.access_token || authSession?.idToken;
+      const res = await fetch('/api/empresas', { headers: { 'Authorization': `Bearer ${token}` } });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.data) {
+          setEmpresasDisponiveis(json.data);
+        }
+      }
+    } catch (e) {
+      console.warn("Error fetching empresas:", e);
+    }
+  };
+
   useEffect(() => {
     fetchProjetos();
+    fetchEmpresas();
   }, []);
 
   const fetchEap = async (projetoId: string) => {
@@ -152,13 +170,13 @@ export const ProjetosEapView: React.FC<ProjetosEapViewProps> = ({ authSession })
   // ----- CRUD PROJETO -----
   const openNewProjeto = () => {
     setEditingProjeto(null);
-    setProjetoForm({ nome_projeto: '', data_inicio: new Date().toISOString().split('T')[0], codigo_projeto: '' });
+    setProjetoForm({ nome_projeto: '', data_inicio: new Date().toISOString().split('T')[0], codigo_projeto: '', empresa_id: '' });
     setPipelineState('editing_project');
   };
 
   const openEditProjeto = (proj: any) => {
     setEditingProjeto(proj);
-    setProjetoForm({ nome_projeto: proj.nome_projeto, data_inicio: proj.data_inicio.split('T')[0], codigo_projeto: proj.codigo_projeto || '' });
+    setProjetoForm({ nome_projeto: proj.nome_projeto, data_inicio: proj.data_inicio.split('T')[0], codigo_projeto: proj.codigo_projeto || '', empresa_id: proj.empresa_id || '' });
     setPipelineState('editing_project');
   };
 
@@ -177,7 +195,8 @@ export const ProjetosEapView: React.FC<ProjetosEapViewProps> = ({ authSession })
           id: editingProjeto?.id,
           nome_projeto: projetoForm.nome_projeto,
           data_inicio: projetoForm.data_inicio,
-          codigo_projeto: projetoForm.codigo_projeto || undefined
+          codigo_projeto: projetoForm.codigo_projeto || undefined,
+          empresa_id: projetoForm.empresa_id || null
         })
       });
       if (res.ok) {
@@ -337,15 +356,15 @@ export const ProjetosEapView: React.FC<ProjetosEapViewProps> = ({ authSession })
             <span className="material-symbols-outlined text-[18px]">add_box</span>
             Novo Projeto
           </button>
+          <button 
+            onClick={() => setIsXmlImportModalOpen(true)}
+            className="px-4 py-2 bg-indigo-600 text-white rounded-md font-label-bold hover:bg-indigo-700 flex items-center gap-2 transition-colors cursor-pointer shadow-xs"
+          >
+            <span className="material-symbols-outlined text-[18px]">upload_file</span>
+            Importar MS Project (.xml / .mpp)
+          </button>
           {selectedProjetoId && (
             <>
-              <button 
-                onClick={() => setIsXmlImportModalOpen(true)}
-                className="px-4 py-2 bg-indigo-600 text-white rounded-md font-label-bold hover:bg-indigo-700 flex items-center gap-2 transition-colors cursor-pointer shadow-xs"
-              >
-                <span className="material-symbols-outlined text-[18px]">upload_file</span>
-                Importar MS Project (.xml)
-              </button>
               <button 
                 onClick={() => setIsImportModalOpen(true)}
                 className="px-4 py-2 bg-emerald-600 text-white rounded-md font-label-bold hover:bg-emerald-700 flex items-center gap-2 transition-colors cursor-pointer shadow-xs"
@@ -404,6 +423,12 @@ export const ProjetosEapView: React.FC<ProjetosEapViewProps> = ({ authSession })
                   {selectedProj.codigo_projeto && (
                     <span className="bg-sky-100 text-sky-800 px-2 py-0.5 rounded text-[10px] font-bold font-mono tracking-wider">
                       CÓD: {selectedProj.codigo_projeto}
+                    </span>
+                  )}
+                  {selectedProj.empresa_nome && (
+                    <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded text-[10px] font-bold tracking-wider flex items-center gap-1">
+                      <span className="material-symbols-outlined text-[12px]">domain</span>
+                      {selectedProj.empresa_nome}
                     </span>
                   )}
                   {selectedProj.codigo_contrato && (
@@ -739,6 +764,21 @@ export const ProjetosEapView: React.FC<ProjetosEapViewProps> = ({ authSession })
                     onChange={e => setProjetoForm({...projetoForm, data_inicio: e.target.value})}
                     className="w-full px-3.5 py-2.5 bg-white border border-[#c0c7d6] rounded-md text-[#191c1e] focus:outline-none focus:border-[#005daa] focus:ring-1 focus:ring-[#005daa] shadow-xs"
                   />
+                </div>
+                <div>
+                  <label className="block text-[#404753] text-sm font-bold mb-1.5">Fornecedor / Empresa <span className="text-slate-400 font-normal text-xs">(Opcional)</span></label>
+                  <select
+                    value={projetoForm.empresa_id || ''}
+                    onChange={(e) => setProjetoForm({ ...projetoForm, empresa_id: e.target.value })}
+                    className="w-full px-3.5 py-2.5 border border-[#e1e2e8] bg-white text-[#191c1e] rounded-md outline-none text-sm focus:border-[#005daa] shadow-xs"
+                  >
+                    <option value="">-- Gestão Direta (Sem Fornecedor) --</option>
+                    {empresasDisponiveis.map((emp) => (
+                      <option key={emp.id} value={emp.id}>
+                        {emp.nome} ({emp.id})
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 
                 <div className="pt-6 mt-4 border-t border-[#e2e8f0] flex justify-end gap-3">

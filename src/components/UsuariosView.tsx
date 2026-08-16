@@ -90,6 +90,7 @@ export const UsuariosView: React.FC<UsuariosViewProps> = ({ authSession }) => {
 
   // Modals state
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<UserRecord | null>(null);
   const [viewingUser, setViewingUser] = useState<UserRecord | null>(null);
   const [deletingUser, setDeletingUser] = useState<UserRecord | null>(null);
@@ -116,14 +117,30 @@ export const UsuariosView: React.FC<UsuariosViewProps> = ({ authSession }) => {
     customEmpresaId: '',
     customEmpresaNome: '',
     mfaEnabled: true,
-    status: 'ATIVO' as 'ATIVO' | 'INATIVO' | 'PENDENTE'
+    status: 'ATIVO' as 'ATIVO' | 'INATIVO' | 'PENDENTE',
+    senha: ''
   });
 
   // Sanitizer
   const sanitizeInput = (str: string) => str.replace(/[<>]/g, '').trim();
 
   // Open Create Modal
-  const handleOpenCreateModal = () => {
+  const handleOpenInviteForm = () => {
+    setFormData({
+      displayName: '',
+      email: '',
+      perfil: 'FINANCEIRO',
+      selectedEmpresaOption: 'SEM_VINCULO',
+      customEmpresaId: '',
+      customEmpresaNome: '',
+      mfaEnabled: true,
+      status: 'ATIVO',
+      senha: ''
+    });
+    setIsInviteModalOpen(true);
+  };
+
+  const handleOpenCreateForm = () => {
     setEditingUser(null);
     setFormData({
       displayName: '',
@@ -133,7 +150,8 @@ export const UsuariosView: React.FC<UsuariosViewProps> = ({ authSession }) => {
       customEmpresaId: '',
       customEmpresaNome: '',
       mfaEnabled: true,
-      status: 'ATIVO'
+      status: 'ATIVO',
+      senha: ''
     });
     setIsCreateModalOpen(true);
   };
@@ -165,7 +183,8 @@ export const UsuariosView: React.FC<UsuariosViewProps> = ({ authSession }) => {
       customEmpresaId: customId,
       customEmpresaNome: customNome,
       mfaEnabled: user.mfaEnabled,
-      status: user.status
+      status: user.status,
+      senha: ''
     });
 
     setIsCreateModalOpen(true);
@@ -188,8 +207,6 @@ export const UsuariosView: React.FC<UsuariosViewProps> = ({ authSession }) => {
         const { data: session } = await supabase.auth.getSession();
         const token = session?.session?.access_token || authSession?.idToken;
 
-        const uid = editingUser ? editingUser.id : `usr_${cleanEmail.replace(/[^a-zA-Z0-9]/g, '_')}`;
-
         // Determine Empresa Vínculo
         let finalEmpresaId: string | null = null;
         if (formData.selectedEmpresaOption === 'OUTRO') {
@@ -198,20 +215,26 @@ export const UsuariosView: React.FC<UsuariosViewProps> = ({ authSession }) => {
           finalEmpresaId = formData.selectedEmpresaOption;
         }
 
+        const payload: any = {
+          email: cleanEmail,
+          nome: cleanName,
+          perfil: formData.perfil,
+          status: formData.status,
+          empresa_id: finalEmpresaId,
+          senha: formData.senha || undefined
+        };
+        
+        if (editingUser) {
+          payload.uid = editingUser.id;
+        }
+
         const res = await fetch('/api/usuarios', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${token}`
           },
-          body: JSON.stringify({
-            uid,
-            email: cleanEmail,
-            nome: cleanName,
-            perfil: formData.perfil,
-            status: formData.status,
-            empresa_id: finalEmpresaId
-          })
+          body: JSON.stringify(payload)
         });
 
         if (res.ok) {
@@ -227,6 +250,39 @@ export const UsuariosView: React.FC<UsuariosViewProps> = ({ authSession }) => {
     };
     saveToBackend();
     setIsCreateModalOpen(false);
+  };
+
+  const handleSendInvite = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanEmail = formData.email.trim().toLowerCase();
+    
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      const token = session?.session?.access_token || authSession?.idToken;
+
+      let finalEmpresaId: string | null = null;
+      if (formData.selectedEmpresaOption === 'OUTRO') {
+        finalEmpresaId = formData.customEmpresaId ? sanitizeInput(formData.customEmpresaId) : null;
+      } else if (formData.selectedEmpresaOption !== 'SEM_VINCULO') {
+        finalEmpresaId = formData.selectedEmpresaOption;
+      }
+
+      const res = await fetch('/api/convites', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ email: cleanEmail, perfil: formData.perfil, empresa_id: finalEmpresaId })
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        showNotification('success', `Convite enviado com sucesso para ${cleanEmail}`);
+        setIsInviteModalOpen(false);
+      } else {
+        showNotification('error', data.error || 'Erro ao enviar convite.');
+      }
+    } catch (err) {
+      showNotification('error', 'Erro de conexão ao enviar convite.');
+    }
   };
 
   // DELETE (D)
@@ -419,14 +475,6 @@ export const UsuariosView: React.FC<UsuariosViewProps> = ({ authSession }) => {
             <span className="material-symbols-outlined text-base">download</span>
             <span>Exportar CSV</span>
           </button>
-
-          <button
-            onClick={handleOpenCreateModal}
-            className="px-4 py-2 bg-[#1890ff] text-white font-bold text-xs rounded-md hover:bg-[#096dd9] transition-all shadow-2xs flex items-center gap-2 cursor-pointer"
-          >
-            <span className="material-symbols-outlined text-base">person_add</span>
-            <span>Novo Usuário</span>
-          </button>
         </div>
       </div>
 
@@ -468,6 +516,30 @@ export const UsuariosView: React.FC<UsuariosViewProps> = ({ authSession }) => {
 
       {/* Filter and Table Container (Read View) */}
       <div className="bg-white p-6 rounded-md border border-slate-200 shadow-2xs space-y-4">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+          <div>
+            <h2 className="font-bold text-slate-800 text-lg">Usuários do Portal</h2>
+            <p className="text-sm text-slate-500 mt-1">Gerencie o acesso e perfil dos usuários (incluindo subcontratados).</p>
+          </div>
+            
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={handleOpenInviteForm}
+              className="px-4 py-2 bg-white border border-[#005daa] text-[#005daa] rounded-md font-bold hover:bg-[#eff6ff] transition-colors flex items-center gap-2 whitespace-nowrap cursor-pointer text-sm"
+            >
+              <span className="material-symbols-outlined text-[18px]">mail</span>
+              Convidar Usuário
+            </button>
+            <button 
+              onClick={handleOpenCreateForm}
+              className="px-4 py-2 bg-[#005daa] text-white rounded-md font-bold hover:bg-[#0075d5] transition-colors flex items-center gap-2 whitespace-nowrap cursor-pointer text-sm shadow-sm"
+            >
+              <span className="material-symbols-outlined text-[18px]">add</span>
+              Novo Usuário (Direto)
+            </button>
+          </div>
+        </div>
+
         <div className="flex flex-col sm:flex-row justify-between gap-4">
           <div className="relative flex-1 max-w-md">
             <span className="material-symbols-outlined absolute left-3 top-2.5 text-slate-400 text-lg">search</span>
@@ -712,16 +784,32 @@ export const UsuariosView: React.FC<UsuariosViewProps> = ({ authSession }) => {
                 />
               </div>
 
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">E-mail *</label>
-                <input
-                  type="email"
-                  required
-                  placeholder="ana.souza@empresa.com.br"
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  className="w-full p-2 border border-slate-200 rounded-md focus:border-[#1890ff] outline-none"
-                />
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">E-mail *</label>
+                  <input
+                    type="email"
+                    required
+                    readOnly={!!editingUser}
+                    placeholder="ana.souza@empresa.com.br"
+                    value={formData.email}
+                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                    className={`w-full p-2 border border-slate-200 rounded-md focus:border-[#1890ff] outline-none ${editingUser ? 'bg-slate-100 text-slate-500' : 'bg-white'}`}
+                  />
+                </div>
+                {!editingUser && (
+                  <div>
+                    <label className="block font-bold text-slate-700 mb-1">Senha *</label>
+                    <input
+                      type="password"
+                      required
+                      placeholder="Mínimo 6 caracteres"
+                      value={formData.senha}
+                      onChange={(e) => setFormData({ ...formData, senha: e.target.value })}
+                      className="w-full p-2 border border-slate-200 rounded-md focus:border-[#1890ff] outline-none bg-white"
+                    />
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -953,6 +1041,119 @@ export const UsuariosView: React.FC<UsuariosViewProps> = ({ authSession }) => {
                 className="px-4 py-2 bg-rose-600 text-white font-bold rounded-md hover:bg-rose-700 cursor-pointer shadow-2xs"
               >
                 Confirmar Exclusão
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ───────────────────────────────────────────────────────────── */}
+      {/* 5) INVITE MODAL */}
+      {/* ───────────────────────────────────────────────────────────── */}
+      {isInviteModalOpen && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg p-6 border border-[#c0c7d6] flex flex-col max-h-[90vh]">
+            <div className="flex justify-between items-center mb-6 pb-4 border-b border-[#e2e8f0]">
+              <div>
+                <h3 className="text-[#191c1e] text-lg font-bold">Convidar Novo Usuário</h3>
+                <p className="text-sm text-[#707785] mt-1">Um e-mail será enviado com um link para o usuário concluir o cadastro.</p>
+              </div>
+              <button onClick={() => setIsInviteModalOpen(false)} className="text-[#707785] hover:text-[#191c1e] cursor-pointer">
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+
+            <div className="overflow-y-auto flex-1 pr-2">
+              <form id="invite-user-form" onSubmit={handleSendInvite} className="space-y-5">
+                <div>
+                  <label className="font-bold text-[#191c1e] block mb-1">
+                    E-mail do Convidado <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    placeholder="nome@empresa.com"
+                    value={formData.email}
+                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                    className="w-full px-3.5 py-2 border border-[#c0c7d6] rounded-md outline-none focus:border-[#005daa] bg-white text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-bold text-[#191c1e] block mb-1">
+                    Perfil de Acesso <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={formData.perfil}
+                    onChange={(e) => setFormData({ ...formData, perfil: e.target.value as any })}
+                    className="w-full px-3.5 py-2 border border-[#c0c7d6] rounded-md bg-white outline-none focus:border-[#005daa] text-sm"
+                  >
+                    <option value="VISITANTE">Visitante (Leitura Restrita)</option>
+                    <option value="FORNECEDOR">Fornecedor / Subcontratado</option>
+                    <option value="FINANCEIRO">Financeiro (Mediador)</option>
+                    <option value="GESTOR">Gestor de Obras</option>
+                    <option value="ADMIN">Administrador</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="font-bold text-[#191c1e] block mb-1">
+                    Empresa Vínculo
+                  </label>
+                  <select
+                    value={formData.selectedEmpresaOption}
+                    onChange={(e) => setFormData({ ...formData, selectedEmpresaOption: e.target.value })}
+                    className="w-full px-3.5 py-2 border border-[#c0c7d6] rounded-md bg-white outline-none focus:border-[#005daa] text-sm"
+                  >
+                    <option value="SEM_VINCULO">Nenhum vínculo (Colaborador Interno)</option>
+                    {empresasDisponiveis.map(emp => (
+                      <option key={emp.id} value={emp.id}>{emp.label}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {formData.selectedEmpresaOption === 'OUTRO' && (
+                  <div className="p-4 bg-orange-50 border border-orange-200 rounded-md">
+                    <p className="text-xs text-orange-800 font-bold mb-2 flex items-center gap-1">
+                      <span className="material-symbols-outlined text-sm">warning</span>
+                      Atenção: A empresa não foi encontrada no banco.
+                    </p>
+                    <p className="text-xs text-orange-700 mb-3">
+                      Ao usar um ID avulso, certifique-se de que a entidade será criada futuramente. 
+                    </p>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="text-xs font-bold text-orange-900 block mb-1">Fornecedor ID (UUID/CNPJ)</label>
+                        <input
+                          type="text"
+                          required
+                          value={formData.customEmpresaId}
+                          onChange={(e) => setFormData({ ...formData, customEmpresaId: e.target.value })}
+                          placeholder="Digite o identificador exato..."
+                          className="w-full px-3 py-1.5 border border-orange-300 rounded outline-none focus:border-orange-500 bg-white text-sm"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </form>
+            </div>
+
+            <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-[#e2e8f0]">
+              <button 
+                type="button" 
+                onClick={() => setIsInviteModalOpen(false)}
+                className="px-5 py-2 border border-[#c0c7d6] text-[#404753] rounded-md font-bold hover:bg-slate-50 transition-colors cursor-pointer text-sm"
+              >
+                Cancelar
+              </button>
+              <button 
+                type="submit"
+                form="invite-user-form"
+                className="px-5 py-2 bg-[#005daa] text-white rounded-md font-bold hover:bg-[#0075d5] transition-colors flex items-center gap-2 cursor-pointer shadow-sm text-sm"
+              >
+                <span className="material-symbols-outlined text-[18px]">send</span>
+                Enviar Convite
               </button>
             </div>
           </div>

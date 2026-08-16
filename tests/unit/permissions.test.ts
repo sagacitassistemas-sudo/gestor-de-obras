@@ -41,8 +41,8 @@ function createComputedPermissionsLogic(db: DbState) {
     const contrato_id = req.decodedToken.contrato_id;
 
     const fallback: Record<string, boolean> = {
-      empresas_ler: true, projetos_ler: true, medicoes_ler: true, financeiro_ler: true,
-      relatorios_ler: true, usuarios_ler: true,
+      empresas_ler: true, projetos_ler: true, medicoes_ler: false, financeiro_ler: false,
+      relatorios_ler: false, usuarios_ler: false,
       empresas_criar: false, empresas_editar: false, empresas_excluir: false,
       projetos_criar: false, projetos_editar: false, projetos_excluir: false,
       medicoes_criar: false, medicoes_editar: false, medicoes_excluir: false,

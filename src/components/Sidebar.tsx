@@ -161,6 +161,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <span className="material-symbols-outlined" style={{ fontVariationSettings: activeTab === 'fornecedores' ? "'FILL' 1" : "'FILL' 0" }}>local_shipping</span>
                 {!isCollapsed && <span className="font-label-bold text-label-bold">Fornecedores</span>}
               </button>
+              {hasAccess('medicoes_ler') && (
+                <button
+                  onClick={() => handleNavClick('contratos_obra')}
+                  className={`w-full text-left ${navItemClass('contratos_obra')}`}
+                >
+                  <span className="material-symbols-outlined" style={{ fontVariationSettings: activeTab === 'contratos_obra' ? "'FILL' 1" : "'FILL' 0" }}>history_edu</span>
+                  {!isCollapsed && <span className="font-label-bold text-label-bold">Contratos</span>}
+                </button>
+              )}
               <button
                 onClick={() => handleNavClick('equipes')}
                 className={`w-full text-left ${navItemClass('equipes')}`}
@@ -240,11 +249,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
               )}
               {hasAccess('medicoes_ler') && (
                 <button
-                  onClick={() => handleNavClick('contratos_obra')}
-                  className={`w-full text-left ${navItemClass('contratos_obra')}`}
+                  onClick={() => handleNavClick('medicoes')}
+                  className={`w-full text-left ${navItemClass('medicoes')}`}
                 >
-                  <span className="material-symbols-outlined" style={{ fontVariationSettings: activeTab === 'contratos_obra' ? "'FILL' 1" : "'FILL' 0" }}>architecture</span>
-                  {!isCollapsed && <span className="font-label-bold text-label-bold">Medição</span>}
+                  <span className="material-symbols-outlined" style={{ fontVariationSettings: activeTab === 'medicoes' ? "'FILL' 1" : "'FILL' 0" }}>architecture</span>
+                  {!isCollapsed && <span className="font-label-bold text-label-bold">Medições</span>}
                 </button>
               )}
             </div>
