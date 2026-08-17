@@ -3333,7 +3333,7 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
       if (!client) return res.status(401).json({ error: "Unauthorized" });
 
       const { projeto_id } = req.query;
-      let query = client.from("ordens_servico").select("*, itens_eap(descricao_servico, unidade_medida), equipes(id, nome)");
+      let query = client.from("ordens_servico").select("*, itens_eap(descricao_servico, unidade_medida), equipes(id, nome), responsavel_rdo:funcionarios!ordens_servico_responsavel_rdo_id_fkey(id, nome)");
       if (projeto_id) query = query.eq("projeto_id", projeto_id);
       
       const { data, error } = await query.order("created_at", { ascending: false });
@@ -3380,11 +3380,15 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
         equipe_id: osData.equipe_id || null,
         numero_os: generatedNumeroOs,
         descricao: osData.descricao,
+        materiais: osData.materiais || null,
+        ferramentas: osData.ferramentas || null,
+        equipamentos: osData.equipamentos || null,
+        responsavel_rdo_id: osData.responsavel_rdo_id || null,
         status: 'Emitida',
         data_emissao: emissaoDate.toISOString()
       };
       
-      const { data, error } = await client.from("ordens_servico").insert(osPayload).select("*, itens_eap(descricao_servico, unidade_medida), equipes(id, nome)").single();
+      const { data, error } = await client.from("ordens_servico").insert(osPayload).select("*, itens_eap(descricao_servico, unidade_medida), equipes(id, nome), responsavel_rdo:funcionarios!ordens_servico_responsavel_rdo_id_fkey(id, nome)").single();
       if (error) return res.status(500).json({ error: error.message });
       return res.json({ success: true, data });
     } catch (err: any) {
@@ -3592,7 +3596,7 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
       const { empresa_id } = req.query;
       let query = client
         .from("equipes")
-        .select("*, empresas_fornecedores!fk_equipe_empresa(nome), funcionarios!equipes_lider_id_fkey(id, nome)")
+        .select("*, empresas_fornecedores!fk_equipe_empresa(nome), funcionarios!equipes_lider_id_fkey(id, nome), ordens_servico(id, numero_os, descricao, materiais, ferramentas, equipamentos, responsavel_rdo_id, status, itens_eap(descricao_servico))")
         .eq("tenant_id", tenantId);
 
       if (empresa_id) {
@@ -3718,6 +3722,140 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
       const { error } = await client.from("equipes").delete().eq("id", id);
       if (error) return res.status(500).json({ error: error.message });
       return res.json({ success: true });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ===================================================================
+  // MÓDULO: CESSÕES DE PESSOAL
+  // ===================================================================
+
+  app.get("/api/cessoes-pessoal", verifyFirebaseJWT, async (req: AuthenticatedRequest, res) => {
+    try {
+      const client = getSupabaseClient(req);
+      if (!client) return res.status(401).json({ error: "Unauthorized" });
+
+      const { equipe_id, status } = req.query;
+      
+      let query = client.from("cessoes_pessoal")
+        .select(`
+          *,
+          funcionarios:funcionario_id(id, nome, cargo),
+          equipe_origem:equipes!cessoes_pessoal_equipe_origem_id_fkey(id, nome),
+          equipe_destino:equipes!cessoes_pessoal_equipe_destino_id_fkey(id, nome),
+          ordens_servico(id, numero_os, descricao),
+          autorizador:auth.users!cessoes_pessoal_autorizado_por_fkey(id, email)
+        `);
+
+      if (status) query = query.eq('status', status);
+      if (equipe_id) {
+        query = query.or(`equipe_origem_id.eq.${equipe_id},equipe_destino_id.eq.${equipe_id}`);
+      }
+
+      const { data, error } = await query.order('created_at', { ascending: false });
+      if (error) return res.status(500).json({ error: error.message });
+
+      return res.json({ success: true, data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/cessoes-pessoal", verifyFirebaseJWT, async (req: AuthenticatedRequest, res) => {
+    try {
+      const client = getSupabaseClient(req);
+      const tenantId = req.decodedToken?.contrato_id || "CTR-2026-SYS";
+      const userUid = req.decodedToken?.uid;
+      
+      if (!client) return res.status(401).json({ error: "Unauthorized" });
+
+      const { funcionario_id, equipe_origem_id, equipe_destino_id, os_destino_id, data_inicio, data_fim, motivo } = req.body;
+
+      if (!funcionario_id || !equipe_origem_id || !equipe_destino_id) {
+        return res.status(400).json({ error: "Funcionário, Equipe de Origem e Destino são obrigatórios." });
+      }
+
+      if (equipe_origem_id === equipe_destino_id) {
+        return res.status(400).json({ error: "Equipe de origem e destino não podem ser a mesma." });
+      }
+
+      // Validar se o funcionário realmente está na equipe de origem
+      const { data: memData } = await client.from("equipe_membros")
+        .select("id")
+        .eq("equipe_id", equipe_origem_id)
+        .eq("funcionario_id", funcionario_id)
+        .single();
+        
+      if (!memData) {
+        return res.status(400).json({ error: "O funcionário não pertence à equipe de origem selecionada." });
+      }
+
+      const payload = {
+        tenant_id: tenantId,
+        funcionario_id,
+        equipe_origem_id,
+        equipe_destino_id,
+        os_destino_id: os_destino_id || null,
+        data_inicio: data_inicio || new Date().toISOString(),
+        data_fim: data_fim || null,
+        motivo,
+        status: 'ATIVA',
+        autorizado_por: userUid
+      };
+
+      const { data, error } = await client.from("cessoes_pessoal").insert(payload).select().single();
+      if (error) return res.status(500).json({ error: error.message });
+
+      // LOG AUDITORIA
+      await client.from('audit_log').insert({
+        contrato_id: tenantId,
+        usuario_uid: userUid,
+        cod_evento: 'CESSAO_CREATE',
+        descricao: `Cessão do funcionário ${funcionario_id} da equipe ${equipe_origem_id} para ${equipe_destino_id}`,
+        entidade_tipo: 'cessoes_pessoal',
+        entidade_id: data.id
+      });
+
+      return res.json({ success: true, data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.patch("/api/cessoes-pessoal/:id/encerrar", verifyFirebaseJWT, async (req: AuthenticatedRequest, res) => {
+    try {
+      const client = getSupabaseClient(req);
+      const userUid = req.decodedToken?.uid;
+      const tenantId = req.decodedToken?.contrato_id || "CTR-2026-SYS";
+      
+      if (!client) return res.status(401).json({ error: "Unauthorized" });
+
+      const { id } = req.params;
+      const { data_fim } = req.body;
+
+      const { data, error } = await client.from("cessoes_pessoal")
+        .update({ 
+          status: 'ENCERRADA', 
+          data_fim: data_fim || new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (error) return res.status(500).json({ error: error.message });
+
+      await client.from('audit_log').insert({
+        contrato_id: tenantId,
+        usuario_uid: userUid,
+        cod_evento: 'CESSAO_ENCERRAR',
+        descricao: `Cessão ${id} encerrada.`,
+        entidade_tipo: 'cessoes_pessoal',
+        entidade_id: id
+      });
+
+      return res.json({ success: true, data });
     } catch (err: any) {
       return res.status(500).json({ error: err.message });
     }
@@ -4010,6 +4148,188 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
     } catch (err: any) {
       console.error("Diagnostic failed:", err);
       return res.json({ success: false, error: err.message });
+    }
+  });
+
+  // ==========================================
+  // MÓDULO: MATRIZ DE COMPETÊNCIAS E SSMA
+  // ==========================================
+
+  // 1. Obter catálogo de competências para uma especialidade
+  app.get("/api/competencias/especialidade/:especialidade_id", verifyFirebaseJWT, async (req: AuthenticatedRequest, res) => {
+    try {
+      const client = getSupabaseClient(req);
+      if (!client) return res.status(401).json({ error: "Unauthorized" });
+      const { data, error } = await client
+        .from('competencias_catalogo')
+        .select('*')
+        .eq('especialidade_id', req.params.especialidade_id)
+        .order('eixo', { ascending: true });
+      if (error) throw error;
+      return res.json({ success: true, competencias: data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 1b. Salvar (criar ou atualizar) competência no catálogo
+  app.post("/api/competencias", verifyFirebaseJWT, async (req: AuthenticatedRequest, res) => {
+    try {
+      const client = getSupabaseClient(req);
+      const tenantId = req.decodedToken?.contrato_id;
+      if (!client || !tenantId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { id, especialidade_id, eixo, descricao, peso_esperado, treinamento_obrigatorio } = req.body;
+      
+      const payload: any = {
+        tenant_id: tenantId,
+        especialidade_id,
+        eixo,
+        descricao,
+        peso_esperado: Number(peso_esperado),
+        treinamento_obrigatorio: treinamento_obrigatorio || null
+      };
+
+      if (id) {
+        payload.id = id;
+      }
+
+      const { data, error } = await saveRecord(client, 'competencias_catalogo', payload, { idField: 'id' });
+      if (error) throw error;
+      
+      return res.json({ success: true, data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 1c. Excluir competência do catálogo
+  app.delete("/api/competencias/:id", verifyFirebaseJWT, async (req: AuthenticatedRequest, res) => {
+    try {
+      const client = getSupabaseClient(req);
+      const tenantId = req.decodedToken?.contrato_id;
+      if (!client || !tenantId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { error } = await client
+        .from('competencias_catalogo')
+        .delete()
+        .eq('id', req.params.id)
+        .eq('tenant_id', tenantId);
+        
+      if (error) throw error;
+      return res.json({ success: true });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 2. Registrar Avaliação de Desempenho
+  app.post("/api/avaliacoes", verifyFirebaseJWT, async (req: AuthenticatedRequest, res) => {
+    try {
+      const client = getSupabaseClient(req);
+      const tenantId = req.decodedToken?.contrato_id;
+      const avaliadorUid = req.decodedToken?.uid;
+      if (!client || !tenantId || !avaliadorUid) return res.status(401).json({ error: "Unauthorized" });
+
+      const { funcionario_id, status, observacao_geral, itens } = req.body;
+      if (!funcionario_id || !itens || !itens.length) {
+        return res.status(400).json({ error: "Faltam parâmetros de avaliação." });
+      }
+
+      // a) Criar cabeçalho
+      const { data: avaliacao, error: avalErr } = await client.from('avaliacoes_desempenho').insert({
+        tenant_id: tenantId,
+        funcionario_id,
+        avaliador_uid: avaliadorUid,
+        status: status || 'Rascunho',
+        observacao_geral
+      }).select('id').single();
+
+      if (avalErr || !avaliacao) throw avalErr;
+
+      // b) Inserir notas
+      const insertItens = itens.map((i: any) => ({
+        avaliacao_id: avaliacao.id,
+        competencia_id: i.competencia_id,
+        nota_alcancada: i.nota_alcancada,
+        observacao: i.observacao
+      }));
+
+      const { error: itensErr } = await client.from('avaliacao_itens').insert(insertItens);
+      if (itensErr) throw itensErr;
+
+      await logAudit(client, {
+        contrato_id: tenantId,
+        usuario_uid: avaliadorUid,
+        usuario_email: req.decodedToken?.email,
+        cod_evento: "AVALIACAO_CRIADA",
+        descricao: `Avaliação de desempenho criada para o funcionário ${funcionario_id}. Status: ${status}`,
+        entidade_tipo: "avaliacao",
+        entidade_id: avaliacao.id
+      });
+
+      return res.json({ success: true, avaliacao_id: avaliacao.id });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 3. Checar Elegibilidade RDO
+  app.get("/api/funcionarios/:id/rdo-eligibility", verifyFirebaseJWT, async (req: AuthenticatedRequest, res) => {
+    try {
+      const client = getSupabaseClient(req);
+      if (!client) return res.status(401).json({ error: "Unauthorized" });
+
+      // Chama a função RPC criada na migration
+      const { data, error } = await client.rpc('check_funcionario_rdo_eligibility', {
+        p_funcionario_id: req.params.id
+      });
+
+      if (error) throw error;
+      return res.json({ success: true, eligibility: data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 4. Checar Status de Treinamentos vs Exigências SSMA
+  app.get("/api/funcionarios/:id/treinamentos-status", verifyFirebaseJWT, async (req: AuthenticatedRequest, res) => {
+    try {
+      const client = getSupabaseClient(req);
+      if (!client) return res.status(401).json({ error: "Unauthorized" });
+      const funcionarioId = req.params.id;
+
+      // Pegamos os treinamentos realizados
+      const { data: treinosFeitos, error: tErr } = await client
+        .from('funcionario_treinamentos')
+        .select('*')
+        .eq('funcionario_id', funcionarioId);
+      if (tErr) throw tErr;
+
+      // Pegamos a especialidade do funcionario para saber o que é exigido
+      const { data: func, error: fErr } = await client
+        .from('funcionarios')
+        .select('especialidade_id')
+        .eq('id', funcionarioId)
+        .single();
+      if (fErr) throw fErr;
+
+      if (!func.especialidade_id) {
+        return res.json({ success: true, treinamentos: treinosFeitos, exigencias: [] });
+      }
+
+      // Pegamos as exigências
+      const { data: compSsma, error: cErr } = await client
+        .from('competencias_catalogo')
+        .select('treinamento_obrigatorio')
+        .eq('especialidade_id', func.especialidade_id)
+        .eq('eixo', 'SSMA')
+        .not('treinamento_obrigatorio', 'is', null);
+      if (cErr) throw cErr;
+
+      return res.json({ success: true, treinamentos: treinosFeitos, exigidos: compSsma });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message });
     }
   });
 

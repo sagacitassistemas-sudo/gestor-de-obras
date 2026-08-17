@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { AuthSession, EspecialidadeItem, FuncionarioItem } from '../types';
+import { PerfilCompetenciasView } from './PerfilCompetenciasView';
+import { GestaoCompetenciasModal } from './GestaoCompetenciasModal';
 
 interface FuncionariosViewProps {
   authSession: AuthSession | null;
@@ -29,6 +31,9 @@ export const FuncionariosView: React.FC<FuncionariosViewProps> = ({ authSession 
 
   const [isEspModalOpen, setIsEspModalOpen] = useState(false);
   const [editingEsp, setEditingEsp] = useState<EspecialidadeItem | null>(null);
+
+  const [viewingCompetencias, setViewingCompetencias] = useState<FuncionarioItem | null>(null);
+  const [gestaoCompetenciasEsp, setGestaoCompetenciasEsp] = useState<EspecialidadeItem | null>(null);
 
   // Form States
   const [funcFormData, setFuncFormData] = useState({
@@ -63,7 +68,8 @@ export const FuncionariosView: React.FC<FuncionariosViewProps> = ({ authSession 
     try {
       // 1. Fetch Especialidades
       const resEsp = await fetch('/api/especialidades', {
-        headers: { Authorization: `Bearer ${authSession.idToken}` }
+        headers: { Authorization: `Bearer ${authSession.idToken}` },
+        cache: 'no-store'
       });
       if (resEsp.ok) {
         const json = await resEsp.json();
@@ -72,7 +78,8 @@ export const FuncionariosView: React.FC<FuncionariosViewProps> = ({ authSession 
 
       // 2. Fetch Funcionarios
       const resFunc = await fetch('/api/funcionarios', {
-        headers: { Authorization: `Bearer ${authSession.idToken}` }
+        headers: { Authorization: `Bearer ${authSession.idToken}` },
+        cache: 'no-store'
       });
       if (resFunc.ok) {
         const json = await resFunc.json();
@@ -81,7 +88,8 @@ export const FuncionariosView: React.FC<FuncionariosViewProps> = ({ authSession 
 
       // 3. Fetch Empresas
       const resEmp = await fetch('/api/empresas', {
-        headers: { Authorization: `Bearer ${authSession.idToken}` }
+        headers: { Authorization: `Bearer ${authSession.idToken}` },
+        cache: 'no-store'
       });
       if (resEmp.ok) {
         const json = await resEmp.json();
@@ -477,7 +485,11 @@ export const FuncionariosView: React.FC<FuncionariosViewProps> = ({ authSession 
                     <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
                       <td className="p-3">
                         <div className="font-bold text-slate-800">{item.nome}</div>
-                        <div className="text-[11px] text-slate-500">{item.cargo || 'Mão de Obra'} {item.cpf ? `• CPF: ${item.cpf}` : ''}</div>
+                        <div className="text-[11px] text-slate-500">
+                          {item.cargo ? `${item.cargo} • ` : ''} 
+                          <span className="font-bold">{item.especialidade_nome !== 'Sem Especialidade' ? item.especialidade_nome : 'Mão de Obra'}</span>
+                          {item.cpf ? ` • CPF: ${item.cpf}` : ''}
+                        </div>
                       </td>
 
                       <td className="p-3">
@@ -524,6 +536,13 @@ export const FuncionariosView: React.FC<FuncionariosViewProps> = ({ authSession 
 
                       <td className="p-3 text-right">
                         <div className="flex items-center justify-end gap-1">
+                          <button
+                            onClick={() => setViewingCompetencias(item)}
+                            className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-all"
+                            title="Perfil de Competências"
+                          >
+                            <span className="material-symbols-outlined text-base">radar</span>
+                          </button>
                           <button
                             onClick={() => handleOpenFuncModal(item)}
                             className="p-1.5 text-slate-500 hover:text-[#005daa] hover:bg-slate-100 rounded-md transition-all"
@@ -597,14 +616,20 @@ export const FuncionariosView: React.FC<FuncionariosViewProps> = ({ authSession 
 
                 <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
                   <button
+                    onClick={() => setGestaoCompetenciasEsp(esp)}
+                    className="flex-1 py-1.5 text-blue-600 hover:bg-blue-50 text-xs font-bold rounded-md transition-all border border-blue-200"
+                  >
+                    Competências
+                  </button>
+                  <button
                     onClick={() => handleOpenEspModal(esp)}
-                    className="p-1.5 text-slate-500 hover:text-[#005daa] rounded-md transition-all"
+                    className="p-1.5 text-slate-500 hover:text-[#005daa] rounded-md transition-all bg-slate-50"
                   >
                     <span className="material-symbols-outlined text-base">edit</span>
                   </button>
                   <button
                     onClick={() => handleDeleteEsp(esp.id, esp.nome)}
-                    className="p-1.5 text-slate-400 hover:text-rose-600 rounded-md transition-all"
+                    className="p-1.5 text-slate-400 hover:text-rose-600 rounded-md transition-all bg-slate-50"
                   >
                     <span className="material-symbols-outlined text-base">delete</span>
                   </button>
@@ -844,6 +869,36 @@ export const FuncionariosView: React.FC<FuncionariosViewProps> = ({ authSession 
             </form>
           </div>
         </div>
+      )}
+
+      {/* MODAL 3: Perfil de Competências (Matriz 360) */}
+      {viewingCompetencias && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-xl shadow-2xl max-w-6xl w-full my-8 relative">
+            <button 
+              onClick={() => setViewingCompetencias(null)} 
+              className="absolute right-4 top-4 text-slate-400 hover:text-slate-800 bg-slate-100 rounded-full p-2"
+            >
+              <span className="material-symbols-outlined">close</span>
+            </button>
+            <div className="p-2">
+              <PerfilCompetenciasView 
+                funcionarioId={viewingCompetencias.id} 
+                especialidadeId={viewingCompetencias.especialidade_id!} 
+                authSession={authSession}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 4: Gestão do Catálogo de Competências por Especialidade */}
+      {gestaoCompetenciasEsp && (
+        <GestaoCompetenciasModal 
+          especialidade={gestaoCompetenciasEsp} 
+          authSession={authSession}
+          onClose={() => setGestaoCompetenciasEsp(null)} 
+        />
       )}
     </div>
   );

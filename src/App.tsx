@@ -214,7 +214,7 @@ export default function App() {
     }).catch(err => console.error("[App] Erro ao sincronizar usuário:", err));
 
     setIsAuthenticated(true);
-    setActiveTab('dashboard');
+    setActiveTab('home');
   };
 
   const handleLogout = () => {
@@ -411,6 +411,16 @@ export default function App() {
 
         {/* View Component Canvas */}
         <main className={`p-4 md:p-8 w-full mx-auto flex-1 ${activeTab === 'cronograma_executivo' ? 'max-w-full' : 'max-w-[1280px]'}`}>
+          {activeTab === 'home' && (
+            <div className="flex flex-col items-center justify-center w-full min-h-[70vh]">
+              <img 
+                src="/home-logo.png" 
+                alt="Works Manager Logo" 
+                className="w-full h-auto object-contain max-w-5xl"
+              />
+            </div>
+          )}
+
           {activeTab === 'dashboard' && (
             <DashboardView
               contracts={contracts}

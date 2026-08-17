@@ -26,12 +26,20 @@ interface OS {
   item_eap_id: string;
   equipe_id?: string;
   data_emissao: string;
+  materiais?: string;
+  ferramentas?: string;
+  equipamentos?: string;
+  responsavel_rdo_id?: string;
   created_at: string;
   itens_eap?: {
     descricao_servico: string;
     unidade_medida: string;
   };
   equipes?: {
+    id: string;
+    nome: string;
+  };
+  responsavel_rdo?: {
     id: string;
     nome: string;
   };
@@ -59,6 +67,10 @@ export const OSView: React.FC<OSViewProps> = ({ authSession }) => {
   const [descricao, setDescricao] = useState<string>('');
   const [selectedEapId, setSelectedEapId] = useState<string>('');
   const [selectedEquipeId, setSelectedEquipeId] = useState<string>('');
+  const [materiais, setMateriais] = useState<string>('');
+  const [ferramentas, setFerramentas] = useState<string>('');
+  const [equipamentos, setEquipamentos] = useState<string>('');
+  const [responsavelRdoId, setResponsavelRdoId] = useState<string>('');
   
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -131,6 +143,10 @@ export const OSView: React.FC<OSViewProps> = ({ authSession }) => {
     setDescricao('');
     setSelectedEapId('');
     setSelectedEquipeId('');
+    setMateriais('');
+    setFerramentas('');
+    setEquipamentos('');
+    setResponsavelRdoId('');
   };
 
   const handleSalvarNovaOs = async () => {
@@ -145,6 +161,10 @@ export const OSView: React.FC<OSViewProps> = ({ authSession }) => {
         equipe_id: selectedEquipeId || undefined,
         numero_os: numeroOs.trim() || undefined,
         descricao: descricao,
+        materiais: materiais || undefined,
+        ferramentas: ferramentas || undefined,
+        equipamentos: equipamentos || undefined,
+        responsavel_rdo_id: responsavelRdoId || undefined,
         data_emissao: dataEmissao
       };
 
@@ -317,7 +337,10 @@ export const OSView: React.FC<OSViewProps> = ({ authSession }) => {
                 <label className="block text-xs font-bold text-[#707785] uppercase mb-1">Equipe Responsável de Execução (Opcional)</label>
                 <select 
                   value={selectedEquipeId} 
-                  onChange={e => setSelectedEquipeId(e.target.value)} 
+                  onChange={e => {
+                    setSelectedEquipeId(e.target.value);
+                    setResponsavelRdoId(''); // Reset RDO responsible when team changes
+                  }} 
                   className="w-full border border-[#c0c7d6] rounded-lg p-2.5 outline-none focus:border-[#005daa] text-sm"
                 >
                   <option value="">Selecione a equipe alocada...</option>
@@ -327,6 +350,57 @@ export const OSView: React.FC<OSViewProps> = ({ authSession }) => {
                     </option>
                   ))}
                 </select>
+              </div>
+
+              {selectedEquipeId && (
+                <div className="mb-4">
+                  <label className="block text-xs font-bold text-[#707785] uppercase mb-1">Responsável pelo RDO (Opcional)</label>
+                  <select 
+                    value={responsavelRdoId} 
+                    onChange={e => setResponsavelRdoId(e.target.value)} 
+                    className="w-full border border-[#c0c7d6] rounded-lg p-2.5 outline-none focus:border-[#005daa] text-sm"
+                  >
+                    <option value="">Selecione quem emitirá os relatórios (RDO)...</option>
+                    {equipes.find(eq => eq.id === selectedEquipeId)?.membros?.map((m: any) => (
+                      <option key={m.funcionario_id} value={m.funcionario_id}>
+                        {m.nome} - {m.cargo} ({m.funcao_na_equipe})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <div className="grid grid-cols-3 gap-4 mb-4">
+                <div>
+                  <label className="block text-xs font-bold text-[#707785] uppercase mb-1">Materiais</label>
+                  <textarea 
+                    rows={2}
+                    value={materiais} 
+                    onChange={e => setMateriais(e.target.value)} 
+                    className="w-full border border-[#c0c7d6] rounded-lg p-2.5 outline-none focus:border-[#005daa] text-sm resize-none"
+                    placeholder="Materiais..."
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-[#707785] uppercase mb-1">Ferramentas</label>
+                  <textarea 
+                    rows={2}
+                    value={ferramentas} 
+                    onChange={e => setFerramentas(e.target.value)} 
+                    className="w-full border border-[#c0c7d6] rounded-lg p-2.5 outline-none focus:border-[#005daa] text-sm resize-none"
+                    placeholder="Ferramentas..."
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-[#707785] uppercase mb-1">Equipamentos</label>
+                  <textarea 
+                    rows={2}
+                    value={equipamentos} 
+                    onChange={e => setEquipamentos(e.target.value)} 
+                    className="w-full border border-[#c0c7d6] rounded-lg p-2.5 outline-none focus:border-[#005daa] text-sm resize-none"
+                    placeholder="Equipamentos..."
+                  />
+                </div>
               </div>
 
               <div className="mb-8">
@@ -381,16 +455,44 @@ export const OSView: React.FC<OSViewProps> = ({ authSession }) => {
                 </div>
 
                 {selectedOs.equipes && (
-                  <div className="pt-3 border-t border-[#e1e2e8]">
-                    <p className="text-xs font-bold text-[#707785] uppercase tracking-wider mb-1">Equipe Executora Designada</p>
-                    <div className="flex items-center gap-2">
-                      <span className="px-3 py-1 bg-blue-50 border border-blue-200 text-[#005daa] font-bold text-xs rounded-lg flex items-center gap-1.5">
-                        <span className="material-symbols-outlined text-sm">groups</span>
-                        {selectedOs.equipes.nome}
-                      </span>
+                  <div className="pt-3 border-t border-[#e1e2e8] grid grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-xs font-bold text-[#707785] uppercase tracking-wider mb-1">Equipe Executora Designada</p>
+                      <div className="flex items-center gap-2">
+                        <span className="px-3 py-1 bg-blue-50 border border-blue-200 text-[#005daa] font-bold text-xs rounded-lg flex items-center gap-1.5">
+                          <span className="material-symbols-outlined text-sm">groups</span>
+                          {selectedOs.equipes.nome}
+                        </span>
+                      </div>
                     </div>
+                    {selectedOs.responsavel_rdo && (
+                      <div>
+                        <p className="text-xs font-bold text-[#707785] uppercase tracking-wider mb-1">Responsável pelo RDO</p>
+                        <div className="flex items-center gap-2">
+                          <span className="px-3 py-1 bg-emerald-50 border border-emerald-200 text-emerald-700 font-bold text-xs rounded-lg flex items-center gap-1.5">
+                            <span className="material-symbols-outlined text-sm">person</span>
+                            {selectedOs.responsavel_rdo.nome}
+                          </span>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
+              </div>
+
+              <div className="grid grid-cols-3 gap-4 mb-6">
+                <div className="bg-white border border-[#e1e2e8] rounded-lg p-4">
+                  <h4 className="font-bold text-[#191c1e] text-xs uppercase tracking-wide mb-2 flex items-center gap-1"><span className="material-symbols-outlined text-[16px] text-slate-500">inventory_2</span> Materiais</h4>
+                  <div className="text-sm text-[#404753] whitespace-pre-wrap">{selectedOs.materiais || <span className="italic text-[#a0a5b1]">Não definido.</span>}</div>
+                </div>
+                <div className="bg-white border border-[#e1e2e8] rounded-lg p-4">
+                  <h4 className="font-bold text-[#191c1e] text-xs uppercase tracking-wide mb-2 flex items-center gap-1"><span className="material-symbols-outlined text-[16px] text-slate-500">handyman</span> Ferramentas</h4>
+                  <div className="text-sm text-[#404753] whitespace-pre-wrap">{selectedOs.ferramentas || <span className="italic text-[#a0a5b1]">Não definido.</span>}</div>
+                </div>
+                <div className="bg-white border border-[#e1e2e8] rounded-lg p-4">
+                  <h4 className="font-bold text-[#191c1e] text-xs uppercase tracking-wide mb-2 flex items-center gap-1"><span className="material-symbols-outlined text-[16px] text-slate-500">precision_manufacturing</span> Equipamentos</h4>
+                  <div className="text-sm text-[#404753] whitespace-pre-wrap">{selectedOs.equipamentos || <span className="italic text-[#a0a5b1]">Não definido.</span>}</div>
+                </div>
               </div>
 
               <div className="mb-6">

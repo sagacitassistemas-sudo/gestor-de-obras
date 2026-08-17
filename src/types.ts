@@ -1,4 +1,4 @@
-export type NavigationTab = 'login' | 'dashboard' | 'financeiro' | 'contratos' | 'alertas' | 'onboarding' | 'auth-debug' | 'empresas' | 'fornecedores' | 'equipes' | 'funcionarios' | 'maquinas' | 'ferramentas' | 'materiais' | 'entidades' | 'matriz-acesso' | 'usuarios' | 'projetos_eap' | 'ordens_servico' | 'contratos_obra' | 'audit-log' | 'parametros' | 'cronograma_executivo' | 'rdo' | 'medicoes';
+export type NavigationTab = 'home' | 'login' | 'dashboard' | 'financeiro' | 'contratos' | 'alertas' | 'onboarding' | 'auth-debug' | 'empresas' | 'fornecedores' | 'equipes' | 'funcionarios' | 'maquinas' | 'ferramentas' | 'materiais' | 'entidades' | 'matriz-acesso' | 'usuarios' | 'projetos_eap' | 'ordens_servico' | 'contratos_obra' | 'audit-log' | 'parametros' | 'cronograma_executivo' | 'rdo' | 'medicoes';
 
 // Re-exports dos tipos modularizados para manter compatibilidade com o frontend
 export type { FirebaseCustomClaims as CustomClaims } from './types/firebase.types';
@@ -71,6 +71,7 @@ export interface EquipeItem {
   lider_nome?: string;
   status: 'ATIVA' | 'INATIVA' | 'EM_CAMPO';
   created_at?: string;
+  ordens_servico?: any[];
   membros?: EquipeMembroItem[];
 }
 

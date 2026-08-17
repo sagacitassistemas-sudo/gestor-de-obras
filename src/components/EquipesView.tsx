@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { AuthSession, EquipeItem, FuncionarioItem } from '../types';
+import { CessoesPessoalModal } from './CessoesPessoalModal';
 
 interface EquipesViewProps {
   authSession: AuthSession | null;
@@ -22,13 +23,14 @@ export const EquipesView: React.FC<EquipesViewProps> = ({ authSession }) => {
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isCessoesModalOpen, setIsCessoesModalOpen] = useState(false);
   const [editingEquipe, setEditingEquipe] = useState<EquipeItem | null>(null);
+  const [cessoes, setCessoes] = useState<any[]>([]);
 
   // Form State
   const [formData, setFormData] = useState({
     empresa_id: '',
     nome: '',
-    descricao: '',
     lider_id: '',
     status: 'ATIVA' as 'ATIVA' | 'INATIVA' | 'EM_CAMPO'
   });
@@ -72,6 +74,15 @@ export const EquipesView: React.FC<EquipesViewProps> = ({ authSession }) => {
         const json = await resEmp.json();
         if (json.success) setEmpresas(json.data || []);
       }
+
+      // 4. Fetch Cessões
+      const resCessoes = await fetch('/api/cessoes-pessoal', {
+        headers: { Authorization: `Bearer ${authSession.idToken}` }
+      });
+      if (resCessoes.ok) {
+        const jsonC = await resCessoes.json();
+        if (jsonC.success) setCessoes(jsonC.data || []);
+      }
     } catch (err) {
       console.error("[EquipesView] Error fetching data:", err);
       showNotification('error', 'Erro ao carregar dados do servidor.');
@@ -85,13 +96,40 @@ export const EquipesView: React.FC<EquipesViewProps> = ({ authSession }) => {
   }, [authSession]);
 
   // Open Modal Handler
-  const handleOpenModal = (equipe?: EquipeItem) => {
+  const handleEncerrarCessao = async (cessaoId: string) => {
+    if (!authSession?.idToken) return;
+    if (!confirm("Deseja realmente encerrar esta cessão e retornar o funcionário à equipe de origem?")) return;
+    
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/cessoes-pessoal/${cessaoId}/encerrar`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${authSession.idToken}` },
+        body: JSON.stringify({ data_fim: new Date().toISOString() })
+      });
+      const data = await res.json();
+      if (data.success) {
+        showNotification('success', 'Cessão encerrada com sucesso.');
+        fetchData();
+      } else {
+        showNotification('error', data.error || 'Erro ao encerrar cessão.');
+      }
+    } catch (err) {
+      showNotification('error', 'Erro ao processar encerramento.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleOpenCessoesModal = () => {
+    if (!selectedEquipe) return;
+    setIsCessoesModalOpen(true);
+  };
     if (equipe) {
       setEditingEquipe(equipe);
       setFormData({
         empresa_id: equipe.empresa_id,
         nome: equipe.nome,
-        descricao: equipe.descricao || '',
         lider_id: equipe.lider_id || '',
         status: equipe.status || 'ATIVA'
       });
@@ -106,7 +144,6 @@ export const EquipesView: React.FC<EquipesViewProps> = ({ authSession }) => {
       setFormData({
         empresa_id: defaultEmpresaId,
         nome: '',
-        descricao: '',
         lider_id: '',
         status: 'ATIVA'
       });
@@ -358,6 +395,13 @@ export const EquipesView: React.FC<EquipesViewProps> = ({ authSession }) => {
 
                 <div className="flex items-center gap-2">
                   <button
+                    onClick={handleOpenCessoesModal}
+                    className="px-3 py-1.5 bg-sky-50 hover:bg-sky-100 text-[#005daa] border border-sky-200 font-bold text-xs rounded-lg transition-colors flex items-center gap-1"
+                  >
+                    <span className="material-symbols-outlined text-sm">swap_horiz</span>
+                    Ceder Funcionário
+                  </button>
+                  <button
                     onClick={() => handleOpenModal(selectedEquipe)}
                     className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-lg transition-colors flex items-center gap-1"
                   >
@@ -374,11 +418,53 @@ export const EquipesView: React.FC<EquipesViewProps> = ({ authSession }) => {
                 </div>
               </div>
 
-              {/* Description */}
-              {selectedEquipe.descricao && (
-                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 text-xs text-slate-700">
-                  <strong className="text-slate-800 block mb-1">Descrição / Frente de Trabalho:</strong>
-                  {selectedEquipe.descricao}
+              {/* Frente de Trabalho / OS Ativa */}
+              {selectedEquipe.ordens_servico && selectedEquipe.ordens_servico.length > 0 ? (
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 text-xs text-slate-700 space-y-3">
+                  <strong className="text-slate-800 block border-b border-slate-200 pb-2 mb-2 flex items-center gap-2">
+                    <span className="material-symbols-outlined text-[#005daa] text-[18px]">assignment</span>
+                    Ordens de Serviço (Frente de Trabalho)
+                  </strong>
+                  
+                  {selectedEquipe.ordens_servico.map((os: any) => (
+                    <div key={os.id} className="bg-white border border-slate-200 p-3 rounded-lg shadow-sm">
+                      <div className="flex justify-between items-start mb-2">
+                        <span className="font-bold text-[#005daa]">{os.numero_os}</span>
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                          os.status === 'Emitida' ? 'bg-sky-100 text-sky-800' :
+                          os.status === 'Em Andamento' ? 'bg-amber-100 text-amber-800' :
+                          'bg-emerald-100 text-emerald-800'
+                        }`}>
+                          {os.status}
+                        </span>
+                      </div>
+                      <div className="mb-2">
+                        <strong className="text-slate-800">Serviço (EAP):</strong> {os.itens_eap?.descricao_servico || 'Não especificado'}
+                      </div>
+                      <div className="text-slate-600 mb-3 text-[11px] whitespace-pre-wrap">
+                        {os.descricao || 'Sem descrição detalhada.'}
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-2 text-[10px]">
+                        <div className="bg-slate-50 p-2 rounded border border-slate-100">
+                          <strong className="block mb-1 text-slate-700">Materiais:</strong>
+                          <span className="whitespace-pre-wrap">{os.materiais || '-'}</span>
+                        </div>
+                        <div className="bg-slate-50 p-2 rounded border border-slate-100">
+                          <strong className="block mb-1 text-slate-700">Equip./Ferramentas:</strong>
+                          <span className="whitespace-pre-wrap">
+                            {os.equipamentos ? `Eq: ${os.equipamentos}\n` : ''}
+                            {os.ferramentas ? `Fe: ${os.ferramentas}` : ''}
+                            {!os.equipamentos && !os.ferramentas && '-'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 text-xs text-slate-500 text-center italic">
+                  Nenhuma Ordem de Serviço vinculada a esta equipe.
                 </div>
               )}
 
@@ -429,6 +515,66 @@ export const EquipesView: React.FC<EquipesViewProps> = ({ authSession }) => {
                   )}
                 </div>
               </div>
+              {/* Seção de Cessões Ativas */}
+              {(() => {
+                const cessoesSaida = cessoes.filter(c => c.equipe_origem_id === selectedEquipe.id);
+                const cessoesEntrada = cessoes.filter(c => c.equipe_destino_id === selectedEquipe.id);
+                
+                if (cessoesSaida.length === 0 && cessoesEntrada.length === 0) return null;
+
+                return (
+                  <div className="space-y-3 mt-6 pt-6 border-t border-slate-100">
+                    <h4 className="font-bold text-slate-800 text-sm flex items-center gap-1.5">
+                      <span className="material-symbols-outlined text-amber-500">sync_alt</span>
+                      Cessões Temporárias Ativas
+                    </h4>
+                    
+                    {cessoesSaida.length > 0 && (
+                      <div className="bg-red-50/50 p-3 rounded-lg border border-red-100 mb-2">
+                        <p className="text-xs font-bold text-red-800 mb-2">Cedidos para outras equipes (Saída):</p>
+                        <div className="space-y-2">
+                          {cessoesSaida.map(c => (
+                            <div key={c.id} className="flex items-center justify-between bg-white p-2 rounded border border-red-100 shadow-sm text-xs">
+                              <div className="flex items-center gap-2">
+                                <span className="material-symbols-outlined text-red-500 text-sm">logout</span>
+                                <div>
+                                  <strong className="text-slate-800 block">{c.funcionarios?.nome}</strong>
+                                  <span className="text-slate-500">→ Cedeu para: <strong className="text-red-700">{c.equipe_destino?.nome}</strong></span>
+                                </div>
+                              </div>
+                              <button 
+                                onClick={() => handleEncerrarCessao(c.id)}
+                                className="px-2 py-1 bg-red-100 text-red-700 rounded font-bold hover:bg-red-200 transition-colors"
+                              >
+                                Encerrar
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {cessoesEntrada.length > 0 && (
+                      <div className="bg-emerald-50/50 p-3 rounded-lg border border-emerald-100">
+                        <p className="text-xs font-bold text-emerald-800 mb-2">Recebidos de outras equipes (Entrada):</p>
+                        <div className="space-y-2">
+                          {cessoesEntrada.map(c => (
+                            <div key={c.id} className="flex items-center justify-between bg-white p-2 rounded border border-emerald-100 shadow-sm text-xs">
+                              <div className="flex items-center gap-2">
+                                <span className="material-symbols-outlined text-emerald-500 text-sm">login</span>
+                                <div>
+                                  <strong className="text-slate-800 block">{c.funcionarios?.nome}</strong>
+                                  <span className="text-slate-500">← Vindo de: <strong className="text-emerald-700">{c.equipe_origem?.nome}</strong></span>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-slate-400 min-h-[400px]">
@@ -516,17 +662,6 @@ export const EquipesView: React.FC<EquipesViewProps> = ({ authSession }) => {
                     <option value="INATIVA">Inativa</option>
                   </select>
                 </div>
-              </div>
-
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">Descrição / Frente de Trabalho</label>
-                <textarea
-                  rows={2}
-                  placeholder="Descreva a atribuição principal ou escopo da equipe..."
-                  value={formData.descricao}
-                  onChange={(e) => setFormData({ ...formData, descricao: e.target.value })}
-                  className="w-full p-2 border border-slate-200 rounded-lg focus:border-[#005daa] outline-none resize-none"
-                />
               </div>
 
               {/* Members Multi-select Section */}
@@ -621,6 +756,19 @@ export const EquipesView: React.FC<EquipesViewProps> = ({ authSession }) => {
             </form>
           </div>
         </div>
+      )}
+
+      {selectedEquipe && (
+        <CessoesPessoalModal
+          isOpen={isCessoesModalOpen}
+          onClose={() => setIsCessoesModalOpen(false)}
+          equipeOrigem={selectedEquipe}
+          authSession={authSession}
+          onSuccess={() => {
+            showNotification('success', 'Cessão de funcionário registrada com sucesso.');
+            fetchData();
+          }}
+        />
       )}
     </div>
   );

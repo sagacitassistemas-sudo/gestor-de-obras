@@ -106,6 +106,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
           {/* DASHBOARD & ALERTAS */}
           <div className="space-y-1">
             <button
+              onClick={() => handleNavClick('home')}
+              className={`w-full text-left ${navItemClass('home')}`}
+            >
+              <span
+                className="material-symbols-outlined"
+                style={{ fontVariationSettings: activeTab === 'home' ? "'FILL' 1" : "'FILL' 0" }}
+              >
+                home
+              </span>
+              {!isCollapsed && <span className="font-label-bold text-label-bold">Início</span>}
+            </button>
+            <button
               onClick={() => handleNavClick('dashboard')}
               className={`w-full text-left ${navItemClass('dashboard')}`}
             >

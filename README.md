@@ -49,6 +49,12 @@ Sistema moderno de Gestão de Obras, Infraestrutura, Fornecedores e Contratos (S
     npx tsx test-server-auth.ts
     ```
 
+## 🧠 Governança e Inteligência Artificial
+
+Toda a documentação técnica avançada, tutoriais de implementação passados, "post-mortems" de resolução de erros, especificações e a rotina contínua de acompanhamento de engenharia da IA do projeto estão concentrados no diretório `.ai/`. 
+
+Consulte o arquivo principal de rastreamento: [`.ai/history/README.md`](file:///.ai/history/README.md) para ler o _Ledger_ do que foi implementado recentemente. As regras de arquitetura (Specs) estão alocadas em `.ai/specs/`.
+
 ---
 *Desenvolvido com carinho e precisão técnica.*
 
