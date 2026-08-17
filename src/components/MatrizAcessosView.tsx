@@ -10,10 +10,16 @@ interface MatrizAcessosViewProps {
 const MODULOS = [
   { id: 'empresas', label: 'Empresas / Fornecedores' },
   { id: 'projetos', label: 'Projetos e EAP' },
-  { id: 'medicoes', label: 'Medições e Contratos' },
+  { id: 'cronogramas', label: 'Cronogramas' },
+  { id: 'rdo', label: 'RDO - Diário de Obra' },
+  { id: 'os', label: 'Ordens de Serviço' },
+  { id: 'contratos', label: 'Contratos de Obra' },
+  { id: 'medicoes', label: 'Medições e Financeiro' },
+  { id: 'entidades', label: 'Entidades e Recursos' },
   { id: 'financeiro', label: 'Financeiro e Lançamentos' },
   { id: 'relatorios', label: 'Relatórios' },
-  { id: 'usuarios', label: 'Usuários e Acessos' }
+  { id: 'usuarios', label: 'Usuários e Acessos' },
+  { id: 'configuracoes', label: 'Configurações e Logs' }
 ];
 
 export const MatrizAcessosView: React.FC<MatrizAcessosViewProps> = ({ authSession }) => {
@@ -127,6 +133,12 @@ export const MatrizAcessosView: React.FC<MatrizAcessosViewProps> = ({ authSessio
             financeiro_criar: true, financeiro_ler: true, financeiro_editar: true, financeiro_excluir: true,
             relatorios_ler: true,
             usuarios_criar: true, usuarios_ler: true, usuarios_editar: true, usuarios_excluir: true,
+            cronogramas_criar: true, cronogramas_ler: true, cronogramas_editar: true, cronogramas_excluir: true,
+            rdo_criar: true, rdo_ler: true, rdo_editar: true, rdo_excluir: true,
+            os_criar: true, os_ler: true, os_editar: true, os_excluir: true,
+            contratos_criar: true, contratos_ler: true, contratos_editar: true, contratos_excluir: true,
+            entidades_criar: true, entidades_ler: true, entidades_editar: true, entidades_excluir: true,
+            configuracoes_criar: true, configuracoes_ler: true, configuracoes_editar: true, configuracoes_excluir: true,
           });
         }
       } else {
@@ -139,6 +151,12 @@ export const MatrizAcessosView: React.FC<MatrizAcessosViewProps> = ({ authSessio
           financeiro_criar: true, financeiro_ler: true, financeiro_editar: true, financeiro_excluir: true,
           relatorios_ler: true,
           usuarios_criar: true, usuarios_ler: true, usuarios_editar: true, usuarios_excluir: true,
+            cronogramas_criar: true, cronogramas_ler: true, cronogramas_editar: true, cronogramas_excluir: true,
+            rdo_criar: true, rdo_ler: true, rdo_editar: true, rdo_excluir: true,
+            os_criar: true, os_ler: true, os_editar: true, os_excluir: true,
+            contratos_criar: true, contratos_ler: true, contratos_editar: true, contratos_excluir: true,
+            entidades_criar: true, entidades_ler: true, entidades_editar: true, entidades_excluir: true,
+            configuracoes_criar: true, configuracoes_ler: true, configuracoes_editar: true, configuracoes_excluir: true,
         });
       }
     } catch (err) {
@@ -195,7 +213,31 @@ export const MatrizAcessosView: React.FC<MatrizAcessosViewProps> = ({ authSessio
             usuarios_criar: selectedTipo === 'ADMIN',
             usuarios_ler: selectedTipo === 'ADMIN' || selectedTipo === 'GESTOR',
             usuarios_editar: selectedTipo === 'ADMIN',
-            usuarios_excluir: selectedTipo === 'ADMIN'
+            usuarios_excluir: selectedTipo === 'ADMIN',
+            cronogramas_criar: selectedTipo === 'ADMIN' || selectedTipo === 'GESTOR',
+            cronogramas_ler: true,
+            cronogramas_editar: selectedTipo === 'ADMIN' || selectedTipo === 'GESTOR',
+            cronogramas_excluir: selectedTipo === 'ADMIN' || selectedTipo === 'GESTOR',
+            rdo_criar: selectedTipo === 'ADMIN' || selectedTipo === 'GESTOR',
+            rdo_ler: true,
+            rdo_editar: selectedTipo === 'ADMIN' || selectedTipo === 'GESTOR',
+            rdo_excluir: selectedTipo === 'ADMIN' || selectedTipo === 'GESTOR',
+            os_criar: selectedTipo === 'ADMIN' || selectedTipo === 'GESTOR',
+            os_ler: true,
+            os_editar: selectedTipo === 'ADMIN' || selectedTipo === 'GESTOR',
+            os_excluir: selectedTipo === 'ADMIN' || selectedTipo === 'GESTOR',
+            contratos_criar: selectedTipo === 'ADMIN' || selectedTipo === 'GESTOR',
+            contratos_ler: true,
+            contratos_editar: selectedTipo === 'ADMIN' || selectedTipo === 'GESTOR',
+            contratos_excluir: selectedTipo === 'ADMIN' || selectedTipo === 'GESTOR',
+            entidades_criar: selectedTipo === 'ADMIN' || selectedTipo === 'GESTOR',
+            entidades_ler: true,
+            entidades_editar: selectedTipo === 'ADMIN' || selectedTipo === 'GESTOR',
+            entidades_excluir: selectedTipo === 'ADMIN' || selectedTipo === 'GESTOR',
+            configuracoes_criar: selectedTipo === 'ADMIN',
+            configuracoes_ler: selectedTipo === 'ADMIN' || selectedTipo === 'GESTOR',
+            configuracoes_editar: selectedTipo === 'ADMIN',
+            configuracoes_excluir: selectedTipo === 'ADMIN'
           });
         }
       } else {
@@ -209,6 +251,12 @@ export const MatrizAcessosView: React.FC<MatrizAcessosViewProps> = ({ authSessio
           financeiro_criar: false, financeiro_ler: true, financeiro_editar: false, financeiro_excluir: false,
           relatorios_ler: true,
           usuarios_criar: false, usuarios_ler: false, usuarios_editar: false, usuarios_excluir: false,
+            cronogramas_criar: false, cronogramas_ler: true, cronogramas_editar: false, cronogramas_excluir: false,
+            rdo_criar: false, rdo_ler: true, rdo_editar: false, rdo_excluir: false,
+            os_criar: false, os_ler: true, os_editar: false, os_excluir: false,
+            contratos_criar: false, contratos_ler: true, contratos_editar: false, contratos_excluir: false,
+            entidades_criar: false, entidades_ler: true, entidades_editar: false, entidades_excluir: false,
+            configuracoes_criar: false, configuracoes_ler: false, configuracoes_editar: false, configuracoes_excluir: false,
         });
       }
     } catch (err) {
@@ -251,6 +299,12 @@ export const MatrizAcessosView: React.FC<MatrizAcessosViewProps> = ({ authSessio
             financeiro_criar: false, financeiro_ler: true, financeiro_editar: false, financeiro_excluir: false,
             relatorios_ler: true,
             usuarios_criar: false, usuarios_ler: false, usuarios_editar: false, usuarios_excluir: false,
+            cronogramas_criar: false, cronogramas_ler: true, cronogramas_editar: false, cronogramas_excluir: false,
+            rdo_criar: false, rdo_ler: true, rdo_editar: false, rdo_excluir: false,
+            os_criar: false, os_ler: true, os_editar: false, os_excluir: false,
+            contratos_criar: false, contratos_ler: true, contratos_editar: false, contratos_excluir: false,
+            entidades_criar: false, entidades_ler: true, entidades_editar: false, entidades_excluir: false,
+            configuracoes_criar: false, configuracoes_ler: false, configuracoes_editar: false, configuracoes_excluir: false,
           });
         }
       } else {
@@ -263,6 +317,12 @@ export const MatrizAcessosView: React.FC<MatrizAcessosViewProps> = ({ authSessio
           financeiro_criar: false, financeiro_ler: true, financeiro_editar: false, financeiro_excluir: false,
           relatorios_ler: true,
           usuarios_criar: false, usuarios_ler: false, usuarios_editar: false, usuarios_excluir: false,
+            cronogramas_criar: false, cronogramas_ler: true, cronogramas_editar: false, cronogramas_excluir: false,
+            rdo_criar: false, rdo_ler: true, rdo_editar: false, rdo_excluir: false,
+            os_criar: false, os_ler: true, os_editar: false, os_excluir: false,
+            contratos_criar: false, contratos_ler: true, contratos_editar: false, contratos_excluir: false,
+            entidades_criar: false, entidades_ler: true, entidades_editar: false, entidades_excluir: false,
+            configuracoes_criar: false, configuracoes_ler: false, configuracoes_editar: false, configuracoes_excluir: false,
         });
       }
     } catch (err) {
@@ -307,6 +367,12 @@ export const MatrizAcessosView: React.FC<MatrizAcessosViewProps> = ({ authSessio
             financeiro_criar: false, financeiro_ler: true, financeiro_editar: false, financeiro_excluir: false,
             relatorios_ler: true,
             usuarios_criar: false, usuarios_ler: false, usuarios_editar: false, usuarios_excluir: false,
+            cronogramas_criar: false, cronogramas_ler: true, cronogramas_editar: false, cronogramas_excluir: false,
+            rdo_criar: false, rdo_ler: true, rdo_editar: false, rdo_excluir: false,
+            os_criar: false, os_ler: true, os_editar: false, os_excluir: false,
+            contratos_criar: false, contratos_ler: true, contratos_editar: false, contratos_excluir: false,
+            entidades_criar: false, entidades_ler: true, entidades_editar: false, entidades_excluir: false,
+            configuracoes_criar: false, configuracoes_ler: false, configuracoes_editar: false, configuracoes_excluir: false,
           });
         }
       } else {
@@ -321,6 +387,12 @@ export const MatrizAcessosView: React.FC<MatrizAcessosViewProps> = ({ authSessio
           financeiro_criar: false, financeiro_ler: true, financeiro_editar: false, financeiro_excluir: false,
           relatorios_ler: true,
           usuarios_criar: false, usuarios_ler: false, usuarios_editar: false, usuarios_excluir: false,
+            cronogramas_criar: false, cronogramas_ler: true, cronogramas_editar: false, cronogramas_excluir: false,
+            rdo_criar: false, rdo_ler: true, rdo_editar: false, rdo_excluir: false,
+            os_criar: false, os_ler: true, os_editar: false, os_excluir: false,
+            contratos_criar: false, contratos_ler: true, contratos_editar: false, contratos_excluir: false,
+            entidades_criar: false, entidades_ler: true, entidades_editar: false, entidades_excluir: false,
+            configuracoes_criar: false, configuracoes_ler: false, configuracoes_editar: false, configuracoes_excluir: false,
         });
       }
     } catch (err) {

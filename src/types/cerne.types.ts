@@ -20,6 +20,30 @@ export interface PermissoesBase {
   usuarios_ler: boolean;
   usuarios_editar: boolean;
   usuarios_excluir: boolean;
+  cronogramas_criar: boolean;
+  cronogramas_ler: boolean;
+  cronogramas_editar: boolean;
+  cronogramas_excluir: boolean;
+  rdo_criar: boolean;
+  rdo_ler: boolean;
+  rdo_editar: boolean;
+  rdo_excluir: boolean;
+  os_criar: boolean;
+  os_ler: boolean;
+  os_editar: boolean;
+  os_excluir: boolean;
+  contratos_criar: boolean;
+  contratos_ler: boolean;
+  contratos_editar: boolean;
+  contratos_excluir: boolean;
+  entidades_criar: boolean;
+  entidades_ler: boolean;
+  entidades_editar: boolean;
+  entidades_excluir: boolean;
+  configuracoes_criar: boolean;
+  configuracoes_ler: boolean;
+  configuracoes_editar: boolean;
+  configuracoes_excluir: boolean;
 }
 
 export interface PermissoesContratante extends PermissoesBase {

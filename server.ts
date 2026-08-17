@@ -2024,23 +2024,38 @@ function startServer() {
         </div>
       `;
 
-        const emailResult = await sendEmail({
+        // Envia o e-mail em background (Fire and forget) para não travar a UI por 30s (Delay de DNS local do Mailpit)
+        sendEmail({
           from: senderHeader,
           to: email,
           subject: `Convite de ${senderName} - Gestor de Obras`,
           html: htmlContent,
+        }).then(async (emailResult) => {
+          const messageDetails = emailResult.success
+            ? `MessageID: ${emailResult.messageId || "OK"}`
+            : `Falha: ${JSON.stringify(emailResult.error)}`;
+
+          await logAudit(client, {
+            contrato_id: tenantId,
+            usuario_uid: req.decodedToken?.uid,
+            usuario_email: req.decodedToken?.email,
+            cod_evento: "COMPLIANCE_EMAIL_INVITE",
+            descricao: `[COMPLIANCE] Status envio convite para ${email}: ${messageDetails}. Token: ${token}`,
+            entidade_tipo: "convite",
+            entidade_id: token,
+            ip_origem: req.ip || req.socket.remoteAddress,
+          });
+        }).catch(err => {
+          console.error("Erro assíncrono ao enviar convite", err);
         });
 
-        const messageDetails = emailResult.success
-          ? `MessageID: ${emailResult.messageId || "OK"}`
-          : `Falha: ${JSON.stringify(emailResult.error)}`;
-
+        // Log inicial
         await logAudit(client, {
           contrato_id: tenantId,
           usuario_uid: req.decodedToken?.uid,
           usuario_email: req.decodedToken?.email,
           cod_evento: "COMPLIANCE_EMAIL_INVITE",
-          descricao: `[COMPLIANCE] Convite de acesso enviado por ${senderName} <${senderEmail || "N/A"}> para ${email} (Pré-cadastrado como VISITANTE/PENDENTE). Remetente: ${senderHeader || "Default"}. ${messageDetails}. Token: ${token}`,
+          descricao: `[COMPLIANCE] Convite de acesso gerado por ${senderName} <${senderEmail || "N/A"}> para ${email} (Pré-cadastrado como VISITANTE/PENDENTE). Token: ${token}`,
           entidade_tipo: "convite",
           entidade_id: token,
           ip_origem: req.ip || req.socket.remoteAddress,
@@ -2048,9 +2063,12 @@ function startServer() {
 
         return res.json({
           success: true,
-          message: "Convite gerado e e-mail disparado com sucesso.",
+          message: `Convite gerado com sucesso para ${email}.`,
           token,
           inviteUrl,
+          emailSent: true,
+          isRealSmtp: Boolean(process.env.SMTP_HOST),
+          emailError: null
         });
       } catch (err) {
         console.error("Erro POST /api/convites:", err);

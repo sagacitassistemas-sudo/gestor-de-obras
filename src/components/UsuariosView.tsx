@@ -94,6 +94,14 @@ export const UsuariosView: React.FC<UsuariosViewProps> = ({ authSession }) => {
   const [editingUser, setEditingUser] = useState<UserRecord | null>(null);
   const [viewingUser, setViewingUser] = useState<UserRecord | null>(null);
   const [deletingUser, setDeletingUser] = useState<UserRecord | null>(null);
+  const [createdInviteResult, setCreatedInviteResult] = useState<{
+    email: string;
+    inviteUrl: string;
+    emailSent: boolean;
+    isRealSmtp: boolean;
+    emailError?: string;
+  } | null>(null);
+  const [copiedLink, setCopiedLink] = useState(false);
 
   // Notification Banner State
   const [notification, setNotification] = useState<{
@@ -281,8 +289,15 @@ export const UsuariosView: React.FC<UsuariosViewProps> = ({ authSession }) => {
 
       const data = await res.json();
       if (res.ok) {
-        showNotification('success', `Convite enviado com sucesso para ${cleanEmail}`);
+        setCreatedInviteResult({
+          email: cleanEmail,
+          inviteUrl: data.inviteUrl,
+          emailSent: data.emailSent,
+          isRealSmtp: data.isRealSmtp,
+          emailError: data.emailError
+        });
         setIsInviteModalOpen(false);
+        fetchUsers();
       } else {
         showNotification('error', data.error || 'Erro ao enviar convite.');
       }
@@ -1160,6 +1175,97 @@ export const UsuariosView: React.FC<UsuariosViewProps> = ({ authSession }) => {
               >
                 <span className="material-symbols-outlined text-[18px]">send</span>
                 Enviar Convite
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 6: Display Generated Invite Link & Copy Button */}
+      {createdInviteResult && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg p-6 border border-[#c0c7d6] space-y-4">
+            <div className="flex justify-between items-center pb-3 border-b border-[#e2e8f0]">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-[#005daa] text-2xl">mark_email_read</span>
+                <h3 className="text-[#191c1e] text-lg font-bold">Convite Criado com Sucesso!</h3>
+              </div>
+              <button 
+                onClick={() => { setCreatedInviteResult(null); setCopiedLink(false); }} 
+                className="text-[#707785] hover:text-[#191c1e] cursor-pointer"
+              >
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <p className="text-slate-600">
+                O convite de acesso para <strong className="text-slate-800 font-mono">{createdInviteResult.email}</strong> foi gerado e registrado no sistema.
+              </p>
+
+              {/* Status do envio por e-mail */}
+              {createdInviteResult.emailSent && createdInviteResult.isRealSmtp ? (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-md text-emerald-800 flex items-start gap-2">
+                  <span className="material-symbols-outlined text-base mt-0.5">check_circle</span>
+                  <div>
+                    <strong>E-mail disparado via SMTP!</strong>
+                    <p className="text-[11px] mt-0.5">O e-mail foi entregue ao servidor SMTP. O convidado receberá o link em sua caixa de entrada.</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-md text-amber-900 flex items-start gap-2">
+                  <span className="material-symbols-outlined text-base mt-0.5 text-amber-600">info</span>
+                  <div>
+                    <strong className="block">Envio automático via SMTP inativo ou local</strong>
+                    <p className="text-[11px] mt-0.5 text-amber-800">
+                      Nenhuma chave SMTP real foi configurada no arquivo <code className="bg-amber-100 px-1 py-0.5 rounded">.env</code>.
+                      Você pode <strong>copiar o link de convite abaixo</strong> e enviá-lo diretamente ao usuário (por WhatsApp, E-mail ou Chat).
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Input e botão de copiar link */}
+              <div>
+                <label className="block font-bold text-slate-700 mb-1 uppercase text-[10px] tracking-wider">
+                  Link de Acesso Direto (Convite)
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    readOnly
+                    value={createdInviteResult.inviteUrl}
+                    className="flex-1 p-2 bg-slate-100 border border-slate-300 rounded-md font-mono text-[11px] text-slate-800 select-all outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(createdInviteResult.inviteUrl);
+                      setCopiedLink(true);
+                      setTimeout(() => setCopiedLink(false), 3000);
+                    }}
+                    className={`px-4 py-2 font-bold rounded-md transition-all flex items-center gap-1.5 cursor-pointer text-xs shadow-xs ${
+                      copiedLink
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-[#005daa] text-white hover:bg-[#0075d5]'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-sm">
+                      {copiedLink ? 'done' : 'content_copy'}
+                    </span>
+                    <span>{copiedLink ? 'Copiado!' : 'Copiar Link'}</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-3 border-t border-[#e2e8f0] flex justify-end">
+              <button
+                type="button"
+                onClick={() => { setCreatedInviteResult(null); setCopiedLink(false); }}
+                className="px-5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-md cursor-pointer text-xs"
+              >
+                Concluído / Fechar
               </button>
             </div>
           </div>

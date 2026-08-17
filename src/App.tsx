@@ -54,6 +54,10 @@ import { SettingsModal } from './components/SettingsModal';
 import { NotificationsDrawer } from './components/NotificationsDrawer';
 import { ExportReportModal } from './components/ExportReportModal';
 
+import { auth } from './lib/firebase';
+import { onAuthStateChanged } from 'firebase/auth';
+import { supabase } from './lib/supabaseClient';
+
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [activeTab, setActiveTab] = useState<NavigationTab>('login');
@@ -83,6 +87,69 @@ export default function App() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [pendingValidationCount, setPendingValidationCount] = useState(0);
+
+  // Restore session and handle F5 reload
+  React.useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        try {
+          const idToken = await firebaseUser.getIdToken();
+          
+          const session: AuthSession = {
+            uid: firebaseUser.uid,
+            email: firebaseUser.email || '',
+            displayName: firebaseUser.displayName || '',
+            idToken: idToken,
+            photoURL: firebaseUser.photoURL || undefined
+          };
+
+          // Re-establish Supabase session in the client
+          supabase.auth.setSession({
+            access_token: idToken,
+            refresh_token: idToken,
+          }).catch(console.warn);
+
+          setAuthSession(session);
+          setUser((prev) => ({
+            ...prev,
+            uid: session.uid,
+            email: session.email,
+            name: session.displayName || prev.name,
+            avatar: session.photoURL || prev.avatar,
+          }));
+          setIsAuthenticated(true);
+          
+          // Restore tab if it was saved
+          const savedTab = localStorage.getItem('gestor_obras_active_tab') as NavigationTab;
+          if (savedTab && savedTab !== 'login') {
+             setActiveTab(savedTab);
+          } else {
+             setActiveTab('dashboard');
+          }
+        } catch (error) {
+           console.error("Erro ao restaurar sessão:", error);
+           auth.signOut();
+           setIsAuthenticated(false);
+           setActiveTab('login');
+        }
+      } else {
+        // Logged out
+        setIsAuthenticated(false);
+        setAuthSession(null);
+        setActiveTab('login');
+        localStorage.removeItem('gestor_obras_active_tab');
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // Save activeTab to localStorage
+  React.useEffect(() => {
+    if (isAuthenticated && activeTab !== 'login') {
+      localStorage.setItem('gestor_obras_active_tab', activeTab);
+    }
+  }, [activeTab, isAuthenticated]);
 
   // Load alert list whenever user.uid or activeTab changes
   React.useEffect(() => {
@@ -176,16 +243,24 @@ export default function App() {
     switch (tab) {
       case 'empresas': return !!effectivePermissions.empresas_ler;
       case 'projetos_eap': return !!effectivePermissions.projetos_ler;
-      case 'cronograma_executivo': return !!effectivePermissions.projetos_ler;
-      case 'cronograma_financeiro': return !!effectivePermissions.projetos_ler;
-      case 'rdo': return !!effectivePermissions.medicoes_ler || !!effectivePermissions.projetos_ler;
-      case 'contratos_obra': return !!effectivePermissions.medicoes_ler;
+      case 'cronograma_executivo': return !!effectivePermissions.cronogramas_ler;
+      case 'cronograma_financeiro': return !!effectivePermissions.cronogramas_ler;
+      case 'rdo': return !!effectivePermissions.rdo_ler;
+      case 'contratos_obra': return !!effectivePermissions.contratos_ler;
       case 'medicoes': return !!effectivePermissions.medicoes_ler;
       case 'usuarios': return !!effectivePermissions.usuarios_ler;
-      case 'matriz-acesso': return user.role === 'GESTOR' || user.role === 'ADMIN';
-      case 'audit-log': return user.role === 'ADMIN';
-      case 'parametros': return user.role === 'ADMIN';
+      case 'matriz-acesso': return !!effectivePermissions.configuracoes_ler;
+      case 'audit-log': return !!effectivePermissions.configuracoes_ler;
+      case 'parametros': return !!effectivePermissions.configuracoes_ler;
       case 'financeiro': return !!effectivePermissions.financeiro_ler;
+      case 'entidades':
+      case 'funcionarios':
+      case 'equipes':
+      case 'maquinas':
+      case 'ferramentas':
+      case 'materiais': return !!effectivePermissions.entidades_ler;
+      case 'fornecedores': return !!effectivePermissions.empresas_ler;
+      case 'ordens_servico': return !!effectivePermissions.os_ler;
       default: return true;
     }
   };
