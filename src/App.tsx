@@ -414,7 +414,7 @@ export default function App() {
           {activeTab === 'home' && (
             <div className="flex flex-col items-center justify-center w-full min-h-[70vh]">
               <img 
-                src="/home-logo.png" 
+                src="/logo-entrada.png" 
                 alt="Works Manager Logo" 
                 className="w-full h-auto object-contain max-w-5xl"
               />

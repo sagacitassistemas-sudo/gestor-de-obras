@@ -125,6 +125,8 @@ export const EquipesView: React.FC<EquipesViewProps> = ({ authSession }) => {
     if (!selectedEquipe) return;
     setIsCessoesModalOpen(true);
   };
+
+  const handleOpenModal = (equipe?: EquipeItem) => {
     if (equipe) {
       setEditingEquipe(equipe);
       setFormData({
