@@ -123,6 +123,7 @@ export const ImportProjectXmlModal: React.FC<ImportProjectXmlModalProps> = ({
           duracao_dias: item.duracao_dias,
           data_fim: item.data_fim,
           e_analitico: item.e_analitico,
+          unidade_medida: item.e_analitico ? 'ud' : null,
           predecessores: item.predecessores,
           percentual_executado_financeiro: item.percentual_executado_financeiro,
         };

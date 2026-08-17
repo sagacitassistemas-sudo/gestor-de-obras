@@ -3136,7 +3136,7 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
       const client = getSupabaseClient(req);
       if (!client) return res.status(401).json({ error: "Unauthorized" });
 
-      const { id, projeto_id, eap_codigo, eap_pai_codigo, descricao_servico, unidade_medida, preco_unitario, quantidade_contratada, valor_desembolsado, e_analitico, ordem, data_execucao, duracao_dias, predecessores, data_inicio, data_fim } = req.body;
+      const { id, projeto_id, eap_codigo, eap_pai_codigo, descricao_servico, unidade_medida, preco_unitario, quantidade_contratada, valor_desembolsado, e_analitico, ordem, data_execucao, duracao_dias, predecessores, data_inicio, data_fim, percentual_executado_financeiro } = req.body;
       if (!projeto_id || !eap_codigo || !descricao_servico) {
         return res.status(400).json({ error: "Campos projeto_id, eap_codigo e descricao_servico são obrigatórios." });
       }
@@ -3160,6 +3160,7 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
       const qtdNum = isNaN(Number(quantidade_contratada)) ? 0 : Number(quantidade_contratada || 0);
       const desembolsadoNum = isNaN(Number(valor_desembolsado)) ? 0 : Number(valor_desembolsado || 0);
       const valTotal = isAnalytic ? Math.round((precoNum * qtdNum) * 100) / 100 : 0;
+      const pctExecNum = isNaN(Number(percentual_executado_financeiro)) ? 0 : Number(percentual_executado_financeiro || 0);
 
       const upsertData: any = {
         projeto_id,
@@ -3177,6 +3178,7 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
         duracao_dias: isNaN(Number(duracao_dias)) ? 1 : Number(duracao_dias || 1),
         data_inicio: data_inicio && String(data_inicio).trim() !== '' ? String(data_inicio).trim() : null,
         data_fim: data_fim && String(data_fim).trim() !== '' ? String(data_fim).trim() : null,
+        percentual_executado_financeiro: pctExecNum,
       };
 
       if (predecessores !== undefined) {
