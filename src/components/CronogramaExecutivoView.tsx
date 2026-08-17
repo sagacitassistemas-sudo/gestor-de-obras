@@ -3,7 +3,6 @@ import { supabase } from '../lib/supabaseClient';
 import { AuthSession } from '../types';
 import { Gantt, ITask, ILink, IApi } from '@svar-ui/react-gantt';
 import { CadastroEtapaModal, type EapItemOption } from './CadastroEtapaModal';
-import { ImportProjectXmlModal } from './ImportProjectXmlModal';
 import {
   EapEngineItem,
   processUserInteraction,
@@ -43,6 +42,13 @@ interface ItemEap {
   data_inicio?: string | null;
   data_fim?: string | null;
   percentual_executado_financeiro?: number;
+  unidade_medida?: string;
+  valor_total_contratado?: number;
+  valor_desembolsado?: number;
+  quantidade_contratada?: number;
+  preco_unitario?: number;
+  data_inicio_financeiro?: string;
+  data_fim_financeiro?: string;
 }
 
 interface CronogramaExecutivoViewProps {
@@ -113,7 +119,6 @@ export const CronogramaExecutivoView: React.FC<CronogramaExecutivoViewProps> = (
   const [rawItems, setRawItems] = useState<ItemEap[]>([]);
   const [loading, setLoading] = useState(false);
   const [isCadastroEtapaOpen, setIsCadastroEtapaOpen] = useState(false);
-  const [isXmlImportModalOpen, setIsXmlImportModalOpen] = useState(false);
   const [hasPendingChanges, setHasPendingChanges] = useState(false);
   const [saving, setSaving] = useState(false);
   const [itemToEdit, setItemToEdit] = useState<EapItemOption | null>(null);
@@ -182,16 +187,27 @@ export const CronogramaExecutivoView: React.FC<CronogramaExecutivoViewProps> = (
     pendingItemsRef.current = new Map();
     setHasPendingChanges(false);
     try {
-      const { data } = await supabase
-        .from('v_resumo_eap_medicao')
-        .select('*')
-        .eq('projeto_id', projetoId)
-        .order('eap_codigo');
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token || authSession?.idToken;
+
+      const res = await fetch(`/api/itens-eap?projeto_id=${projetoId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (!res.ok) {
+        throw new Error('Falha ao carregar itens da EAP.');
+      }
+
+      const json = await res.json();
+      // Usar preferencialmente rawItems, que possui todos os campos nativos do banco de dados (data_inicio, data_fim, etc)
+      const data = json.rawItems && json.rawItems.length > 0 ? json.rawItems : json.items;
 
       if (data?.length) {
         const items: ItemEap[] = data.map((r: any) => ({
-          id: String(r.eap_codigo),
-          item_eap_id: r.item_eap_id,
+          id: r.id || String(r.eap_codigo), // Use real DB id if available
+          item_eap_id: r.id, // Ensure item_eap_id is set to the real row ID
           eap_codigo: String(r.eap_codigo),
           descricao_servico: String(r.descricao_servico || ''),
           data_execucao: r.data_execucao || null,
@@ -201,6 +217,13 @@ export const CronogramaExecutivoView: React.FC<CronogramaExecutivoViewProps> = (
           data_inicio: r.data_inicio || null,
           data_fim: r.data_fim || null,
           percentual_executado_financeiro: Number(r.percentual_executado_financeiro || 0),
+          unidade_medida: r.unidade_medida,
+          valor_total_contratado: r.valor_total_contratado,
+          valor_desembolsado: r.valor_desembolsado,
+          quantidade_contratada: r.quantidade_contratada,
+          preco_unitario: r.preco_unitario,
+          data_inicio_financeiro: r.data_inicio_financeiro,
+          data_fim_financeiro: r.data_fim_financeiro,
         }));
 
         const proj = projetos.find(p => p.id === projetoId);
@@ -236,6 +259,13 @@ export const CronogramaExecutivoView: React.FC<CronogramaExecutivoViewProps> = (
             e_analitico: e.e_analitico,
             predecessores: e.predecessores,
             percentual_executado_financeiro: e.percentual_executado_financeiro,
+            unidade_medida: original?.unidade_medida,
+            valor_total_contratado: original?.valor_total_contratado,
+            valor_desembolsado: original?.valor_desembolsado,
+            quantidade_contratada: original?.quantidade_contratada,
+            preco_unitario: original?.preco_unitario,
+            data_inicio_financeiro: original?.data_inicio_financeiro,
+            data_fim_financeiro: original?.data_fim_financeiro,
           };
 
           if (
@@ -543,6 +573,13 @@ export const CronogramaExecutivoView: React.FC<CronogramaExecutivoViewProps> = (
         data_execucao: item.data_execucao ?? item.data_inicio ?? undefined,
         data_inicio: item.data_inicio ?? undefined,
         data_fim: item.data_fim ?? undefined,
+        unidade_medida: item.unidade_medida,
+        valor_total_contratado: item.valor_total_contratado,
+        valor_desembolsado: item.valor_desembolsado,
+        quantidade_contratada: item.quantidade_contratada,
+        preco_unitario: item.preco_unitario,
+        data_inicio_financeiro: item.data_inicio_financeiro,
+        data_fim_financeiro: item.data_fim_financeiro,
       };
       setItemToEdit(editItem);
       setIsCadastroEtapaOpen(true);
@@ -781,25 +818,7 @@ export const CronogramaExecutivoView: React.FC<CronogramaExecutivoViewProps> = (
             ))}
           </div>
 
-          {selectedProjetoId && (
-            <>
-              <button
-                onClick={() => setIsXmlImportModalOpen(true)}
-                className="flex items-center gap-2 bg-[#f8fafc] text-[#191c1e] border border-[#c0c7d6] px-4 py-2 rounded-lg shadow-sm hover:bg-[#e1e2e8] transition-colors font-bold text-sm cursor-pointer"
-              >
-                <span className="material-symbols-outlined text-[18px]">upload</span>
-                Importar XML
-              </button>
-              
-              <button
-                onClick={() => { setItemToEdit(null); setIsCadastroEtapaOpen(true); }}
-                className="flex items-center gap-2 bg-[#005daa] text-white px-4 py-2 rounded-lg shadow-md shadow-[#005daa]/20 hover:bg-[#004a88] transition-colors font-bold text-sm cursor-pointer"
-              >
-                <span className="material-symbols-outlined text-[18px]">add_circle</span>
-                Nova Etapa
-              </button>
-            </>
-          )}
+
 
           <div className="relative group">
             <button className="flex items-center gap-2 bg-slate-800 text-white px-4 py-2 rounded-lg shadow-md hover:bg-slate-900 transition-colors font-bold text-sm cursor-pointer">
@@ -888,22 +907,9 @@ export const CronogramaExecutivoView: React.FC<CronogramaExecutivoViewProps> = (
             <span className="material-symbols-outlined text-[48px] text-slate-300">event_busy</span>
             <p className="text-slate-600 font-medium">Nenhuma etapa cadastrada neste projeto.</p>
             {selectedProjetoId && (
-              <div className="flex items-center gap-3 mt-2">
-                <button
-                  onClick={() => setIsXmlImportModalOpen(true)}
-                  className="flex items-center gap-2 bg-[#f8fafc] text-[#191c1e] border border-[#c0c7d6] px-5 py-2.5 rounded-lg shadow-sm hover:bg-[#e1e2e8] transition-colors font-bold text-sm cursor-pointer"
-                >
-                  <span className="material-symbols-outlined text-[18px]">upload</span>
-                  Importar Projeto MS Project (.xml)
-                </button>
-                <button
-                  onClick={() => { setItemToEdit(null); setIsCadastroEtapaOpen(true); }}
-                  className="flex items-center gap-2 bg-[#005daa] text-white px-5 py-2.5 rounded-lg shadow-md hover:bg-[#004a88] transition-colors font-bold text-sm cursor-pointer"
-                >
-                  <span className="material-symbols-outlined text-[18px]">add_circle</span>
-                  Cadastrar Primeira Etapa
-                </button>
-              </div>
+              <p className="text-sm text-slate-500 mt-4">
+                Para começar, acesse a aba <span className="font-bold">EAP do Projeto</span> para cadastrar ou importar etapas.
+              </p>
             )}
           </div>
         ) : (
@@ -939,31 +945,7 @@ export const CronogramaExecutivoView: React.FC<CronogramaExecutivoViewProps> = (
         )}
       </div>
 
-      {/* ── Modal de Importação XML ── */}
-      <ImportProjectXmlModal
-        isOpen={isXmlImportModalOpen}
-        onClose={() => setIsXmlImportModalOpen(false)}
-        authSession={authSession}
-        onSuccess={async (newProjetoId) => {
-          // Recarrega a lista de projetos e seleciona o novo projeto criado
-          try {
-            const { data: session } = await supabase.auth.getSession();
-            const token = session?.session?.access_token || authSession?.idToken;
-            const res = await fetch('/api/projetos', { headers: { Authorization: `Bearer ${token}` } });
-            if (res.ok) {
-              const json = await res.json();
-              const list = json.projetos || json;
-              if (Array.isArray(list)) {
-                setProjetos(list);
-              }
-            }
-          } catch (e) {
-            console.warn(e);
-          }
-          setSelectedProjetoId(newProjetoId);
-          await fetchEapItems(newProjetoId);
-        }}
-      />
+
 
       {/* ── Modal de cadastramento de etapa ── */}
       {selectedProjetoId && (

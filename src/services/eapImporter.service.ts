@@ -10,6 +10,11 @@ export interface ParsedEapItem {
   valor_desembolsado?: number;
   e_analitico: boolean;
   ordem: number;
+  data_inicio?: string;
+  data_fim?: string;
+  duracao_dias?: number;
+  predecessores?: string[];
+  percentual_executado_financeiro?: number;
   campos_adicionais?: Record<string, any>;
   action?: 'NEW' | 'UPDATE';
 }
@@ -638,7 +643,12 @@ export async function executeEapImport(
       valor_total_contratado: isNaN(Number(item.valor_total_contratado)) ? 0 : Number(item.valor_total_contratado || 0),
       valor_desembolsado: isNaN(Number(item.valor_desembolsado)) ? 0 : Number(item.valor_desembolsado || 0),
       e_analitico: isAnalytic,
-      ordem: isNaN(Number(item.ordem)) ? 0 : Number(item.ordem || 0)
+      ordem: isNaN(Number(item.ordem)) ? 0 : Number(item.ordem || 0),
+      data_inicio: item.data_inicio || null,
+      data_fim: item.data_fim || null,
+      duracao_dias: item.duracao_dias != null ? Number(item.duracao_dias) : null,
+      predecessores: Array.isArray(item.predecessores) ? item.predecessores : null,
+      percentual_executado_financeiro: item.percentual_executado_financeiro != null ? Number(item.percentual_executado_financeiro) : 0
     };
 
     // Use item.id if available or lookup from database map

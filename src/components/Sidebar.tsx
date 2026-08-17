@@ -250,6 +250,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   {!isCollapsed && <span className="font-label-bold text-label-bold">Cronograma</span>}
                 </button>
               )}
+              {hasAccess('projetos_ler') && (
+                <button
+                  onClick={() => handleNavClick('cronograma_financeiro')}
+                  className={`w-full text-left ${navItemClass('cronograma_financeiro')}`}
+                >
+                  <span className="material-symbols-outlined" style={{ fontVariationSettings: activeTab === 'cronograma_financeiro' ? "'FILL' 1" : "'FILL' 0" }}>payments</span>
+                  {!isCollapsed && <span className="font-label-bold text-label-bold">Físico-Financeiro</span>}
+                </button>
+              )}
               {(hasAccess('projetos_ler') || hasAccess('medicoes_ler')) && (
                 <button
                   onClick={() => handleNavClick('ordens_servico')}

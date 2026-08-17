@@ -379,6 +379,33 @@ export const ProjetosEapView: React.FC<ProjetosEapViewProps> = ({ authSession })
                 <span className="material-symbols-outlined text-[18px]">add</span>
                 Nova Etapa EAP
               </button>
+              {eapData.length > 0 && (
+                <button
+                  onClick={async () => {
+                    try {
+                      const { data: session } = await supabase.auth.getSession();
+                      const token = session?.session?.access_token || authSession?.idToken;
+                      const res = await fetch('/api/cronograma/financeiro/gerar', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                        body: JSON.stringify({ projeto_id: selectedProjetoId })
+                      });
+                      const json = await res.json();
+                      if (res.ok && json.success) {
+                        alert(`✅ ${json.message}\nNavegue até a aba "Físico-Financeiro" no menu lateral para visualizar a matriz.`);
+                      } else {
+                        alert(`❌ ${json.error || 'Erro ao gerar cronograma financeiro.'}`);
+                      }
+                    } catch (err: any) {
+                      alert(`❌ Erro: ${err.message}`);
+                    }
+                  }}
+                  className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-md font-label-bold hover:from-emerald-700 hover:to-teal-700 flex items-center gap-2 transition-all cursor-pointer shadow-md shadow-emerald-600/20"
+                >
+                  <span className="material-symbols-outlined text-[18px]">payments</span>
+                  Gerar Cronograma Financeiro
+                </button>
+              )}
             </>
           )}
         </div>
