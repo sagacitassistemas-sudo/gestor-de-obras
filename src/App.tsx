@@ -91,7 +91,7 @@ export default function App() {
       if (firebaseUser) {
         try {
           const idToken = await firebaseUser.getIdToken();
-          const idTokenResult = await firebaseUser.getIdTokenResult();
+          const idTokenResult = await firebaseUser.getIdTokenResult(true);
           const claims = idTokenResult.claims;
           
           const session: AuthSession = {
