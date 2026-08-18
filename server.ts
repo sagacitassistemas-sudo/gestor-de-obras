@@ -5,6 +5,7 @@ import { GoogleGenAI } from "@google/genai";
 import {
   initializeApp as initAdminApp,
   getApps as getAdminApps,
+  cert,
 } from "firebase-admin/app";
 import { getAuth as getAdminAuth } from "firebase-admin/auth";
 import { getFirestore as getAdminFirestore } from "firebase-admin/firestore";
@@ -362,7 +363,12 @@ if (!getAdminApps().length) {
       !!process.env.GOOGLE_APPLICATION_CREDENTIALS ||
       fs.existsSync(path.join(process.cwd(), "serviceAccountKey.json"));
     if (hasCreds) {
-      initAdminApp({ projectId: configData.projectId });
+      if (!process.env.GOOGLE_APPLICATION_CREDENTIALS && fs.existsSync(path.join(process.cwd(), "serviceAccountKey.json"))) {
+        const serviceAccount = JSON.parse(fs.readFileSync(path.join(process.cwd(), "serviceAccountKey.json"), "utf8"));
+        initAdminApp({ credential: cert(serviceAccount), projectId: configData.projectId });
+      } else {
+        initAdminApp({ projectId: configData.projectId });
+      }
       console.log("Firebase Admin initialized successfully.");
     } else {
       console.warn(
