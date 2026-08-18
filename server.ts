@@ -258,12 +258,13 @@ async function ensureUserExists(
   try {
     const adminAuth = getSafeAdminAuth();
     if (adminAuth) {
-      await adminAuth.setCustomUserClaims(token.uid, {
+      const baseClaims = {
         perfil,
         contrato_id,
-        empresa_id,
-        entidade_id: empresa_id,
-      });
+        empresa_id: empresa_id || undefined,
+        entidade_id: empresa_id || undefined,
+      };
+      await injectPermissionsIntoClaims(adminAuth, client, token.uid, baseClaims);
     }
   } catch (claimsErr) {
     // Ignore
@@ -1082,7 +1083,7 @@ function startServer() {
       }
 
       // Mandatory requirement: Set Custom Claims in Firebase Auth Token
-      const customClaims = {
+      const baseClaims = {
         contrato_id: tempClaims.contrato_id,
         empresa_id: tempClaims.empresa_id,
         entidade_id: tempClaims.entidade_id || tempClaims.empresa_id,
@@ -1091,12 +1092,9 @@ function startServer() {
         auth_provider: "firebase_mfa_container",
       };
 
+      let customClaims = baseClaims;
       if (adminAuth) {
-        try {
-          await adminAuth.setCustomUserClaims(uid, customClaims);
-        } catch (claimsErr) {
-          console.warn("Firebase setCustomUserClaims warning:", claimsErr);
-        }
+        customClaims = await injectPermissionsIntoClaims(adminAuth, getServiceRoleClient(), uid, baseClaims);
       }
 
       let customToken = "";
@@ -1447,12 +1445,14 @@ function startServer() {
             .json({ error: "Firebase Admin não disponível neste ambiente." });
         }
 
-        await adminAuth.setCustomUserClaims(targetUid, {
+        const baseClaims = {
           perfil: usuario.perfil,
           contrato_id: usuario.contrato_id,
           empresa_id: usuario.empresa_id,
           entidade_id: usuario.empresa_id,
-        });
+        };
+        
+        await injectPermissionsIntoClaims(adminAuth, supabase!, targetUid, baseClaims);
 
         // Clear claims_pendentes flag
         await supabase!
@@ -6149,6 +6149,59 @@ async function getComputedPermissions(
     });
   }
   return fallback;
+}
+
+/**
+ * Função Universal para Injetar Permissões no Firebase JWT.
+ * Acionada no MFA Verify, OAuth Login e Sync-Claims.
+ */
+async function injectPermissionsIntoClaims(
+  adminAuth: any,
+  client: SupabaseClient | null,
+  uid: string,
+  baseClaims: { perfil: string; contrato_id: string; empresa_id?: string; entidade_id?: string; mfa_verified?: boolean; auth_provider?: string }
+): Promise<any> {
+  const fullClaims = { ...baseClaims };
+  if (!client) {
+    // Falha silenciosa de banco, aplica claims básicos
+    await adminAuth.setCustomUserClaims(uid, fullClaims).catch(() => {});
+    return fullClaims;
+  }
+  
+  try {
+    // Otimização: ler v_permissoes_efetivas diretamente (replica logica do getComputedPermissions sem precisar de req)
+    const { data: effectiveData } = await client
+      .from("v_permissoes_efetivas")
+      .select("*")
+      .eq("usuario_uid", uid)
+      .maybeSingle();
+
+    if (effectiveData && effectiveData.empresas_ler !== undefined) {
+      Object.assign(fullClaims, effectiveData);
+    } else {
+      // Fallback para permissoes_tipo
+      const { data: typeData } = await client
+        .from("permissoes_tipo")
+        .select("*")
+        .eq("perfil", baseClaims.perfil)
+        .eq("contrato_id", baseClaims.contrato_id)
+        .maybeSingle();
+        
+      if (typeData && typeData.empresas_ler !== undefined) {
+        Object.assign(fullClaims, typeData);
+      }
+    }
+  } catch (err) {
+    console.error("Erro ao puxar permissões detalhadas para o Firebase Token:", err);
+  }
+  
+  try {
+    await adminAuth.setCustomUserClaims(uid, fullClaims);
+  } catch (claimsErr) {
+    console.warn("Firebase setCustomUserClaims falhou:", claimsErr);
+  }
+  
+  return fullClaims;
 }
 
 // Helper for inline permission checks in endpoints
