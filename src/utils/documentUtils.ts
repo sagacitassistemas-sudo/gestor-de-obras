@@ -36,11 +36,17 @@ export const isValidCNPJ = (cnpj: string): boolean => {
 
   if (/0{14}/.test(c)) return false;
 
-  for (let i = 0, n = 0; i < 12; n += parseInt(c[i]) * b[++i]);
+  let n = 0;
+  for (let i = 0; i < 12; i++) {
+    n += parseInt(c[i]) * b[i + 1];
+  }
   // @ts-ignore
   if (c[12] != (((n %= 11) < 2) ? 0 : 11 - n)) return false;
 
-  for (let i = 0, n = 0; i <= 12; n += parseInt(c[i]) * b[i++]);
+  n = 0;
+  for (let i = 0; i <= 12; i++) {
+    n += parseInt(c[i]) * b[i];
+  }
   // @ts-ignore
   if (c[13] != (((n %= 11) < 2) ? 0 : 11 - n)) return false;
 

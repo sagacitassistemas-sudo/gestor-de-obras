@@ -120,12 +120,18 @@ export const Header: React.FC<HeaderProps> = ({
                 {user.role}
               </p>
             </div>
-            <div className="h-9 w-9 rounded-full bg-[#d4e3ff] p-0.5 border border-[#005daa]/20 overflow-hidden shadow-2xs flex-shrink-0">
-              <img
-                src={user.avatarUrl}
-                alt={user.name}
-                className="w-full h-full object-cover rounded-full"
-              />
+            <div className="h-9 w-9 rounded-full bg-[#d4e3ff] p-0.5 border border-[#005daa]/20 overflow-hidden shadow-2xs flex-shrink-0 flex items-center justify-center">
+              {user.avatarUrl ? (
+                <img
+                  src={user.avatarUrl}
+                  alt={user.name}
+                  className="w-full h-full object-cover rounded-full"
+                />
+              ) : (
+                <span className="font-bold text-[#005daa] text-sm uppercase">
+                  {user.name ? user.name.charAt(0) : '?'}
+                </span>
+              )}
             </div>
           </div>
         </div>

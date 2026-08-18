@@ -1009,7 +1009,7 @@ export const EmpresasView: React.FC<EmpresasViewProps> = ({ authSession, empresa
                       </div>
                     </td>
 
-                    <td className="p-3 font-mono font-bold text-slate-700">{item.cnpj_cpf}</td>
+                    <td className="p-3 font-mono font-bold text-slate-700">{formatCpfCnpj(item.cnpj_cpf)}</td>
 
                     <td className="p-3">
                       <span
@@ -1315,7 +1315,7 @@ export const EmpresasView: React.FC<EmpresasViewProps> = ({ authSession, empresa
               <div className="bg-slate-50 p-3 rounded-md border border-slate-200 space-y-1">
                 <div className="text-slate-400 font-bold uppercase text-[10px]">Razão Social / Nome</div>
                 <div className="text-slate-800 font-bold text-sm">{viewingEmpresa.nome}</div>
-                <div className="text-slate-600 font-mono">CNPJ/CPF: {viewingEmpresa.cnpj_cpf}</div>
+                <div className="text-slate-600 font-mono">CNPJ/CPF: {formatCpfCnpj(viewingEmpresa.cnpj_cpf)}</div>
               </div>
 
               <div className="grid grid-cols-2 gap-2">

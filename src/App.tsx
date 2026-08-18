@@ -62,7 +62,7 @@ export default function App() {
     role: '',
     company: '',
     tier: '',
-    avatarUrl: '',
+    avatarUrl: undefined,
     email: ''
   });
   const [contracts, setContracts] = useState<ContractItem[]>([]);
@@ -115,7 +115,7 @@ export default function App() {
             uid: session.uid,
             email: session.email,
             name: session.displayName || prev.name,
-            avatar: session.photoURL || prev.avatar,
+            avatarUrl: session.photoURL || prev.avatarUrl,
             role: (claims.perfil as string) || 'VISITANTE',
             company: 'Sagacitas Sistemas', // Ideally from DB, but for now fixed
           }));
