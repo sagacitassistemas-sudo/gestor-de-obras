@@ -12,17 +12,7 @@ import {
   AuthSession,
   EmpresaItem
 } from './types';
-import {
-  initialProfile,
-  initialContracts,
-  initialInvoices,
-  initialPendingPayments,
-  initialDREData,
-  initialActivities,
-  initialAlerts,
-  initialChamados,
-  initialEmpresas
-} from './data/mockData';
+// Removed mock data imports
 
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
@@ -67,15 +57,22 @@ export default function App() {
   const [isAuthDebugOpen, setIsAuthDebugOpen] = useState(false);
 
   // Application Datasets
-  const [user, setUser] = useState<UserProfile>(initialProfile);
-  const [contracts, setContracts] = useState<ContractItem[]>(initialContracts);
-  const [empresas, setEmpresas] = useState<EmpresaItem[]>(initialEmpresas);
-  const [invoices, setInvoices] = useState<InvoiceItem[]>(initialInvoices);
-  const [pendingPayments] = useState<PendingPayment[]>(initialPendingPayments);
-  const [dreData] = useState<DRELine[]>(initialDREData);
-  const [activities, setActivities] = useState<ActivityItem[]>(initialActivities);
-  const [alerts, setAlerts] = useState<SystemAlert[]>(initialAlerts);
-  const [chamados, setChamados] = useState<ChamadoTicket[]>(initialChamados);
+  const [user, setUser] = useState<UserProfile>({
+    name: '',
+    role: '',
+    company: '',
+    tier: '',
+    avatarUrl: '',
+    email: ''
+  });
+  const [contracts, setContracts] = useState<ContractItem[]>([]);
+  const [empresas, setEmpresas] = useState<EmpresaItem[]>([]);
+  const [invoices, setInvoices] = useState<InvoiceItem[]>([]);
+  const [pendingPayments] = useState<PendingPayment[]>([]);
+  const [dreData] = useState<DRELine[]>([]);
+  const [activities, setActivities] = useState<ActivityItem[]>([]);
+  const [alerts, setAlerts] = useState<SystemAlert[]>([]);
+  const [chamados, setChamados] = useState<ChamadoTicket[]>([]);
 
   // Search & Modals State
   const [searchQuery, setSearchQuery] = useState('');
@@ -94,13 +91,16 @@ export default function App() {
       if (firebaseUser) {
         try {
           const idToken = await firebaseUser.getIdToken();
+          const idTokenResult = await firebaseUser.getIdTokenResult();
+          const claims = idTokenResult.claims;
           
           const session: AuthSession = {
             uid: firebaseUser.uid,
             email: firebaseUser.email || '',
             displayName: firebaseUser.displayName || '',
             idToken: idToken,
-            photoURL: firebaseUser.photoURL || undefined
+            photoURL: firebaseUser.photoURL || undefined,
+            customClaims: claims
           };
 
           // Re-establish Supabase session in the client
@@ -116,6 +116,8 @@ export default function App() {
             email: session.email,
             name: session.displayName || prev.name,
             avatar: session.photoURL || prev.avatar,
+            role: (claims.perfil as string) || 'VISITANTE',
+            company: 'Sagacitas Sistemas', // Ideally from DB, but for now fixed
           }));
           setIsAuthenticated(true);
           

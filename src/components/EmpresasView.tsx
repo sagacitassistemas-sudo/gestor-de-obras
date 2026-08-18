@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { AuthSession, EmpresaItem } from '../types';
 import { supabase } from '../lib/supabaseClient';
+import { formatCpfCnpj, isValidCpfCnpj } from '../utils/documentUtils';
 
 interface EmpresasViewProps {
   authSession?: AuthSession | null;
@@ -151,6 +152,10 @@ export const EmpresasView: React.FC<EmpresasViewProps> = ({ authSession, empresa
       showNotification('error', 'O Nome da Empresa Contratante é obrigatório.');
       return;
     }
+    if (tempContratante.cnpj && !isValidCpfCnpj(tempContratante.cnpj)) {
+      showNotification('error', 'O CNPJ/CPF informado é inválido. Verifique os dígitos.');
+      return;
+    }
 
     setSupabaseLoading(true);
     try {
@@ -282,6 +287,10 @@ export const EmpresasView: React.FC<EmpresasViewProps> = ({ authSession, empresa
 
     if (!cleanNome || !cleanCnpj) {
       showNotification('error', 'Preencha a Razão Social/Nome e o CNPJ/CPF.');
+      return;
+    }
+    if (!isValidCpfCnpj(cleanCnpj)) {
+      showNotification('error', 'O CNPJ/CPF informado é inválido. Verifique os dígitos.');
       return;
     }
 
@@ -733,7 +742,7 @@ export const EmpresasView: React.FC<EmpresasViewProps> = ({ authSession, empresa
                       type="text"
                       placeholder="00.000.000/0001-00"
                       value={tempContratante.cnpj}
-                      onChange={(e) => setTempContratante({ ...tempContratante, cnpj: e.target.value })}
+                      onChange={(e) => setTempContratante({ ...tempContratante, cnpj: formatCpfCnpj(e.target.value) })}
                       className="w-full p-2.5 border border-slate-200 rounded-md font-mono focus:border-[#005daa] outline-none"
                     />
                   </div>
@@ -1162,7 +1171,7 @@ export const EmpresasView: React.FC<EmpresasViewProps> = ({ authSession, empresa
                   required
                   placeholder="00.000.000/0001-00"
                   value={formData.cnpj_cpf}
-                  onChange={(e) => setFormData({ ...formData, cnpj_cpf: e.target.value })}
+                  onChange={(e) => setFormData({ ...formData, cnpj_cpf: formatCpfCnpj(e.target.value) })}
                   className="w-full p-2.5 border border-slate-200 rounded-md font-mono focus:border-[#005daa] outline-none"
                 />
               </div>
