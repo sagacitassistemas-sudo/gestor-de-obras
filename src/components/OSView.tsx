@@ -60,6 +60,7 @@ export const OSView: React.FC<OSViewProps> = ({ authSession }) => {
 
   // Controle de Visualização
   const [isCreating, setIsCreating] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
 
   // Estados do Formulário de Criação
   const [dataEmissao, setDataEmissao] = useState<string>(new Date().toISOString().split('T')[0]);
@@ -137,6 +138,7 @@ export const OSView: React.FC<OSViewProps> = ({ authSession }) => {
   const handleCadastrarOs = () => {
     if (!selectedProjetoId) return alert('Selecione um Projeto primeiro.');
     setIsCreating(true);
+    setIsEditing(false);
     setSelectedOs(null);
     setDataEmissao(new Date().toISOString().split('T')[0]);
     setNumeroOs('');
@@ -199,6 +201,90 @@ export const OSView: React.FC<OSViewProps> = ({ authSession }) => {
     }
   };
 
+  const handleAtualizarOs = async () => {
+    if (!selectedOs) return;
+    if (!selectedEapId) return alert('Selecione um item da EAP.');
+    
+    setSaving(true);
+    try {
+      const payload = {
+        item_eap_id: selectedEapId,
+        equipe_id: selectedEquipeId || undefined,
+        descricao: descricao,
+        materiais: materiais || undefined,
+        ferramentas: ferramentas || undefined,
+        equipamentos: equipamentos || undefined,
+        responsavel_rdo_id: responsavelRdoId || undefined,
+        data_emissao: dataEmissao
+      };
+
+      const response = await fetch(`/api/ordens-servico/${selectedOs.id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authSession?.idToken}`
+        },
+        body: JSON.stringify(payload)
+      });
+      const resData = await response.json();
+      
+      if (resData.success) {
+        alert('Ordem de Serviço atualizada com sucesso!');
+        fetch(`/api/ordens-servico?projeto_id=${selectedProjetoId}`, {
+          headers: { Authorization: `Bearer ${authSession?.idToken}` }
+        })
+        .then(res => res.json())
+        .then(data => {
+          if (data.success && data.data) {
+            setOrdensServico(data.data);
+            setSelectedOs(resData.data);
+          }
+        });
+        setIsEditing(false);
+      } else {
+        alert(`Erro: ${resData.error}`);
+      }
+    } catch (err) {
+      alert('Erro ao atualizar OS');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeletarOs = async () => {
+    if (!selectedOs) return;
+    const confirmDelete = window.confirm(`ATENÇÃO: Deseja realmente excluir a Ordem de Serviço ${selectedOs.numero_os}?\n\nEsta operação não pode ser desfeita e será registrada na auditoria.`);
+    if (!confirmDelete) return;
+    
+    try {
+      const response = await fetch(`/api/ordens-servico/${selectedOs.id}`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${authSession?.idToken}`
+        }
+      });
+      const resData = await response.json();
+      
+      if (resData.success) {
+        alert('Ordem de Serviço excluída com sucesso!');
+        fetch(`/api/ordens-servico?projeto_id=${selectedProjetoId}`, {
+          headers: { Authorization: `Bearer ${authSession?.idToken}` }
+        })
+        .then(res => res.json())
+        .then(data => {
+          if (data.success && data.data) {
+            setOrdensServico(data.data);
+            setSelectedOs(null);
+          }
+        });
+      } else {
+        alert(`Erro: ${resData.error}`);
+      }
+    } catch (err) {
+      alert('Erro ao excluir OS');
+    }
+  };
+
   return (
     <div className="flex flex-col h-full min-h-[calc(100vh-80px)] space-y-4">
       
@@ -250,7 +336,11 @@ export const OSView: React.FC<OSViewProps> = ({ authSession }) => {
               ordensServico.map(os => (
                 <div
                   key={os.id}
-                  onClick={() => { setSelectedOs(os); setIsCreating(false); }}
+                  onClick={() => { 
+                    setSelectedOs(os); 
+                    setIsCreating(false); 
+                    setIsEditing(false); 
+                  }}
                   className={`p-3 rounded-lg border cursor-pointer transition-all ${
                     selectedOs?.id === os.id
                       ? 'border-[#005daa] bg-[#eff6ff] shadow-sm'
@@ -283,12 +373,14 @@ export const OSView: React.FC<OSViewProps> = ({ authSession }) => {
         {/* COLUNA DIREITA: DETALHE OU CRIAÇÃO */}
         <div className="w-2/3 bg-white rounded-xl shadow-sm border border-[#e1e2e8] flex flex-col overflow-y-auto">
           
-          {/* VIEW: CRIAÇÃO DE NOVA OS */}
-          {isCreating && (
+          {/* VIEW: CRIAÇÃO OU EDIÇÃO DE OS */}
+          {(isCreating || isEditing) && (
             <div className="p-6">
               <h3 className="text-lg font-bold text-[#191c1e] border-b pb-3 mb-5 flex items-center gap-2">
-                <span className="material-symbols-outlined text-[#005daa]">post_add</span>
-                Emitir Nova Ordem de Serviço
+                <span className="material-symbols-outlined text-[#005daa]">
+                  {isEditing ? 'edit_document' : 'post_add'}
+                </span>
+                {isEditing ? `Editar Ordem de Serviço: ${selectedOs?.numero_os}` : 'Emitir Nova Ordem de Serviço'}
               </h3>
               
               <div className="grid grid-cols-2 gap-4 mb-4">
@@ -297,7 +389,8 @@ export const OSView: React.FC<OSViewProps> = ({ authSession }) => {
                   <input 
                     type="text" 
                     disabled
-                    placeholder="Gerado Automaticamente"
+                    value={isEditing ? selectedOs?.numero_os : ''}
+                    placeholder={isEditing ? '' : "Gerado Automaticamente"}
                     className="w-full border border-[#e1e2e8] bg-[#f8fafc] text-[#707785] rounded-lg p-2.5 outline-none text-sm cursor-not-allowed font-medium italic" 
                   />
                 </div>
@@ -323,10 +416,11 @@ export const OSView: React.FC<OSViewProps> = ({ authSession }) => {
                   {itensEap.map((item: any) => {
                       const uid = item.id || item.item_eap_id;
                       const linkedOs = ordensServico.find(os => os.item_eap_id === uid);
+                      const isLinkedToCurrentEditing = isEditing && selectedOs?.item_eap_id === uid;
                       return (
-                        <option key={uid} value={uid} disabled={!!linkedOs} className={linkedOs ? 'text-gray-400 italic' : ''}>
+                        <option key={uid} value={uid} disabled={!!linkedOs && !isLinkedToCurrentEditing} className={linkedOs && !isLinkedToCurrentEditing ? 'text-gray-400 italic' : ''}>
                           {item.eap_codigo} - {item.descricao_servico} ({item.unidade_medida})
-                          {linkedOs ? ` [VINCULADA: ${linkedOs.numero_os} - ${linkedOs.status}]` : ''}
+                          {(linkedOs && !isLinkedToCurrentEditing) ? ` [VINCULADA: ${linkedOs.numero_os} - ${linkedOs.status}]` : ''}
                         </option>
                       );
                     })}
@@ -415,16 +509,18 @@ export const OSView: React.FC<OSViewProps> = ({ authSession }) => {
               </div>
 
               <div className="flex justify-end gap-3 pt-4 border-t border-[#e1e2e8]">
-                <button onClick={() => setIsCreating(false)} className="px-5 py-2.5 border border-[#c0c7d6] rounded-lg font-bold text-[#707785] hover:bg-[#f8fafc]">Cancelar</button>
-                <button onClick={handleSalvarNovaOs} disabled={saving} className="px-5 py-2.5 bg-[#005daa] hover:bg-[#004a88] text-white rounded-lg font-bold transition-colors">
-                  {saving ? 'Emitindo...' : 'Emitir Ordem de Serviço'}
+                <button onClick={() => { setIsCreating(false); setIsEditing(false); }} className="px-5 py-2.5 border border-[#c0c7d6] rounded-lg font-bold text-[#707785] hover:bg-[#f8fafc]">Cancelar</button>
+                <button onClick={isEditing ? handleAtualizarOs : handleSalvarNovaOs} disabled={saving} className="px-5 py-2.5 bg-[#005daa] hover:bg-[#004a88] text-white rounded-lg font-bold transition-colors">
+                  {isEditing 
+                    ? (saving ? 'Salvando...' : 'Salvar Alterações') 
+                    : (saving ? 'Emitindo...' : 'Emitir Ordem de Serviço')}
                 </button>
               </div>
             </div>
           )}
 
           {/* VIEW: VISUALIZAÇÃO DE OS */}
-          {!isCreating && selectedOs && (
+          {!isCreating && !isEditing && selectedOs && (
             <div className="p-6">
               <div className="flex justify-between items-start border-b border-[#e1e2e8] pb-4 mb-5">
                 <div>
@@ -434,13 +530,41 @@ export const OSView: React.FC<OSViewProps> = ({ authSession }) => {
                     Emitida em: {new Date(selectedOs.data_emissao).toLocaleDateString('pt-BR')}
                   </p>
                 </div>
-                <span className={`px-3 py-1 font-bold text-xs rounded-full uppercase ${
-                  selectedOs.status === 'Emitida' ? 'bg-sky-100 text-sky-800' : 
-                  selectedOs.status === 'Em Andamento' ? 'bg-amber-100 text-amber-800' : 
-                  'bg-emerald-100 text-emerald-800'
-                }`}>
-                  {selectedOs.status}
-                </span>
+                <div className="flex items-center gap-3">
+                  <span className={`px-3 py-1 font-bold text-xs rounded-full uppercase ${
+                    selectedOs.status === 'Emitida' ? 'bg-sky-100 text-sky-800' : 
+                    selectedOs.status === 'Em Andamento' ? 'bg-amber-100 text-amber-800' : 
+                    'bg-emerald-100 text-emerald-800'
+                  }`}>
+                    {selectedOs.status}
+                  </span>
+                  <button 
+                    onClick={() => {
+                      setDataEmissao(selectedOs.data_emissao.split('T')[0]);
+                      setDescricao(selectedOs.descricao || '');
+                      setSelectedEapId(selectedOs.item_eap_id);
+                      setSelectedEquipeId(selectedOs.equipe_id || '');
+                      setMateriais(selectedOs.materiais || '');
+                      setFerramentas(selectedOs.ferramentas || '');
+                      setEquipamentos(selectedOs.equipamentos || '');
+                      setResponsavelRdoId(selectedOs.responsavel_rdo_id || '');
+                      setIsEditing(true);
+                    }} 
+                    className="p-1.5 text-slate-400 hover:text-[#005daa] hover:bg-blue-50 rounded-md transition-all cursor-pointer" 
+                    title="Editar OS"
+                  >
+                    <span className="material-symbols-outlined text-[20px]">edit</span>
+                  </button>
+                  {(authSession?.decodedToken?.role === 'GESTOR' || authSession?.decodedToken?.role === 'ADMIN') && (
+                    <button 
+                      onClick={handleDeletarOs} 
+                      className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-all cursor-pointer ml-1 border-l border-slate-200 pl-2" 
+                      title="Excluir OS"
+                    >
+                      <span className="material-symbols-outlined text-[20px]">delete</span>
+                    </button>
+                  )}
+                </div>
               </div>
 
               <div className="bg-[#f8fafc] border border-[#e1e2e8] rounded-xl p-5 mb-6 space-y-4">
@@ -513,8 +637,8 @@ export const OSView: React.FC<OSViewProps> = ({ authSession }) => {
             </div>
           )}
 
-          {/* VIEW: NADA SELECIONADO (E NÃO CRIANDO) */}
-          {!isCreating && !selectedOs && (
+          {/* VIEW: NADA SELECIONADO (E NÃO CRIANDO NEM EDITANDO) */}
+          {!isCreating && !isEditing && !selectedOs && (
             <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
               <span className="material-symbols-outlined text-[64px] text-[#e1e2e8] mb-4">assignment</span>
               <h3 className="text-lg font-bold text-[#404753]">Nenhuma OS selecionada</h3>

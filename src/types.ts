@@ -1,4 +1,4 @@
-export type NavigationTab = 'home' | 'login' | 'dashboard' | 'financeiro' | 'contratos' | 'alertas' | 'onboarding' | 'auth-debug' | 'empresas' | 'fornecedores' | 'equipes' | 'funcionarios' | 'maquinas' | 'ferramentas' | 'materiais' | 'entidades' | 'matriz-acesso' | 'usuarios' | 'projetos_eap' | 'ordens_servico' | 'contratos_obra' | 'audit-log' | 'parametros' | 'cronograma_executivo' | 'cronograma_financeiro' | 'rdo' | 'medicoes';
+export type NavigationTab = 'home' | 'login' | 'dashboard' | 'financeiro' | 'contratos' | 'alertas' | 'onboarding' | 'auth-debug' | 'empresas' | 'fornecedores' | 'equipes' | 'funcionarios' | 'maquinas' | 'ferramentas' | 'materiais' | 'entidades' | 'matriz-acesso' | 'usuarios' | 'projetos_eap' | 'ordens_servico' | 'contratos_obra' | 'audit-log' | 'parametros' | 'cronograma_executivo' | 'cronograma_financeiro' | 'rdo' | 'medicoes' | 'custos_financeiro' | 'dispositivos';
 
 // Re-exports dos tipos modularizados para manter compatibilidade com o frontend
 export type { FirebaseCustomClaims as CustomClaims } from './types/firebase.types';
@@ -9,6 +9,23 @@ export type { CerneEmpresa as EmpresaItem } from './types/cerne.types';
 export * from './types/firebase.types';
 export * from './types/cerne.types';
 export * from './types/middleware.types';
+
+export interface DispositivoItem {
+  id: string;
+  tenant_id: string;
+  device_id: string;
+  funcionario_id: string;
+  funcionario_nome?: string;
+  funcionario_cargo?: string;
+  funcionario_cpf?: string;
+  empresa_id?: string;
+  empresa_nome?: string;
+  status: 'PENDENTE' | 'APROVADO' | 'BLOQUEADO';
+  modelo?: string;
+  os_version?: string;
+  last_login?: string;
+  created_at?: string;
+}
 
 export interface EspecialidadeItem {
   id: string;
@@ -73,6 +90,59 @@ export interface EquipeItem {
   created_at?: string;
   ordens_servico?: any[];
   membros?: EquipeMembroItem[];
+}
+
+export interface RefCargoSalario {
+    id: string;
+    uf: string;
+    codigo_cbo: string;
+    nome_cargo: string;
+    salario_piso: number;
+    salario_medio: number;
+    salario_maior: number;
+    cuai_valor: number;
+    fc_valor: number;
+}
+
+export interface RefMatrizEncargo {
+    id: string;
+    uf: string;
+    codigo_item: string;
+    grupo: string;
+    descricao: string;
+    pct_com_deson_horista: number;
+    pct_com_deson_mensalista: number;
+    pct_sem_deson_horista: number;
+    pct_sem_deson_mensalista: number;
+}
+
+export interface TenantCargoSalario {
+    id: string;
+    tenant_id: string;
+    obra_id?: string;
+    ref_cargo_id?: string;
+    codigo_cbo: string;
+    nome_cargo: string;
+    salario_base_adotado: number;
+    cuai_adotado: number;
+    fc_adotado: number;
+}
+
+export interface TenantBdiConfig {
+    id: string;
+    tenant_id: string;
+    obra_id?: string;
+    tipo_composicao: 'SERVICO' | 'FORNECIMENTO';
+    pct_administracao_central: number;
+    pct_seguros_garantias: number;
+    pct_riscos: number;
+    pct_despesas_financeiras: number;
+    pct_lucro: number;
+    pct_iss: number;
+    pct_pis: number;
+    pct_cofins: number;
+    pct_cprb: number;
+    bdi_calculado: number;
 }
 
 export interface UserRecord {

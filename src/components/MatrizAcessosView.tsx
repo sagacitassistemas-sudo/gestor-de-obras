@@ -7,19 +7,29 @@ interface MatrizAcessosViewProps {
   authSession?: AuthSession | null;
 }
 
-const MODULOS = [
-  { id: 'empresas', label: 'Empresas / Fornecedores' },
-  { id: 'projetos', label: 'Projetos e EAP' },
-  { id: 'cronogramas', label: 'Cronogramas' },
-  { id: 'rdo', label: 'RDO - Diário de Obra' },
-  { id: 'os', label: 'Ordens de Serviço' },
-  { id: 'contratos', label: 'Contratos de Obra' },
-  { id: 'medicoes', label: 'Medições e Financeiro' },
-  { id: 'entidades', label: 'Entidades e Recursos' },
-  { id: 'financeiro', label: 'Financeiro e Lançamentos' },
-  { id: 'relatorios', label: 'Relatórios' },
-  { id: 'usuarios', label: 'Usuários e Acessos' },
-  { id: 'configuracoes', label: 'Configurações e Logs' }
+const MODULOS_GROUPED = [
+  {
+    titulo: 'MÓDULO I: Gestão Executiva e Obras',
+    modulos: [
+      { id: 'empresas', label: 'Empresas / Fornecedores' },
+      { id: 'projetos', label: 'Projetos e EAP' },
+      { id: 'cronogramas', label: 'Cronogramas' },
+      { id: 'rdo', label: 'RDO - Diário de Obra' },
+      { id: 'os', label: 'Ordens de Serviço' },
+      { id: 'contratos', label: 'Contratos de Obra' },
+      { id: 'entidades', label: 'Entidades e Recursos' },
+      { id: 'relatorios', label: 'Relatórios' },
+      { id: 'usuarios', label: 'Usuários e Acessos' },
+      { id: 'configuracoes', label: 'Configurações e Logs' }
+    ]
+  },
+  {
+    titulo: 'MÓDULO II: Custos e Financeiro',
+    modulos: [
+      { id: 'medicoes', label: 'Medições e Faturamento' },
+      { id: 'financeiro', label: 'Custos, Salários e BDI' }
+    ]
+  }
 ];
 
 export const MatrizAcessosView: React.FC<MatrizAcessosViewProps> = ({ authSession }) => {
@@ -516,40 +526,43 @@ export const MatrizAcessosView: React.FC<MatrizAcessosViewProps> = ({ authSessio
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-200">
-            {MODULOS.map((modulo) => (
-              <tr key={modulo.id} className="hover:bg-slate-50/80 transition-colors">
-                <td className="p-3 font-bold text-slate-800">{modulo.label}</td>
-                {['criar', 'ler', 'editar', 'excluir'].map((action) => {
-                  const key = `${modulo.id}_${action}`;
-                  if (modulo.id === 'relatorios' && action !== 'ler') {
-                    return <td key={action} className="p-3 text-center bg-slate-50"></td>; // Relatorios so tem ler
-                  }
+            {MODULOS_GROUPED.map((grupo) => (
+              <React.Fragment key={grupo.titulo}>
+                <tr className="bg-slate-100">
+                  <td colSpan={5} className="p-3 font-bold text-slate-700 uppercase tracking-wider text-[11px] border-y border-slate-200">
+                    {grupo.titulo}
+                  </td>
+                </tr>
+                {grupo.modulos.map((modulo) => (
+                  <tr key={modulo.id} className="hover:bg-slate-50/80 transition-colors">
+                    <td className="p-3 font-bold text-slate-800 pl-6 border-r border-slate-100">{modulo.label}</td>
+                    {['criar', 'ler', 'editar', 'excluir'].map((action) => {
+                      const key = `${modulo.id}_${action}`;
+                      if (modulo.id === 'relatorios' && action !== 'ler') {
+                        return <td key={action} className="p-3 text-center bg-slate-50 border-r border-slate-100"></td>;
+                      }
 
-                  const hasPerm = currentPerms[key];
-                  const limitReached = maxLimitPerms && !maxLimitPerms[key];
+                      const hasPerm = currentPerms[key];
+                      const limitReached = maxLimitPerms && !maxLimitPerms[key];
 
-                  return (
-                    <td key={action} className="p-3 text-center">
-                      <button
-                        onClick={() => togglePermission(currentPerms, setter, key, maxLimitPerms)}
-                        disabled={limitReached}
-                        title={limitReached ? 'Bloqueado pelo Teto Superior' : 'Alternar Permissão'}
-                        className={`w-6 h-6 rounded-md flex items-center justify-center mx-auto transition-all ${
-                          limitReached
-                            ? 'bg-slate-100 text-slate-300 border border-slate-200 cursor-not-allowed opacity-50'
-                            : hasPerm
-                            ? 'bg-emerald-500 text-white shadow-2xs cursor-pointer hover:bg-emerald-600'
-                            : 'bg-white text-slate-300 border border-slate-300 cursor-pointer hover:bg-slate-50 hover:text-slate-500'
-                        }`}
-                      >
-                        <span className="material-symbols-outlined text-sm font-bold">
-                          {hasPerm ? 'check' : limitReached ? 'block' : 'close'}
-                        </span>
-                      </button>
-                    </td>
-                  );
-                })}
-              </tr>
+                      return (
+                        <td key={action} className="p-3 text-center border-r border-slate-100">
+                          <label className={`inline-flex items-center justify-center ${limitReached ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}>
+                            <input
+                              type="checkbox"
+                              checked={!!hasPerm}
+                              disabled={limitReached}
+                              onChange={() => togglePermission(currentPerms, setter, key, maxLimitPerms)}
+                              title={limitReached ? 'Bloqueado pelo Teto Superior' : 'Alternar Permissão'}
+                              className="w-5 h-5 rounded border-slate-300 text-[#1890ff] focus:ring-[#1890ff] disabled:bg-slate-200 transition-all cursor-pointer disabled:cursor-not-allowed"
+                            />
+                          </label>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </React.Fragment>
             ))}
           </tbody>
         </table>

@@ -32,11 +32,14 @@ import { EmpresasView } from './components/EmpresasView';
 import { EntidadesView } from './components/EntidadesView';
 import { UsuariosView } from './components/UsuariosView';
 import { MatrizAcessosView } from './components/MatrizAcessosView';
+import { FornecedoresView } from './components/FornecedoresView';
 import { ContratosObraView } from './components/ContratosObraView';
 import { AuditLogView } from './components/AuditLogView';
 import { ParametrosView } from './components/ParametrosView';
 import { FuncionariosView } from './components/FuncionariosView';
+import { CustosFinanceiroView } from './components/CustosFinanceiroView';
 import { EquipesView } from './components/EquipesView';
+import { DispositivosView } from './components/DispositivosView';
 
 import { NovoChamadoModal } from './components/NovoChamadoModal';
 import { ProcessamentoNotasDrawer } from './components/ProcessamentoNotasDrawer';
@@ -251,10 +254,12 @@ export default function App() {
       case 'contratos_obra': return !!effectivePermissions.contratos_ler;
       case 'medicoes': return !!effectivePermissions.medicoes_ler;
       case 'usuarios': return !!effectivePermissions.usuarios_ler;
+      case 'dispositivos': return !!effectivePermissions.usuarios_ler;
       case 'matriz-acesso': return !!effectivePermissions.configuracoes_ler;
       case 'audit-log': return !!effectivePermissions.configuracoes_ler;
       case 'parametros': return !!effectivePermissions.configuracoes_ler;
-      case 'financeiro': return !!effectivePermissions.financeiro_ler;
+      case 'financeiro': 
+      case 'custos_financeiro': return !!effectivePermissions.financeiro_ler;
       case 'entidades':
       case 'funcionarios':
       case 'equipes':
@@ -564,13 +569,29 @@ export default function App() {
             ) : <div className="p-8 text-center bg-white rounded-xl border border-gray-200">Acesso Restrito: Sem permissão aos Funcionários</div>
           )}
 
+          {activeTab === 'custos_financeiro' && (
+            hasAccess('custos_financeiro') ? (
+              <CustosFinanceiroView authSession={authSession} />
+            ) : <div className="p-8 text-center bg-white rounded-xl border border-gray-200">Acesso Restrito: Módulo II não habilitado ou sem permissão</div>
+          )}
+
           {activeTab === 'equipes' && (
             hasAccess('empresas') ? (
               <EquipesView authSession={authSession} />
             ) : <div className="p-8 text-center bg-white rounded-xl border border-gray-200">Acesso Restrito: Sem permissão às Equipes</div>
           )}
 
-          {['fornecedores', 'maquinas', 'ferramentas', 'materiais', 'medicoes'].includes(activeTab) && (
+          {activeTab === 'fornecedores' && (
+            hasAccess('fornecedores') ? (
+              <FornecedoresView 
+                empresas={empresas}
+                authSession={authSession}
+                setEmpresas={setEmpresas}
+              />
+            ) : <div className="p-8 text-center bg-white rounded-xl border border-gray-200">Acesso Restrito: Sem permissão aos Fornecedores</div>
+          )}
+
+          {['maquinas', 'ferramentas', 'materiais', 'medicoes'].includes(activeTab) && (
             <div className="flex items-center justify-center h-full p-8 text-gray-500">
               <div className="bg-white p-8 rounded-xl text-center border border-gray-200 max-w-md w-full shadow-sm">
                 <span className="material-symbols-outlined text-[48px] text-[#005daa] mb-4">construction</span>
@@ -589,7 +610,13 @@ export default function App() {
           {activeTab === 'usuarios' && (
             hasAccess('usuarios') ? (
               <UsuariosView authSession={authSession} />
-            ) : <div className="p-8 text-center bg-white rounded-xl border border-gray-200">Acesso Restrito: Sem permissão aos Usuários</div>
+            ) : <div className="p-8 text-center bg-white rounded-xl border border-gray-200">Acesso Restrito: Sem permissão a Usuários</div>
+          )}
+
+          {activeTab === 'dispositivos' && (
+            hasAccess('dispositivos') ? (
+              <DispositivosView authSession={authSession} contratoId={authSession?.decodedToken?.contrato_id || ''} />
+            ) : <div className="p-8 text-center bg-white rounded-xl border border-gray-200">Acesso Restrito: Sem permissão a Dispositivos</div>
           )}
 
           {activeTab === 'matriz-acesso' && (

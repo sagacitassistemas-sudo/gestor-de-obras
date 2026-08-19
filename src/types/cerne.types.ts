@@ -84,6 +84,7 @@ export interface CerneEmpresa {
   status: 'ATIVO' | 'BLOQUEADO' | 'EM_ANALISE';
   totalFaturado: number;
   createdAt: string;
+  detalhes?: Record<string, any>;
 }
 
 export interface CerneContratante {

@@ -1,5 +1,48 @@
 # Histórico de Versões e Releases - Works Manager (Gestor de Obras)
 
+## Versão 1.3.0 (2026-08-18) - Arquitetura, Segregação de Módulos e Gestão de Fornecedores
+
+### 🏛️ 1. Mapeamento Arquitetural (Archify)
+- **Diagramas Dinâmicos (`docs/gestor-de-obras-high-level.json`)**:
+  - Geração de modelo High-Level focado nos fluxos de Runtime, Componentes Principais e Segurança.
+  - Implementação de raias no fluxo do Workflow de Chamada de Ferramentas, evidenciando execução do agente, mitigação e persistência.
+
+### 🧩 2. Segregação Estrutural de Módulos
+- **Matriz de Acessos Dinâmica (`MatrizAcessosView.tsx`)**:
+  - Reestruturação do componente separando as chaves de permissão em dois tiers: **Módulo I (Executivo/Campo)** e **Módulo II (Custos/Financeiro)**.
+  - Troca da lógica visual de botões de ação isolados por uma UX baseada em `checkboxes` para as operações CRUD (Criar, Ler, Atualizar, Deletar), mantendo a integridade da hierarquia de Tenant e Tetos de permissão.
+
+### 🚚 3. Módulo de Cadastro Completo de Fornecedores
+- **Flexibilidade JSONB no PostgreSQL**:
+  - Nova migração SQL `20260818000000_add_detalhes_empresas.sql` acoplando a coluna `detalhes JSONB` na tabela multitenant nativa `empresas_fornecedores`.
+  - Permite evolução infinita do cadastro sem fragmentação de colunas legadas.
+- **Formulário de Extensão Cadastral**:
+  - Interface avançada subdividida em 4 eixos estruturais: Identificação (CNPJ, IE, IM), Endereço Nacional, Dados de Contato Direto e Dados Financeiros para pagamentos (Banco, Agência, PIX).
+- **Workflow de Homologação (Approval Flow)**:
+  - Novo status inserido para governança de procurement: `EM_ANALISE`.
+  - Fornecedores cadastrados caem na esteira pendente; gestores autorizados validam o perfil trocando o status para `ATIVO` diretamente na grid principal.
+
+---
+
+## Versão 1.2.1 (2026-08-18) - Correções de UI, Data Dump e Estabilidade de Autenticação
+
+### 🎨 1. Hotfixes Visuais e UX
+- **Correção da Máscara de CNPJ/CPF (`documentUtils.ts`)**:
+  - Implementada coerção rigorosa de string (`String(value)`) na função `formatCpfCnpj` para suportar entradas tipadas como numéricas (vindas de parses do banco), prevenindo o crash oculto e a ausência de formatação.
+- **Fallback Inteligente de Avatar (`Header.tsx`)**:
+  - Correção do crash visual em que usuários autenticados via E-mail/Senha ficavam com a tag `img` quebrada no navegador.
+  - O sistema passa a validar explicitamente se o usuário possui `photoURL` no Firebase e renderiza a primeira letra de seu nome em um círculo colorido de fallback caso não haja.
+
+### 🛡️ 2. Estabilização do Firebase Admin SDK Local
+- **Injeção Explícita de Credenciais (`server.ts`)**:
+  - Resolvido o erro crítico de sincronização de permissões (claims) `ENOTFOUND metadata.google.internal` ao criar usuários localmente. O backend foi configurado para injetar proativamente o `serviceAccountKey.json` via método `cert()` se a variável de ambiente ADC (`GOOGLE_APPLICATION_CREDENTIALS`) não estiver populada e o arquivo existir.
+
+### 🗄️ 3. Ferramentas de Migração e Operação
+- **Script Autônomo de Migração Local->Remoto**:
+  - Implementação de um gerador `scripts/export-data-sql.mjs` que varre as tabelas de infraestrutura (`empresa_contratante`, `empresas_fornecedores`, `permissoes_usuario`) e compila statements `INSERT INTO ... ON CONFLICT DO NOTHING`, exportando o arquivo `migration_data.sql` para cópia massiva de dados sem comprometimento de segredos (PII Safe).
+
+---
+
 ## Versão 1.2.0 (2026-08-16) - Auditoria de Segurança, Hardening de RLS e Governança de Acesso
 
 ### 🛡️ 1. Hardening e Unificação do Row-Level Security (RLS)

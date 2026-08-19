@@ -307,6 +307,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 {!isCollapsed && <span className="font-label-bold text-label-bold">Financeiro</span>}
               </button>
             )}
+            {hasAccess('financeiro_ler') && (
+              <button
+                onClick={() => handleNavClick('custos_financeiro')}
+                className={`w-full text-left ${navItemClass('custos_financeiro')}`}
+              >
+                <span className="material-symbols-outlined" style={{ fontVariationSettings: activeTab === 'custos_financeiro' ? "'FILL' 1" : "'FILL' 0" }}>request_quote</span>
+                {!isCollapsed && <span className="font-label-bold text-label-bold flex items-center gap-2">
+                  Custos & BDI
+                  <span className="bg-emerald-100 text-emerald-800 text-[8px] px-1.5 py-0.5 rounded-sm font-bold ml-auto">MOD II</span>
+                </span>}
+              </button>
+            )}
             {hasAccess('usuarios_ler') && (
               <button
                 onClick={() => handleNavClick('usuarios')}
@@ -314,6 +326,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
               >
                 <span className="material-symbols-outlined" style={{ fontVariationSettings: activeTab === 'usuarios' ? "'FILL' 1" : "'FILL' 0" }}>group</span>
                 {!isCollapsed && <span className="font-label-bold text-label-bold">Usuários</span>}
+              </button>
+            )}
+            {(isAdmin || userRole === 'GESTOR') && (
+              <button
+                onClick={() => handleNavClick('dispositivos')}
+                className={`w-full text-left ${navItemClass('dispositivos')}`}
+              >
+                <span className="material-symbols-outlined" style={{ fontVariationSettings: activeTab === 'dispositivos' ? "'FILL' 1" : "'FILL' 0" }}>devices</span>
+                {!isCollapsed && <span className="font-label-bold text-label-bold">Dispositivos Mobile</span>}
               </button>
             )}
             {isAdmin && (

@@ -1,5 +1,7 @@
 import express from "express";
+import cors from "cors";
 import path from "path";
+import rdoRouter from "./src/routes/rdo.routes";
 import fs from "fs";
 import { GoogleGenAI } from "@google/genai";
 import {
@@ -52,7 +54,7 @@ export function getSafeAdminAuth() {
 }
 
 // Helper function to create a scoped Supabase client with a custom JWT
-function getSupabaseClient(req: AuthenticatedRequest): SupabaseClient | null {
+export function getSupabaseClient(req: AuthenticatedRequest): SupabaseClient | null {
   if (!supabaseUrl || !req.decodedToken) return null;
   // Use the global service role client to bypass broken RLS policies.
   // The backend already enforces tenant isolation explicitly via .eq("contrato_id", ...) on all queries.
@@ -336,6 +338,8 @@ const inMemoryContratantes = new Map<string, any>();
 // In-memory store fallback for Empresas Fornecedoras (initialized empty to eliminate mock data as requested)
 const inMemoryEmpresas = new Map<string, any[]>();
 
+import { MobileAuthenticatedRequest, mobileAuthMiddleware } from "./src/middleware/mobileAuth.middleware";
+
 interface FirebaseAppConfig {
   apiKey?: string;
   authDomain?: string;
@@ -390,7 +394,16 @@ function startServer() {
     next();
   });
 
+  // Habilita requisições do App Mobile
+  app.use(cors({
+    origin: ['http://localhost:15000', 'http://127.0.0.1:15000'],
+    methods: ['GET', 'POST', 'PATCH'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Device-ID']
+  }));
+
   app.use(express.json());
+  
+  app.use('/api/rdo', rdoRouter);
 
   // ==========================================
   // AUTH CONTAINER & FIREBASE ADMIN ENDPOINTS
@@ -2875,6 +2888,7 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
               : Number(item.totalFaturado || 0),
           createdAt:
             item.created_at !== undefined ? item.created_at : item.createdAt,
+          detalhes: item.detalhes
         }));
 
         return res.json({ success: true, data: mappedData, synced: true });
@@ -2889,6 +2903,177 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
         });
       }
     },
+  );
+
+  // ==========================================
+  // CUSTOS DE MÃO DE OBRA, ENCARGOS E BDI
+  // ==========================================
+
+  // GET /api/ref-cargos-salarios - Listar tabela de referência regional
+  app.get(
+    "/api/ref-cargos-salarios",
+    verifyFirebaseJWT,
+    async (req: AuthenticatedRequest, res) => {
+      if (!req.decodedToken) return res.status(401).json({ error: "Acesso não autorizado." });
+      if (!(await checkPermission(req, "financeiro_ler"))) return res.status(403).json({ error: "Acesso negado." });
+
+      const uf = req.query.uf as string || 'ES';
+      try {
+        const client = getSupabaseClient(req);
+        if (!client) throw new Error("No client");
+        const { data, error } = await client.from('ref_cargos_salarios').select('*').eq('uf', uf).order('nome_cargo');
+        if (error) throw error;
+        return res.json({ success: true, data: data || [] });
+      } catch (err) {
+        console.error("GET /api/ref-cargos-salarios error:", err);
+        return res.status(500).json({ error: "Erro interno", details: err instanceof Error ? err.message : String(err) });
+      }
+    }
+  );
+
+  // GET /api/ref-encargos - Listar matriz de encargos
+  app.get(
+    "/api/ref-encargos",
+    verifyFirebaseJWT,
+    async (req: AuthenticatedRequest, res) => {
+      if (!req.decodedToken) return res.status(401).json({ error: "Acesso não autorizado." });
+      if (!(await checkPermission(req, "financeiro_ler"))) return res.status(403).json({ error: "Acesso negado." });
+
+      const uf = req.query.uf as string || 'ES';
+      try {
+        const client = getSupabaseClient(req);
+        if (!client) throw new Error("No client");
+        const { data, error } = await client.from('ref_matriz_encargos').select('*').eq('uf', uf).order('codigo_item');
+        if (error) throw error;
+        return res.json({ success: true, data: data || [] });
+      } catch (err) {
+        console.error("GET /api/ref-encargos error:", err);
+        return res.status(500).json({ error: "Erro interno", details: err instanceof Error ? err.message : String(err) });
+      }
+    }
+  );
+
+  // GET /api/tenant-cargos - Listar salários adotados pela empresa
+  app.get(
+    "/api/tenant-cargos",
+    verifyFirebaseJWT,
+    async (req: AuthenticatedRequest, res) => {
+      if (!req.decodedToken) return res.status(401).json({ error: "Acesso não autorizado." });
+      if (!(await checkPermission(req, "financeiro_ler"))) return res.status(403).json({ error: "Acesso negado." });
+
+      try {
+        const client = getSupabaseClient(req);
+        if (!client) throw new Error("No client");
+        const { data, error } = await client.from('tenant_cargos_salarios').select('*').order('nome_cargo');
+        if (error) throw error;
+        return res.json({ success: true, data: data || [] });
+      } catch (err) {
+        console.error("GET /api/tenant-cargos error:", err);
+        return res.status(500).json({ error: "Erro interno", details: err instanceof Error ? err.message : String(err) });
+      }
+    }
+  );
+
+  // POST /api/tenant-cargos - Criar ou atualizar salário adotado
+  app.post(
+    "/api/tenant-cargos",
+    verifyFirebaseJWT,
+    async (req: AuthenticatedRequest, res) => {
+      if (!req.decodedToken) return res.status(401).json({ error: "Acesso não autorizado." });
+      if (!(await checkPermission(req, "financeiro_criar"))) return res.status(403).json({ error: "Acesso negado." });
+
+      try {
+        const payload = req.body;
+        const tenant_id = req.decodedToken.contrato_id;
+        const client = getSupabaseClient(req);
+        if (!client) throw new Error("No client");
+        
+        const upsertData = {
+          ...payload,
+          tenant_id
+        };
+        
+        const { data, error } = await client.from('tenant_cargos_salarios').upsert(upsertData).select().single();
+        if (error) throw error;
+        return res.json({ success: true, data });
+      } catch (err) {
+        console.error("POST /api/tenant-cargos error:", err);
+        return res.status(500).json({ error: "Erro ao salvar", details: err instanceof Error ? err.message : String(err) });
+      }
+    }
+  );
+
+  // GET /api/tenant-bdi - Listar BDI
+  app.get(
+    "/api/tenant-bdi",
+    verifyFirebaseJWT,
+    async (req: AuthenticatedRequest, res) => {
+      if (!req.decodedToken) return res.status(401).json({ error: "Acesso não autorizado." });
+      if (!(await checkPermission(req, "financeiro_ler"))) return res.status(403).json({ error: "Acesso negado." });
+
+      try {
+        const client = getSupabaseClient(req);
+        if (!client) throw new Error("No client");
+        const { data, error } = await client.from('tenant_bdi_configuracao').select('*').order('tipo_composicao');
+        if (error) throw error;
+        return res.json({ success: true, data: data || [] });
+      } catch (err) {
+        console.error("GET /api/tenant-bdi error:", err);
+        return res.status(500).json({ error: "Erro interno", details: err instanceof Error ? err.message : String(err) });
+      }
+    }
+  );
+
+  // POST /api/bdi-calcular - Calcular BDI e salvar
+  app.post(
+    "/api/bdi-calcular",
+    verifyFirebaseJWT,
+    async (req: AuthenticatedRequest, res) => {
+      if (!req.decodedToken) return res.status(401).json({ error: "Acesso não autorizado." });
+      if (!(await checkPermission(req, "financeiro_criar"))) return res.status(403).json({ error: "Acesso negado." });
+
+      try {
+        const { AC, SG, R, DF, L, ISS, PIS, COFINS, CPRB, tipo_composicao, id } = req.body;
+        
+        // BDI = (((1+AC+SG+R) * (1+DF) * (1+L)) / (1 - (ISS+PIS+COFINS+CPRB))) - 1
+        const numerador = (1 + AC + SG + R) * (1 + DF) * (1 + L);
+        const denominador = 1 - (ISS + PIS + COFINS + CPRB);
+        
+        if (denominador <= 0) {
+          return res.status(400).json({ error: "Denominador do BDI <= 0 (Soma de Tributos >= 100%)" });
+        }
+        
+        const bdiCalculado = (numerador / denominador) - 1;
+        
+        const tenant_id = req.decodedToken.contrato_id;
+        const client = getSupabaseClient(req);
+        if (!client) throw new Error("No client");
+
+        const upsertData = {
+          id: id || undefined,
+          tenant_id,
+          tipo_composicao: tipo_composicao || 'SERVICO',
+          pct_administracao_central: AC,
+          pct_seguros_garantias: SG,
+          pct_riscos: R,
+          pct_despesas_financeiras: DF,
+          pct_lucro: L,
+          pct_iss: ISS,
+          pct_pis: PIS,
+          pct_cofins: COFINS,
+          pct_cprb: CPRB,
+          bdi_calculado: bdiCalculado
+        };
+        
+        const { data, error } = await client.from('tenant_bdi_configuracao').upsert(upsertData).select().single();
+        if (error) throw error;
+
+        return res.json({ success: true, data });
+      } catch (err) {
+        console.error("POST /api/bdi-calcular error:", err);
+        return res.status(500).json({ error: "Erro ao calcular BDI", details: err instanceof Error ? err.message : String(err) });
+      }
+    }
   );
 
   // POST /api/empresas - Create/Update a company
@@ -2914,6 +3099,7 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
         telefone,
         status,
         totalFaturado,
+        detalhes
       } = empresa;
       const id =
         empresa.id || `EMP-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
@@ -2937,6 +3123,7 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
         status: status || "ATIVO",
         totalFaturado: Number(totalFaturado) || 0,
         createdAt: empresa.createdAt || new Date().toISOString().split("T")[0],
+        detalhes: detalhes || {},
       };
 
       // Postgres DB Payload mapping camelCase properties to unquoted snake_case columns
@@ -2954,6 +3141,7 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
         status: status || "ATIVO",
         total_faturado: Number(totalFaturado) || 0,
         created_at: empresa.createdAt || new Date().toISOString().split("T")[0],
+        detalhes: detalhes || {},
       };
 
       // Update memory fallback
@@ -3019,6 +3207,7 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
             savedItem.created_at !== undefined
               ? savedItem.created_at
               : savedItem.createdAt,
+          detalhes: savedItem.detalhes || {}
         };
 
         return res.json({
@@ -4003,6 +4192,151 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
     },
   );
 
+  // ==========================================
+  // DISPOSITIVOS MOBILE API (ZERO TRUST)
+  // ==========================================
+
+  // GET /api/dispositivos
+  app.get(
+    "/api/dispositivos",
+    verifyFirebaseJWT,
+    async (req: AuthenticatedRequest, res) => {
+      try {
+        if (!(await checkPermission(req, "usuarios_ler"))) {
+          return res.status(403).json({ error: "Acesso negado." });
+        }
+
+        const client = getSupabaseClient(req);
+        if (!client) return res.status(401).json({ error: "Unauthorized" });
+
+        const tenantId = req.decodedToken?.contrato_id;
+
+        const { data, error } = await client
+          .from("dispositivos_mobile")
+          .select("*, funcionarios(nome, cargo, cpf, empresas_fornecedores(nome, id))")
+          .eq("tenant_id", tenantId)
+          .order("created_at", { ascending: false });
+
+        if (error) {
+          console.error("[GET /api/dispositivos] Erro:", error);
+          return res.status(500).json({ error: error.message });
+        }
+
+        // Formatar para a interface
+        const formatted = (data || []).map((d: any) => ({
+          ...d,
+          funcionario_nome: d.funcionarios?.nome,
+          funcionario_cargo: d.funcionarios?.cargo,
+          funcionario_cpf: d.funcionarios?.cpf,
+          empresa_id: d.funcionarios?.empresas_fornecedores?.id,
+          empresa_nome: d.funcionarios?.empresas_fornecedores?.nome
+        }));
+
+        return res.json({ success: true, data: formatted });
+      } catch (err: any) {
+        console.error("[GET /api/dispositivos] Exception:", err);
+        return res.status(500).json({ error: "Internal Server Error" });
+      }
+    }
+  );
+
+  // PATCH /api/dispositivos/:id/status
+  app.patch(
+    "/api/dispositivos/:id/status",
+    verifyFirebaseJWT,
+    async (req: AuthenticatedRequest, res) => {
+      try {
+        if (!(await checkPermission(req, "usuarios_editar"))) {
+          return res.status(403).json({ error: "Acesso negado." });
+        }
+
+        const client = getSupabaseClient(req);
+        if (!client) return res.status(401).json({ error: "Unauthorized" });
+
+        const tenantId = req.decodedToken?.contrato_id;
+        const deviceId = req.params.id;
+        const { status } = req.body;
+
+        if (!["APROVADO", "BLOQUEADO", "PENDENTE"].includes(status)) {
+          return res.status(400).json({ error: "Status inválido." });
+        }
+
+        const { error } = await client
+          .from("dispositivos_mobile")
+          .update({ status, updated_at: new Date().toISOString() })
+          .eq("id", deviceId)
+          .eq("tenant_id", tenantId);
+
+        if (error) {
+          console.error("[PATCH /api/dispositivos/status] Erro:", error);
+          return res.status(500).json({ error: error.message });
+        }
+
+        await logAudit({
+          client,
+          tenant_id: tenantId,
+          usuario_uid: req.decodedToken?.uid,
+          usuario_email: req.decodedToken?.email,
+          cod_evento: "DEVICE_UPDATE",
+          descricao: `Dispositivo mobile ${deviceId} alterado para status ${status}`,
+          entidade_tipo: "dispositivo_mobile",
+          entidade_id: deviceId,
+        });
+
+        return res.json({ success: true });
+      } catch (err: any) {
+        console.error("[PATCH /api/dispositivos/status] Exception:", err);
+        return res.status(500).json({ error: "Internal Server Error" });
+      }
+    }
+  );
+
+  // DELETE /api/dispositivos/:id
+  app.delete(
+    "/api/dispositivos/:id",
+    verifyFirebaseJWT,
+    async (req: AuthenticatedRequest, res) => {
+      try {
+        if (!(await checkPermission(req, "usuarios_editar"))) {
+          return res.status(403).json({ error: "Acesso negado." });
+        }
+
+        const client = getSupabaseClient(req);
+        if (!client) return res.status(401).json({ error: "Unauthorized" });
+
+        const tenantId = req.decodedToken?.contrato_id;
+        const deviceId = req.params.id;
+
+        const { error } = await client
+          .from("dispositivos_mobile")
+          .delete()
+          .eq("id", deviceId)
+          .eq("tenant_id", tenantId);
+
+        if (error) {
+          console.error("[DELETE /api/dispositivos/:id] Erro:", error);
+          return res.status(500).json({ error: error.message });
+        }
+
+        await logAudit({
+          client,
+          tenant_id: tenantId,
+          usuario_uid: req.decodedToken?.uid,
+          usuario_email: req.decodedToken?.email,
+          cod_evento: "DEVICE_DELETE",
+          descricao: `Dispositivo mobile ${deviceId} excluído do registro.`,
+          entidade_tipo: "dispositivo_mobile",
+          entidade_id: deviceId,
+        });
+
+        return res.json({ success: true });
+      } catch (err: any) {
+        console.error("[DELETE /api/dispositivos/:id] Exception:", err);
+        return res.status(500).json({ error: "Internal Server Error" });
+      }
+    }
+  );
+
   // GET /api/itens-eap - List EAP items for a project
   app.get(
     "/api/itens-eap",
@@ -4775,6 +5109,122 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
     },
   );
 
+  // PATCH /api/ordens-servico/:id
+  app.patch(
+    "/api/ordens-servico/:id",
+    verifyFirebaseJWT,
+    async (req: AuthenticatedRequest, res) => {
+      try {
+        if (!(await checkPermission(req, "os_editar"))) {
+          return res.status(403).json({ error: "Acesso negado. Permissão de edição de OS necessária." });
+        }
+
+        const client = getSupabaseClient(req);
+        if (!client) return res.status(401).json({ error: "Unauthorized" });
+
+        const tenantId = req.decodedToken?.contrato_id;
+        const osId = req.params.id;
+        const osData = req.body;
+
+        const updatePayload = {
+          item_eap_id: osData.item_eap_id,
+          equipe_id: osData.equipe_id || null,
+          descricao: osData.descricao,
+          materiais: osData.materiais || null,
+          ferramentas: osData.ferramentas || null,
+          equipamentos: osData.equipamentos || null,
+          responsavel_rdo_id: osData.responsavel_rdo_id || null,
+          data_emissao: osData.data_emissao || new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+
+        const { data, error } = await client
+          .from("ordens_servico")
+          .update(updatePayload)
+          .eq("id", osId)
+          .eq("tenant_id", tenantId)
+          .select("*, itens_eap(descricao_servico, unidade_medida), equipes(id, nome), responsavel_rdo:funcionarios!ordens_servico_responsavel_rdo_id_fkey(id, nome)")
+          .single();
+
+        if (error) {
+          console.error("[PATCH /api/ordens-servico/:id] Supabase error:", error);
+          return res.status(500).json({ error: error.message });
+        }
+
+        await logAudit({
+          client,
+          tenant_id: tenantId,
+          usuario_uid: req.decodedToken?.uid,
+          usuario_email: req.decodedToken?.email,
+          cod_evento: "OS_UPDATE",
+          descricao: `A Ordem de Serviço ${osId} foi atualizada.`,
+          entidade_tipo: "ordem_servico",
+          entidade_id: osId,
+        });
+
+        return res.json({ success: true, message: "OS atualizada com sucesso.", data });
+      } catch (err: any) {
+        console.error("[PATCH /api/ordens-servico/:id] Exception:", err);
+        return res.status(500).json({ error: "Erro interno no servidor." });
+      }
+    }
+  );
+
+  // DELETE /api/ordens-servico/:id
+  app.delete(
+    "/api/ordens-servico/:id",
+    verifyFirebaseJWT,
+    async (req: AuthenticatedRequest, res) => {
+      try {
+        const userRole = req.decodedToken?.role;
+        if (userRole !== "GESTOR" && userRole !== "ADMIN") {
+          return res.status(403).json({ error: "Acesso negado. Apenas Gestores e Administradores podem excluir uma Ordem de Serviço." });
+        }
+
+        const client = getSupabaseClient(req);
+        if (!client) return res.status(401).json({ error: "Unauthorized" });
+
+        const tenantId = req.decodedToken?.contrato_id;
+        const osId = req.params.id;
+
+        // Fetch OS details before deleting to log the OS number
+        const { data: osData } = await client
+          .from("ordens_servico")
+          .select("numero_os")
+          .eq("id", osId)
+          .eq("tenant_id", tenantId)
+          .single();
+
+        const { error } = await client
+          .from("ordens_servico")
+          .delete()
+          .eq("id", osId)
+          .eq("tenant_id", tenantId);
+
+        if (error) {
+          console.error("[DELETE /api/ordens-servico/:id] Supabase error:", error);
+          return res.status(500).json({ error: error.message });
+        }
+
+        await logAudit({
+          client,
+          tenant_id: tenantId,
+          usuario_uid: req.decodedToken?.uid,
+          usuario_email: req.decodedToken?.email,
+          cod_evento: "OS_DELETE",
+          descricao: `Exclusão da Ordem de Serviço ${osData?.numero_os || osId}`,
+          entidade_tipo: "ordens_servico",
+          entidade_id: osId,
+        });
+
+        return res.json({ success: true, message: "OS excluída com sucesso." });
+      } catch (err: any) {
+        console.error("[DELETE /api/ordens-servico/:id] Exception:", err);
+        return res.status(500).json({ error: "Erro interno no servidor." });
+      }
+    }
+  );
+
   // ===================================================================
   // MÓDULO: ESPECIALIDADES, FUNCIONÁRIOS E EQUIPES
   // ===================================================================
@@ -4913,6 +5363,7 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
         > = {};
 
         if (funcIds.length > 0) {
+          // 1. Memberships
           const { data: mData } = await client
             .from("equipe_membros")
             .select("funcionario_id, funcao_na_equipe, equipes(id, nome)")
@@ -4926,6 +5377,31 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
                 equipe_nome: m.equipes?.nome || "Equipe",
                 funcao_na_equipe: m.funcao_na_equipe,
               });
+            });
+          }
+
+          // 2. Leaderships
+          const { data: lData } = await client
+            .from("equipes")
+            .select("id, nome, lider_id")
+            .in("lider_id", funcIds)
+            .eq("tenant_id", tenantId);
+
+          if (lData) {
+            lData.forEach((eq: any) => {
+              if (!teamMap[eq.lider_id]) teamMap[eq.lider_id] = [];
+              // Prevent duplicates if leader is also in equipe_membros somehow
+              if (!teamMap[eq.lider_id].some(t => t.equipe_id === eq.id)) {
+                teamMap[eq.lider_id].push({
+                  equipe_id: eq.id,
+                  equipe_nome: eq.nome,
+                  funcao_na_equipe: "Líder",
+                });
+              } else {
+                 // Update the function to "Líder" if they are in members but are actually the leader
+                 const existing = teamMap[eq.lider_id].find(t => t.equipe_id === eq.id);
+                 if (existing) existing.funcao_na_equipe = "Líder";
+              }
             });
           }
         }
@@ -6019,6 +6495,175 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
       }
     },
   );
+
+  // ==========================================
+  // [RDO_WM BFF API] - Rotas exclusivas para o App Móvel
+  // ==========================================
+
+  // -------------------------------------------------------
+  // GET /api/mobile/os/ativas
+  // Retorna apenas as OS das equipes da empresa do funcionário autenticado
+  // -------------------------------------------------------
+  app.get("/api/mobile/os/ativas", verifyFirebaseJWT, mobileAuthMiddleware(getSupabaseClient), async (req: MobileAuthenticatedRequest, res) => {
+    try {
+      const client = getSupabaseClient(req);
+      if (!client) return res.status(401).json({ error: "Unauthorized" });
+
+      const { contrato_id: tenantId, funcionario_id, empresa_id, nome, cargo_nome } = req.userContext!;
+
+      // 1. Validar que a empresa do funcionário existe no tenant
+      const { data: empresaData, error: empError } = await client
+        .from("empresas_fornecedores")
+        .select("id, nome")
+        .eq("id", empresa_id)
+        .eq("contrato_id", tenantId)
+        .maybeSingle();
+
+      if (empError || !empresaData) {
+        console.error("[BFF] Empresa do funcionário não encontrada:", empError);
+        return res.status(403).json({
+          error: "EmpresaNaoEncontrada",
+          message: `A empresa vinculada ao seu cadastro (${empresa_id}) não foi encontrada neste contrato.`
+        });
+      }
+
+      // 3. Buscar equipes em que o funcionário é MEMBRO DIRETO (via equipe_membros)
+      const { data: membros, error: memError } = await client
+        .from("equipe_membros")
+        .select("equipe_id, equipes!inner(id, nome, empresa_id, tenant_id)")
+        .eq("funcionario_id", funcionario_id);
+
+      if (memError) {
+        console.error("[BFF] Erro ao buscar alocações do funcionário:", memError);
+        return res.status(500).json({ error: memError.message });
+      }
+
+      // Filtrar apenas equipes da empresa do funcionário dentro do tenant
+      const equipeIds = (membros || [])
+        .filter((m: any) => m.equipes?.empresa_id === empresa_id && m.equipes?.tenant_id === tenantId)
+        .map((m: any) => m.equipe_id);
+
+      if (equipeIds.length === 0) {
+        return res.json({
+          success: true,
+          timestamp: new Date().toISOString(),
+          funcionario: { id: funcionario_id, empresa_id, empresa_nome: empresaData.nome, nome, cargo_nome },
+          serviceOrders: [],
+          message: "Você ainda não está alocado em nenhuma equipe. Solicite ao gestor da obra."
+        });
+      }
+
+      console.log(`[BFF] Funcionario ${funcionario_id} é membro de ${equipeIds.length} equipe(s): [${equipeIds.join(', ')}]`);
+
+      // 4. Buscar OS ativas vinculadas às equipes do funcionário, dentro do tenant
+      const { data, error } = await client
+        .from("ordens_servico")
+        .select("*, equipes(id, nome, empresa_id), itens_eap(descricao_servico)")
+        .eq("tenant_id", tenantId)
+        .in("equipe_id", equipeIds)
+        .neq("status", "CANCELADO")
+        .neq("status", "Cancelada")
+        .neq("status", "CONCLUIDO")
+        .neq("status", "Concluída")
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        console.error("[BFF] Erro ao buscar ordens de serviço:", error);
+        return res.status(500).json({ error: error.message });
+      }
+
+      // 4. Mapear para a interface ServiceOrder que o mobile espera
+      const serviceOrders = (data || []).map((os: any) => ({
+        id: os.id,
+        code: os.numero_os || `OS-${os.id.substring(0,6)}`,
+        title: os.descricao || os.itens_eap?.descricao_servico || 'Ordem de Serviço',
+        location: os.equipes?.nome || 'Equipe não informada',
+        timeInfo: os.data_emissao ? `Emitida: ${new Date(os.data_emissao).toLocaleDateString('pt-BR')}` : '',
+        startedTime: '07:00',
+        status: os.status === 'Em Execução' || os.status === 'EM_EXECUCAO' ? 'in_progress'
+              : os.status === 'Emitida' || os.status === 'EMITIDA' ? 'scheduled'
+              : 'in_progress',
+        sector: os.itens_eap?.descricao_servico || 'Serviço Geral',
+        description: os.descricao || 'Sem descrição',
+        projectId: os.projeto_id
+      }));
+
+      return res.json({
+        success: true,
+        timestamp: new Date().toISOString(),
+        funcionario: { id: funcionario_id, empresa_id, empresa_nome: empresaData.nome, nome, cargo_nome },
+        serviceOrders
+      });
+    } catch (err: any) {
+      console.error("[BFF] Erro interno:", err);
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  // -------------------------------------------------------
+  // POST /api/mobile/rdo
+  // Cria um RDO vinculado ao funcionário autenticado
+  // -------------------------------------------------------
+  app.post("/api/mobile/rdo", verifyFirebaseJWT, mobileAuthMiddleware(getSupabaseClient), async (req: MobileAuthenticatedRequest, res) => {
+    try {
+      const client = getSupabaseClient(req);
+      if (!client) return res.status(401).json({ error: "Unauthorized" });
+
+      const { contrato_id: tenantId, funcionario_id } = req.userContext!;
+
+      const payload = req.body;
+      const protocoloId = payload.protocoloId || payload.protocolo_id;
+
+      // 2. Gerar número do RDO
+      const { count: rdoCount } = await client
+        .from("rdos")
+        .select("id", { count: "exact", head: true })
+        .eq("tenant_id", tenantId);
+
+      const seq = ((rdoCount ?? 0) + 1).toString().padStart(3, "0");
+      const ano = new Date().getFullYear().toString().slice(-2);
+      const numero_rdo = `RDO-${seq}-${ano}`;
+
+      // 3. Montar payload para inserção
+      const rdoPayload = {
+        tenant_id: tenantId,
+        projeto_id: payload.projectId || payload.projeto_id || null,
+        ordem_servico_id: payload.osId,
+        numero_rdo: numero_rdo,
+        data_rdo: payload.date || new Date().toISOString().split('T')[0],
+        clima_manha: payload.weatherMorning,
+        clima_tarde: payload.weatherAfternoon,
+        responsavel_rdo_id: funcionario_id, // Vincula o autor (funcionário) ao RDO
+        status: "Rascunho"
+      };
+
+      const { data, error } = await client
+        .from("rdos")
+        .insert(rdoPayload)
+        .select("id")
+        .single();
+
+      if (error) {
+        console.error("[BFF] Erro ao salvar RDO:", error);
+        return res.status(500).json({ error: error.message });
+      }
+
+      console.log(`[BFF] RDO ${numero_rdo} criado pelo funcionário ${funcionario_id}`);
+
+      return res.status(201).json({
+        success: true,
+        synced: true,
+        protocoloId,
+        rdoId: data.id,
+        rdoNumero: numero_rdo,
+        funcionarioId: funcionario_id,
+        message: `RDO ${numero_rdo} gravado com sucesso.`
+      });
+    } catch (err: any) {
+      console.error("[BFF] Erro interno ao salvar RDO:", err);
+      return res.status(500).json({ error: err.message });
+    }
+  });
 
   app.get("/api/health", (_req, res) => {
     res.json({ status: "ok" });
