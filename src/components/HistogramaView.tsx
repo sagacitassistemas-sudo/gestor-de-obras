@@ -35,7 +35,7 @@ export const HistogramaView: React.FC<HistogramaViewProps> = ({ authSession }) =
   useEffect(() => {
     const fetchProjetos = async () => {
       try {
-        const token = authSession?.access_token;
+        const token = authSession?.idToken;
         if (!token) return;
         const response = await fetch('/api/projetos', {
           headers: { 'Authorization': `Bearer ${token}` }
@@ -64,7 +64,7 @@ export const HistogramaView: React.FC<HistogramaViewProps> = ({ authSession }) =
       try {
         setLoading(true);
         setError(null);
-        const token = authSession?.access_token;
+        const token = authSession?.idToken;
         const response = await fetch(`/api/projetos/${selectedProjetoId}/histograma-recursos`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
