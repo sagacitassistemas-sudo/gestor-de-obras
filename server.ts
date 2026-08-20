@@ -1,7 +1,14 @@
 import express from "express";
 import cors from "cors";
+import axios from 'axios';
+import * as cheerio from 'cheerio';
+import iconv from 'iconv-lite';
+import multer from 'multer';
+import { PDFParse } from 'pdf-parse';
 import path from "path";
+const upload = multer({ storage: multer.memoryStorage() });
 import rdoRouter from "./src/routes/rdo.routes";
+import cronogramaRouter from "./src/routes/cronograma.routes";
 import fs from "fs";
 import { GoogleGenAI } from "@google/genai";
 import {
@@ -409,6 +416,7 @@ function startServer() {
   app.use(express.json());
   
   app.use('/api/rdo', rdoRouter);
+  app.use('/api/cronograma', cronogramaRouter);
 
   // ==========================================
   // AUTH CONTAINER & FIREBASE ADMIN ENDPOINTS
@@ -3718,6 +3726,245 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
     },
   );
 
+/* -------------------------------------------------------------------------- */
+/*                       ORÇAMENTAÇÃO E CUB                                   */
+/* -------------------------------------------------------------------------- */
+
+app.get('/api/cub/bases', verifyFirebaseJWT, async (req: any, res: any) => {
+  try {
+    const contrato_id = req.decodedToken?.contrato_id;
+    if (!contrato_id) {
+      return res.status(401).json({ message: "Sessão inválida. Contrato não identificado." });
+    }
+
+    const client = getSupabaseClient(req);
+    const { data, error } = await client
+      .from('ref_cub_bases')
+      .select('id, uf, sinduscon_nome, mes_referencia, dados_json, atualizado_em')
+      .eq('contrato_id', contrato_id)
+      .order('atualizado_em', { ascending: false });
+
+    if (error) throw error;
+    
+    // Process the status on backend
+    const bases = data.map(base => ({
+      ...base,
+      status: 'ATUALIZADO', // Lógica futura para definir status real
+      projetos: 10 // Mock para contagem
+    }));
+
+    res.json({ bases });
+  } catch (error: any) {
+    console.error("Erro ao listar bases CUB:", error.message);
+    res.status(500).json({ message: "Erro ao listar bases CUB", error: error.message });
+  }
+});
+
+app.post('/api/cub/scrape', verifyFirebaseJWT, async (req: any, res: any) => {
+  try {
+    const { uf, sindusconUrl } = req.body;
+    
+    if (uf !== 'ES') {
+      return res.status(400).json({ message: "No momento, apenas o Sinduscon-ES possui rotina automatizada." });
+    }
+
+    const url = sindusconUrl || "https://www.sinduscon-es.com.br/v2/cgi-bin/cub_detalhe.asp?menu2=23";
+    
+    const response = await axios.get(url, {
+      responseType: 'arraybuffer',
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+      }
+    });
+
+    const htmlUtf8 = iconv.decode(Buffer.from(response.data), 'iso-8859-1');
+    const $ = cheerio.load(htmlUtf8);
+    
+    const cubData: any[] = [];
+    
+    $('table').each((i, table) => {
+      const rows = $(table).find('tr');
+      rows.each((j, row) => {
+        const cols: string[] = [];
+        $(row).find('td, th').each((k, cell) => {
+          cols.push($(cell).text().trim());
+        });
+        
+        if (cols.length > 0 && cols.some(c => c.includes('R-1') || c.includes('R-8') || c.includes('PP-4'))) {
+           if (cols.length >= 4) {
+             const tipo = cols[0];
+             const parseCurrency = (val: string) => {
+               if (!val || val === '-') return null;
+               return parseFloat(val.replace(/[R$\s]/g, '').replace(/\./g, '').replace(',', '.'));
+             };
+             
+             cubData.push({
+               tipo,
+               baixo: parseCurrency(cols[1]),
+               normal: parseCurrency(cols[2]),
+               alto: parseCurrency(cols[3])
+             });
+           }
+        }
+      });
+    });
+
+    const uniqueData = Array.from(new Map(cubData.map(item => [item.tipo, item])).values());
+
+    const mesReferenciaRaw = $('html').text().match(/(\w+)\/(\d{4})/);
+    let mesRef = '07/2026';
+    if(mesReferenciaRaw && mesReferenciaRaw.length >= 3) {
+       mesRef = `${mesReferenciaRaw[1]}/${mesReferenciaRaw[2]}`;
+    }
+
+    res.json({
+      success: true,
+      data: {
+        uf: 'ES',
+        sinduscon: 'Sinduscon-ES',
+        mesReferencia: mesRef,
+        valores: uniqueData
+      }
+    });
+
+  } catch (error: any) {
+    console.error("Erro na raspagem do CUB:", error.message);
+    res.status(500).json({ message: "Erro ao processar integração CUB", error: error.message });
+  }
+});
+
+app.post('/api/cub/import-pdf', verifyFirebaseJWT, upload.single('file'), async (req: any, res: any) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: "Nenhum arquivo enviado." });
+    }
+
+    const { uf } = req.body;
+    
+    const parser = new PDFParse({ data: req.file.buffer });
+    const result = await parser.getText();
+    const text = result.text;
+    await parser.destroy();
+
+    // Acha todas as ocorrências da linha TOTAL seguidas de até 4 valores.
+    const regexTotal = /TOTAL\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)(?:\s+([\d.,]+))?/g;
+    const matches = [...text.matchAll(regexTotal)];
+
+    const parseCurrency = (val: string) => {
+      if (!val || val === '-') return null;
+      return parseFloat(val.replace(/[R$\s]/g, '').replace(/\./g, '').replace(',', '.'));
+    };
+
+    const valores = [];
+
+    if (matches.length >= 5) {
+      const baixoR1 = parseCurrency(matches[0][1]);
+      const baixoPP4 = parseCurrency(matches[0][2]);
+      const baixoR8 = parseCurrency(matches[0][3]);
+      const baixoPIS = parseCurrency(matches[0][4] || '');
+
+      const normalR1 = parseCurrency(matches[1][1]);
+      const normalPP4 = parseCurrency(matches[1][2]);
+      const normalR8 = parseCurrency(matches[1][3]);
+      const normalR16 = parseCurrency(matches[1][4] || '');
+
+      const altoR1 = parseCurrency(matches[2][1]);
+      const altoR8 = parseCurrency(matches[2][2]);
+      const altoR16 = parseCurrency(matches[2][3] || '');
+
+      // Se há apenas 5 matches, o bloco Representativo não foi pego pelo regex.
+      const offset = matches.length === 5 ? 3 : 4;
+      
+      const normalCAL8 = parseCurrency(matches[offset][1]);
+      const normalCSL8 = parseCurrency(matches[offset][2]);
+      const normalCSL16 = parseCurrency(matches[offset][3] || '');
+
+      const altoCAL8 = parseCurrency(matches[offset + 1][1]);
+      const altoCSL8 = parseCurrency(matches[offset + 1][2]);
+      const altoCSL16 = parseCurrency(matches[offset + 1][3] || '');
+
+      const matchRP1Q = matches[6] ? parseCurrency(matches[6][1]) : null;
+      const matchGI = matches[6] ? parseCurrency(matches[6][2] || '') : null;
+
+      valores.push({ tipo: 'R-1', baixo: baixoR1, normal: normalR1, alto: altoR1 });
+      valores.push({ tipo: 'PP-4', baixo: baixoPP4, normal: normalPP4, alto: null });
+      valores.push({ tipo: 'R-8', baixo: baixoR8, normal: normalR8, alto: altoR8 });
+      valores.push({ tipo: 'R-16', baixo: null, normal: normalR16, alto: altoR16 });
+      valores.push({ tipo: 'PIS', baixo: baixoPIS, normal: null, alto: null });
+      valores.push({ tipo: 'CAL-8', baixo: null, normal: normalCAL8, alto: altoCAL8 });
+      valores.push({ tipo: 'CSL-8', baixo: null, normal: normalCSL8, alto: altoCSL8 });
+      valores.push({ tipo: 'CSL-16', baixo: null, normal: normalCSL16, alto: altoCSL16 });
+      if (matchGI) valores.push({ tipo: 'GI', baixo: null, normal: matchGI, alto: null });
+      if (matchRP1Q) valores.push({ tipo: 'RP1Q', baixo: matchRP1Q, normal: null, alto: null });
+    } else {
+      return res.status(400).json({ message: "Formato do PDF não reconhecido como tabela CBIC." });
+    }
+
+    const mesReferenciaRaw = text.match(/([A-ZÇ]+)\/(\d{4})/i);
+    let mesRef = '07/2026';
+    if(mesReferenciaRaw && mesReferenciaRaw.length >= 3) {
+      const mesAbrev = mesReferenciaRaw[1].substring(0, 3).toUpperCase();
+      const mapaMeses: any = { 'JAN': '01', 'FEV': '02', 'MAR': '03', 'ABR': '04', 'MAI': '05', 'JUN': '06', 'JUL': '07', 'AGO': '08', 'SET': '09', 'OUT': '10', 'NOV': '11', 'DEZ': '12' };
+      mesRef = `${mapaMeses[mesAbrev] || '07'}/${mesReferenciaRaw[2]}`;
+    }
+
+    res.json({
+      success: true,
+      data: {
+        uf: uf || 'ES',
+        sinduscon: `Sinduscon-${uf || 'ES'}`,
+        mesReferencia: mesRef,
+        valores
+      }
+    });
+
+  } catch (error: any) {
+    console.error("[CUB Import PDF] Erro:", error);
+    res.status(500).json({ message: "Erro ao processar PDF", error: error.message });
+  }
+});
+
+app.post('/api/cub/save', verifyFirebaseJWT, async (req: any, res: any) => {
+  try {
+    const { uf, sinduscon, mesReferencia, valores } = req.body;
+    const contrato_id = req.decodedToken?.contrato_id;
+    
+    if (!contrato_id) {
+      return res.status(401).json({ message: "Sessão inválida. Contrato não identificado." });
+    }
+
+    if (!uf || !mesReferencia || !valores) {
+      return res.status(400).json({ message: "Dados incompletos para salvar a base CUB." });
+    }
+
+    const client = getSupabaseClient(req);
+    const { data, error } = await client
+      .from('ref_cub_bases')
+      .upsert(
+        {
+          contrato_id,
+          uf,
+          sinduscon_nome: sinduscon || `Sinduscon-${uf}`,
+          mes_referencia: mesReferencia,
+          dados_json: valores,
+          atualizado_em: new Date().toISOString()
+        },
+        {
+          onConflict: 'contrato_id, uf, mes_referencia'
+        }
+      )
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    res.json({ success: true, data });
+  } catch (error: any) {
+    console.error("Erro ao salvar base CUB:", error.message);
+    res.status(500).json({ message: "Erro ao salvar base CUB no banco de dados.", error: error.message });
+  }
+});
+
   // GET /api/projetos - List all projects (now scoped by tenant)
   app.get(
     "/api/projetos",
@@ -3760,6 +4007,411 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
         return res.status(500).json({ error: "Internal Error" });
       }
     },
+  );
+
+  // GET /api/simulacoes
+  app.get(
+    "/api/simulacoes",
+    verifyFirebaseJWT,
+    async (req: AuthenticatedRequest, res) => {
+      try {
+        const client = getSupabaseClient(req);
+        if (!client) return res.status(401).json({ error: "Unauthorized" });
+
+        const tenantId = req.decodedToken?.contrato_id;
+        const { data, error } = await client
+          .from("simulacoes_projetos")
+          .select("*")
+          .eq("tenant_id", tenantId)
+          .order("updated_at", { ascending: false });
+
+        if (error) return res.status(500).json({ error: error.message });
+        return res.json({ success: true, data });
+      } catch (err: any) {
+        return res.status(500).json({ error: err.message });
+      }
+    }
+  );
+
+  // POST /api/simulacoes
+  app.post(
+    "/api/simulacoes",
+    verifyFirebaseJWT,
+    async (req: AuthenticatedRequest, res) => {
+      try {
+        const client = getSupabaseClient(req);
+        if (!client) return res.status(401).json({ error: "Unauthorized" });
+
+        const tenantId = req.decodedToken?.contrato_id;
+        const { id, nome, dados_json, status } = req.body;
+
+        if (id) {
+          // Update
+          const { data, error } = await client
+            .from("simulacoes_projetos")
+            .update({
+              nome,
+              dados_json,
+              status: status || 'RASCUNHO',
+              updated_at: new Date().toISOString()
+            })
+            .eq("id", id)
+            .eq("tenant_id", tenantId)
+            .select()
+            .single();
+
+          if (error) return res.status(500).json({ error: error.message });
+          return res.json({ success: true, data });
+        } else {
+          // Insert
+          const { data, error } = await client
+            .from("simulacoes_projetos")
+            .insert({
+              tenant_id: tenantId,
+              nome: nome || "Nova Simulação",
+              dados_json,
+              status: status || 'RASCUNHO'
+            })
+            .select()
+            .single();
+
+          if (error) return res.status(500).json({ error: error.message });
+          return res.json({ success: true, data });
+        }
+      } catch (err: any) {
+        return res.status(500).json({ error: err.message });
+      }
+    }
+  );
+
+  // POST /api/projetos/from-simulacao - Create project from Orcamentacao simulation
+  app.post(
+    "/api/projetos/from-simulacao",
+    verifyFirebaseJWT,
+    async (req: AuthenticatedRequest, res) => {
+      try {
+        const client = getSupabaseClient(req);
+        const tenantId = req.decodedToken?.contrato_id;
+        if (!client || !tenantId) return res.status(401).json({ error: "Unauthorized" });
+
+        const { nome_projeto, data_inicio, orcamento_base, area_total, etapas, empresa_id: reqEmpresaId } = req.body;
+        if (!nome_projeto || !data_inicio || !etapas || !Array.isArray(etapas)) {
+          return res.status(400).json({ error: "Missing required fields" });
+        }
+
+        let empresa_id = reqEmpresaId || null;
+        if (req.decodedToken?.perfil === "FORNECEDOR") {
+          empresa_id = req.decodedToken?.empresa_id || null;
+        }
+
+        // Lógica de Duração Global (Macro) baseada na Área (m2)
+        const area = Number(area_total) || 1000;
+        let duracaoGlobalDias = 360; // Default: Médio
+        if (area <= 120) duracaoGlobalDias = 240; // 8 meses
+        else if (area <= 300) duracaoGlobalDias = 360; // 12 meses
+        else if (area <= 600) duracaoGlobalDias = 480; // 16 meses
+        else duracaoGlobalDias = 660; // 22 meses
+
+        const addDays = (baseDateStr: string, days: number) => {
+          const d = new Date(baseDateStr);
+          d.setDate(d.getDate() + days);
+          return d.toISOString().split('T')[0];
+        };
+
+        const dataFimGlobal = addDays(data_inicio, duracaoGlobalDias);
+
+        // Auto-generate project code: P-[SEQUENCIAL]-[ANO]
+        const yearStr = new Date(data_inicio).getFullYear().toString().slice(-2);
+        const { count: projCount } = await client
+          .from("projetos")
+          .select("id", { count: "exact", head: true })
+          .eq("tenant_id", tenantId);
+        const seq = (projCount !== null ? projCount : 0) + 1;
+        const codigo_projeto = `P-${seq.toString().padStart(2, "0")}-${yearStr}`;
+
+        // 1. Criar o Projeto
+        const { data: projData, error: projError } = await saveRecord(client, "projetos", {
+          tenant_id: tenantId,
+          nome_projeto,
+          data_inicio,
+          empresa_id,
+          codigo_projeto,
+          updated_at: new Date().toISOString(),
+        });
+
+        if (projError || !projData?.id) {
+          throw new Error("Erro ao criar projeto: " + (projError?.message || "ID não retornado"));
+        }
+
+        const projetoId = projData.id;
+
+        // 2. Criar a EAP com base nas etapas simuladas e no algoritmo de evolução temporal
+        const eapRows = [];
+        
+        // Nó Raiz
+        eapRows.push({
+          projeto_id: projetoId,
+          eap_codigo: "1",
+          descricao_servico: "1 - " + nome_projeto,
+          e_analitico: false,
+          unidade_medida: null,
+          data_inicio: data_inicio,
+          data_fim: dataFimGlobal,
+          duracao_dias: duracaoGlobalDias,
+          ordem: 1,
+          valor_total_contratado: orcamento_base
+        });
+
+        // Mapeamento percentual de início/fim sobre a duração global para os 12 IDs base do sistema
+        const scheduleMap: Record<string, { start: number, end: number }> = {
+          '1': { start: 0.00, end: 0.05 }, // Projetos e Licenc.
+          '2': { start: 0.00, end: 0.05 }, // Serv. Preliminares
+          '3': { start: 0.05, end: 0.15 }, // Fundações
+          '4': { start: 0.60, end: 0.75 }, // Contrapiso
+          '5': { start: 0.40, end: 0.55 }, // Impermeabilização
+          '6': { start: 0.15, end: 0.45 }, // Estrutura (sobreposição com Fechamentos)
+          '7': { start: 0.30, end: 0.50 }, // Fechamentos
+          '8': { start: 0.50, end: 0.60 }, // Cobertura
+          '9': { start: 0.35, end: 0.65 }, // Instalações Hidráulicas (começa junto com estrutura/fechamento)
+          '10':{ start: 0.40, end: 0.70 }, // Instalações Elétricas
+          '11':{ start: 0.65, end: 0.95 }, // Revestimentos, Acabamentos e Pintura
+          '12':{ start: 0.95, end: 1.00 }, // Limpeza e Entregas
+        };
+
+        // Nós Filhos (As 12 etapas)
+        let ordem = 2;
+        for (const etapa of etapas) {
+          const mapping = scheduleMap[etapa.id.toString()] || { start: 0, end: 1 };
+          
+          const startDaysOffset = Math.round(duracaoGlobalDias * mapping.start);
+          const endDaysOffset = Math.round(duracaoGlobalDias * mapping.end);
+          const duracaoEtapa = Math.max(1, endDaysOffset - startDaysOffset);
+
+          const etapaDataInicio = addDays(data_inicio, startDaysOffset);
+          const etapaDataFim = addDays(data_inicio, endDaysOffset);
+
+          eapRows.push({
+            projeto_id: projetoId,
+            eap_codigo: `1.${ordem - 1}`,
+            eap_pai_codigo: "1",
+            descricao_servico: etapa.nome,
+            e_analitico: true,
+            unidade_medida: "un",
+            valor_total_contratado: etapa.valorCalculado || 0,
+            quantidade_contratada: 1,
+            preco_unitario: etapa.valorCalculado || 0,
+            data_inicio: etapaDataInicio,
+            data_fim: etapaDataFim,
+            duracao_dias: duracaoEtapa,
+            ordem: ordem
+          });
+          ordem++;
+        }
+
+        const { error: eapError, data: insertedEaps } = await client.from("itens_eap").insert(eapRows).select();
+        if (eapError) {
+          console.error("[POST /api/projetos/from-simulacao] Erro EAP:", eapError);
+          // Fallback silencioso
+        }
+
+        // 3. Dimensionamento de Equipes e Ordens de Serviço
+        if (insertedEaps && insertedEaps.length > 0) {
+          const dimensionamentoRules: Record<string, { hh: number, specs: { nome: string, min: number, max: number }[] }> = {
+            '1': { hh: 0.5, specs: [{ nome: 'Coordenador de Campo', min: 1, max: 2 }] },
+            '2': { hh: 0.8, specs: [{ nome: 'Carpinteiro', min: 1, max: 1 }, { nome: 'Servente', min: 1, max: 2 }] },
+            '3': { hh: 2.5, specs: [{ nome: 'Armador', min: 1, max: 2 }, { nome: 'Pedreiro', min: 1, max: 2 }, { nome: 'Servente', min: 2, max: 2 }] },
+            '4': { hh: 0.8, specs: [{ nome: 'Pedreiro', min: 1, max: 2 }, { nome: 'Servente', min: 1, max: 1 }] },
+            '5': { hh: 0.6, specs: [{ nome: 'Pedreiro', min: 1, max: 1 }, { nome: 'Servente', min: 1, max: 1 }] },
+            '6': { hh: 8.0, specs: [{ nome: 'Carpinteiro', min: 2, max: 3 }, { nome: 'Armador', min: 2, max: 3 }, { nome: 'Pedreiro', min: 2, max: 3 }, { nome: 'Servente', min: 2, max: 3 }] },
+            '7': { hh: 3.5, specs: [{ nome: 'Pedreiro', min: 2, max: 3 }, { nome: 'Servente', min: 2, max: 3 }] },
+            '8': { hh: 1.2, specs: [{ nome: 'Carpinteiro', min: 1, max: 2 }, { nome: 'Servente', min: 1, max: 2 }] },
+            '9': { hh: 2.2, specs: [{ nome: 'Encanador', min: 1, max: 2 }, { nome: 'Servente', min: 1, max: 2 }] },
+            '10':{ hh: 1.8, specs: [{ nome: 'Eletricista', min: 1, max: 2 }, { nome: 'Servente', min: 1, max: 1 }] },
+            '11':{ hh: 6.5, specs: [{ nome: 'Pintor', min: 2, max: 3 }, { nome: 'Pedreiro', min: 2, max: 3 }, { nome: 'Servente', min: 2, max: 4 }] },
+            '12':{ hh: 0.6, specs: [{ nome: 'Servente', min: 1, max: 2 }] },
+          };
+
+          // Fetch all existing especialidades for this tenant
+          const { data: dbEspecialidades } = await client.from("especialidades").select("id, nome, valor_hora").eq("tenant_id", tenantId);
+          const espMap = new Map();
+          if (dbEspecialidades) {
+            dbEspecialidades.forEach((e: any) => espMap.set(e.nome, { id: e.id, valor_hora: e.valor_hora || 0 }));
+          }
+
+          const shortProjCode = codigo_projeto.replace("P-", "").replace(`-${yearStr}`, "") || "01";
+          const osRows = [];
+          const equipesToInsert = [];
+
+          // Pre-generate equipes for the 12 steps
+          for (const etapa of etapas) {
+            const rule = dimensionamentoRules[etapa.id.toString()];
+            if (!rule) continue;
+
+            const nomeEquipe = `Equipe - ${etapa.nome}`;
+            equipesToInsert.push({
+              tenant_id: tenantId,
+              empresa_id: empresa_id || tenantId, // fallback to tenantId if no vendor
+              contrato_id: tenantId,
+              nome: nomeEquipe,
+              descricao: `Equipe automatizada para etapa de ${etapa.nome}`,
+              status: "ATIVA",
+              updated_at: new Date().toISOString()
+            });
+          }
+
+          if (equipesToInsert.length > 0) {
+            const { data: insertedEquipes } = await client.from("equipes").insert(equipesToInsert).select();
+            
+            // Generate OSs and Composição
+            if (insertedEquipes) {
+              let osSeq = 1;
+              const composicaoRows = [];
+
+              for (const etapa of etapas) {
+                const rule = dimensionamentoRules[etapa.id.toString()];
+                if (!rule) continue;
+
+                const eapItem = insertedEaps.find(e => e.descricao_servico === etapa.nome && e.e_analitico === true);
+                const equipeItem = insertedEquipes.find(eq => eq.nome === `Equipe - ${etapa.nome}`);
+
+                if (eapItem && equipeItem) {
+                  // Build composition DB rows and description text
+                  let compText = '';
+                  let totalMin = 0;
+                  let totalMax = 0;
+
+                  rule.specs.forEach(spec => {
+                    const espInfo = espMap.get(spec.nome);
+                    if (espInfo) {
+                      composicaoRows.push({
+                        tenant_id: tenantId,
+                        equipe_id: equipeItem.id,
+                        especialidade_id: espInfo.id,
+                        quantidade: spec.max,
+                        valor_hora_projetado: espInfo.valor_hora
+                      });
+                      compText += `\n- ${spec.max}x ${spec.nome}`;
+                      totalMin += spec.min;
+                      totalMax += spec.max;
+                    }
+                  });
+
+                  if (compText === '') {
+                    compText = '\n- (Especialidades não localizadas no banco)';
+                  }
+
+                  const horasTotal = Math.round(area * rule.hh);
+                  const descricaoRica = `Execução da etapa ${etapa.nome}.\nEsforço estimado: ${horasTotal} H/H para ${area}m².\nComposição Sugerida da Equipe (${totalMin} a ${totalMax} profissionais):${compText}`;
+                  
+                  const seqStr = osSeq.toString().padStart(3, "0");
+                  const generatedNumeroOs = `OS-${seqStr}-P${shortProjCode}-${yearStr}`;
+
+                  // Calcular fatias (MO, MAT, EQP) baseado no valorCalculado da etapa
+                  const vCalc = etapa.valorCalculado || 0;
+                  const moPerc = etapa.decomposicao?.mo || 0;
+                  const matPerc = etapa.decomposicao?.mat || 0;
+                  const eqpPerc = etapa.decomposicao?.eqp || 0;
+
+                  osRows.push({
+                    tenant_id: tenantId,
+                    projeto_id: projetoId,
+                    item_eap_id: eapItem.id,
+                    equipe_id: equipeItem.id,
+                    numero_os: generatedNumeroOs,
+                    descricao: descricaoRica,
+                    status: "Emitida",
+                    data_emissao: data_inicio,
+                    valor_mao_obra: vCalc * (moPerc / 100),
+                    valor_materiais: vCalc * (matPerc / 100),
+                    valor_equipamentos: vCalc * (eqpPerc / 100)
+                  });
+                  osSeq++;
+                }
+              }
+
+              if (composicaoRows.length > 0) {
+                await client.from("equipe_composicao_especialidades").insert(composicaoRows);
+              }
+
+              if (osRows.length > 0) {
+                await client.from("ordens_servico").insert(osRows);
+              }
+            }
+          }
+        }
+
+        return res.json({ success: true, projeto: projData });
+      } catch (err: any) {
+        console.error("[POST /api/projetos/from-simulacao] Erro:", err);
+      }
+    }
+  );
+
+  // GET /api/projetos/:id/histograma-recursos - Obter dados de recursos planejados no tempo
+  app.get(
+    "/api/projetos/:id/histograma-recursos",
+    verifyFirebaseJWT,
+    async (req: AuthenticatedRequest, res) => {
+      try {
+        const client = getSupabaseClient(req);
+        if (!client) return res.status(401).json({ error: "Unauthorized" });
+
+        const projetoId = req.params.id;
+
+        // Buscar todas as OSs do projeto que possuem EAP e Equipe
+        const { data: oss, error: osError } = await client
+          .from("ordens_servico")
+          .select(`
+            id,
+            numero_os,
+            itens_eap ( data_inicio, data_fim, duracao_dias ),
+            equipe_id
+          `)
+          .eq("projeto_id", projetoId)
+          .not("equipe_id", "is", null)
+          .not("item_eap_id", "is", null);
+
+        if (osError) return res.status(500).json({ error: osError.message });
+        if (!oss || oss.length === 0) return res.json({ success: true, data: [] });
+
+        // Coletar todos os equipe_id únicos
+        const equipeIds = [...new Set(oss.map(os => os.equipe_id))];
+
+        // Buscar composições das equipes
+        const { data: comps, error: compError } = await client
+          .from("equipe_composicao_especialidades")
+          .select(`
+            equipe_id,
+            quantidade,
+            especialidades ( nome )
+          `)
+          .in("equipe_id", equipeIds);
+
+        if (compError) return res.status(500).json({ error: compError.message });
+
+        // Montar a resposta mesclando os dados
+        const result = oss.map(os => {
+          const eap = Array.isArray(os.itens_eap) ? os.itens_eap[0] : os.itens_eap;
+          const osComps = (comps || []).filter(c => c.equipe_id === os.equipe_id);
+          
+          return {
+            os_id: os.id,
+            numero_os: os.numero_os,
+            data_inicio: eap?.data_inicio,
+            data_fim: eap?.data_fim,
+            duracao_dias: eap?.duracao_dias,
+            composicao: osComps.map(c => ({
+              especialidade: (c.especialidades as any)?.nome || 'Desconhecida',
+              quantidade: c.quantidade || 0
+            }))
+          };
+        }).filter(item => item.data_inicio && item.data_fim); // Apenas OSs com datas válidas
+
+        return res.json({ success: true, data: result });
+      } catch (err: any) {
+        return res.status(500).json({ error: err.message });
+      }
+    }
   );
 
   // POST /api/projetos - Create or update a project
@@ -4650,12 +5302,25 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
         weeks.push({ semana_inicio: fmt(getMonday(start)), semana_fim: fmt(addDays(getMonday(start), 6)) });
       }
 
-      const valorPorSemana = Math.round((valorTotal / weeks.length) * 100) / 100;
-      let remainder = Math.round((valorTotal - valorPorSemana * weeks.length) * 100) / 100;
+      const weeksCount = weeks.length;
+      let acumuladoAnterior = 0;
 
-      for (let i = 0; i < weeks.length; i++) {
-        let val = valorPorSemana;
-        if (i === weeks.length - 1) val = Math.round((val + remainder) * 100) / 100;
+      for (let i = 0; i < weeksCount; i++) {
+        // Usa a Curva S (Beta): S(t) = 3t^2 - 2t^3
+        // 't' é a fração do tempo decorrido, onde 0 <= t <= 1
+        const t = (i + 1) / weeksCount;
+        const s_t = (3 * Math.pow(t, 2)) - (2 * Math.pow(t, 3));
+        
+        const valorAcumuladoAtual = s_t * valorTotal;
+        let val = Math.round((valorAcumuladoAtual - acumuladoAnterior) * 100) / 100;
+        
+        if (i === weeksCount - 1) {
+          // Ajusta a última semana para garantir o fechamento exato do valor total
+          const somaAnteriores = allWeekRows
+            .filter((r) => r.item_eap_id === item.id)
+            .reduce((acc, curr) => acc + curr.valor_planejado, 0);
+          val = Math.round((valorTotal - somaAnteriores) * 100) / 100;
+        }
 
         allWeekRows.push({
           projeto_id,
@@ -4667,6 +5332,8 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
           valor_realizado: 0,
           updated_at: new Date().toISOString(),
         });
+
+        acumuladoAnterior = valorAcumuladoAtual;
       }
     }
 
@@ -5095,6 +5762,7 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
           valor_ferramentas: osData.valor_ferramentas ? Number(osData.valor_ferramentas) : 0,
           equipamentos: osData.equipamentos || null,
           valor_equipamentos: osData.valor_equipamentos ? Number(osData.valor_equipamentos) : 0,
+          valor_mao_obra: osData.valor_mao_obra ? Number(osData.valor_mao_obra) : 0,
           responsavel_rdo_id: osData.responsavel_rdo_id || null,
           status: "Emitida",
           data_emissao: emissaoDate.toISOString(),
@@ -5142,6 +5810,7 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
           valor_ferramentas: osData.valor_ferramentas !== undefined ? Number(osData.valor_ferramentas) : undefined,
           equipamentos: osData.equipamentos || null,
           valor_equipamentos: osData.valor_equipamentos !== undefined ? Number(osData.valor_equipamentos) : undefined,
+          valor_mao_obra: osData.valor_mao_obra !== undefined ? Number(osData.valor_mao_obra) : undefined,
           responsavel_rdo_id: osData.responsavel_rdo_id || null,
           data_emissao: osData.data_emissao || new Date().toISOString(),
           updated_at: new Date().toISOString(),

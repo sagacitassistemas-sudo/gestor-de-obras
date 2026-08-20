@@ -25,6 +25,7 @@ import { ContratosView } from './components/ContratosView';
 import { ProjetosEapView } from './components/ProjetosEapView';
 import { CronogramaExecutivoView } from './components/CronogramaExecutivoView';
 import { CronogramaFisicoFinanceiroView } from './components/CronogramaFisicoFinanceiroView';
+import { HistogramaView } from './components/HistogramaView';
 import { RDOView } from './components/RDOView';
 import { OSView } from './components/OSView';
 import { AlertasView } from './components/AlertasView';
@@ -40,6 +41,9 @@ import { FuncionariosView } from './components/FuncionariosView';
 import { CustosFinanceiroView } from './components/CustosFinanceiroView';
 import { EquipesView } from './components/EquipesView';
 import { DispositivosView } from './components/DispositivosView';
+import { OrcamentacaoView } from './components/OrcamentacaoView';
+import { OrcamentoBaseView } from './components/OrcamentoBaseView';
+import { ImportacaoCUBView } from './components/ImportacaoCUBView';
 
 import { NovoChamadoModal } from './components/NovoChamadoModal';
 import { ProcessamentoNotasDrawer } from './components/ProcessamentoNotasDrawer';
@@ -241,6 +245,7 @@ export default function App() {
       case 'projetos_eap': return !!effectivePermissions.projetos_ler;
       case 'cronograma_executivo': return !!effectivePermissions.cronogramas_ler;
       case 'cronograma_financeiro': return !!effectivePermissions.cronogramas_ler;
+      case 'histograma': return !!effectivePermissions.cronogramas_ler;
       case 'rdo': return !!effectivePermissions.rdo_ler;
       case 'contratos_obra': return !!effectivePermissions.contratos_ler;
       case 'medicoes': return !!effectivePermissions.medicoes_ler;
@@ -485,7 +490,7 @@ export default function App() {
         />
 
         {/* View Component Canvas */}
-        <main className={`p-4 md:p-8 w-full mx-auto flex-1 ${(activeTab === 'cronograma_executivo' || activeTab === 'cronograma_financeiro') ? 'max-w-full' : 'max-w-[1280px]'}`}>
+        <main className={`p-4 md:p-8 w-full mx-auto flex-1 ${(activeTab === 'cronograma_executivo' || activeTab === 'cronograma_financeiro' || activeTab === 'histograma') ? 'max-w-full' : 'max-w-[1280px]'}`}>
           {activeTab === 'home' && (
             <div className="flex flex-col items-center justify-center w-full min-h-[70vh]">
               <img 
@@ -494,6 +499,26 @@ export default function App() {
                 className="w-full h-auto object-contain max-w-5xl"
               />
             </div>
+          )}
+
+          {activeTab === 'orcamentacao' && (
+            <OrcamentacaoView 
+              authSession={authSession} 
+              onNavigateTab={setActiveTab} 
+            />
+          )}
+
+          {activeTab === 'orcamento_base' && (
+            <OrcamentoBaseView 
+              authSession={authSession} 
+              onNavigateTab={setActiveTab} 
+            />
+          )}
+
+          {activeTab === 'importacao_cub' && (
+            hasAccess('projetos_eap') ? (
+              <ImportacaoCUBView authSession={authSession} />
+            ) : <div className="p-8 text-center bg-white rounded-xl border border-gray-200">Acesso Restrito: Sem permissão aos Projetos/Orçamentos</div>
           )}
 
           {activeTab === 'dashboard' && (
@@ -639,6 +664,12 @@ export default function App() {
             hasAccess('cronograma_financeiro') ? (
               <CronogramaFisicoFinanceiroView authSession={authSession} />
             ) : <div className="p-8 text-center bg-white rounded-xl border border-gray-200">Acesso Restrito: Sem permissão ao Cronograma Financeiro</div>
+          )}
+
+          {activeTab === 'histograma' && (
+            hasAccess('histograma') ? (
+              <HistogramaView authSession={authSession} />
+            ) : <div className="p-8 text-center bg-white rounded-xl border border-gray-200">Acesso Restrito: Sem permissão ao Histograma</div>
           )}
 
           {activeTab === 'rdo' && (

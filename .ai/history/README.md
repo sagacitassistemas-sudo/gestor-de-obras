@@ -47,6 +47,7 @@ Este diretório armazena todos os registros históricos de implementação, corr
 
 | Data | Arquivo | Domínio | Resumo |
 |---|---|---|---|
+| **2026-08-20** | [2026-08-20_cadeia_processos_orcamentacao.md](file:///mnt/46F84CA3F84C935B/Atividades_2026/Obras/Sistema/gestor-de-obras/.ai/history/2026-08-20_cadeia_processos_orcamentacao.md) | `Orçamentação` | Mapeamento integral da cadeia CUB -> Orçamento Base -> EAP -> Financeiro, atualizando o modelo de agentes e testes E2E. |
 | **2026-08-20** | [2026-08-20_vercel_auth_and_mobile_cors.md](file:///mnt/46F84CA3F84C935B/Atividades_2026/Obras/Sistema/gestor-de-obras/.ai/history/2026-08-20_vercel_auth_and_mobile_cors.md) | `Cloud / Vercel / CORS` | Integração do Vercel com chave Firebase Admin SDK (env vars), liberação de CORS para apps mobile e deploy oculto de Firebase Auth via CLI no Supabase. |
 | **2026-08-19** | [2026-08-19_api_rdo_mobile_backend.md](file:///mnt/46F84CA3F84C935B/Atividades_2026/Obras/Sistema/gestor-de-obras/.ai/history/2026-08-19_api_rdo_mobile_backend.md) | `RDO Mobile / API` | Construção do backend para o RDO de campo (App Mobile), incluindo Mappers, Auth por Dispositivo e Idempotência de protocolos offline. |
 | **2026-08-19** | [2026-08-19_automation_loop_and_invariants.md](file:///mnt/46F84CA3F84C935B/Atividades_2026/Obras/Sistema/gestor-de-obras/.ai/history/2026-08-19_automation_loop_and_invariants.md) | `Automação / CI-CD` | Implementação de invariantes de negócio e automação do loop de desenvolvimento e testes. |

@@ -28,6 +28,7 @@ interface OS {
   data_emissao: string;
   materiais?: string;
   valor_materiais?: number;
+  valor_mao_obra?: number;
   ferramentas?: string;
   valor_ferramentas?: number;
   equipamentos?: string;
@@ -73,6 +74,7 @@ export const OSView: React.FC<OSViewProps> = ({ authSession }) => {
   const [selectedEquipeId, setSelectedEquipeId] = useState<string>('');
   const [materiais, setMateriais] = useState<string>('');
   const [valorMateriais, setValorMateriais] = useState<string>('');
+  const [valorMaoObra, setValorMaoObra] = useState<string>('');
   const [ferramentas, setFerramentas] = useState<string>('');
   const [valorFerramentas, setValorFerramentas] = useState<string>('');
   const [equipamentos, setEquipamentos] = useState<string>('');
@@ -153,6 +155,7 @@ export const OSView: React.FC<OSViewProps> = ({ authSession }) => {
     setSelectedEquipeId('');
     setMateriais('');
     setValorMateriais('');
+    setValorMaoObra('');
     setFerramentas('');
     setValorFerramentas('');
     setEquipamentos('');
@@ -174,6 +177,7 @@ export const OSView: React.FC<OSViewProps> = ({ authSession }) => {
         descricao: descricao,
         materiais: materiais || undefined,
         valor_materiais: valorMateriais || undefined,
+        valor_mao_obra: valorMaoObra || undefined,
         ferramentas: ferramentas || undefined,
         valor_ferramentas: valorFerramentas || undefined,
         equipamentos: equipamentos || undefined,
@@ -225,6 +229,7 @@ export const OSView: React.FC<OSViewProps> = ({ authSession }) => {
         descricao: descricao,
         materiais: materiais || undefined,
         valor_materiais: valorMateriais || undefined,
+        valor_mao_obra: valorMaoObra || undefined,
         ferramentas: ferramentas || undefined,
         valor_ferramentas: valorFerramentas || undefined,
         equipamentos: equipamentos || undefined,
@@ -479,7 +484,22 @@ export const OSView: React.FC<OSViewProps> = ({ authSession }) => {
                 </div>
               )}
 
-              <div className="grid grid-cols-3 gap-4 mb-4">
+              <div className="grid grid-cols-4 gap-4 mb-4">
+                <div>
+                  <label className="block text-xs font-bold text-[#707785] uppercase mb-1">Mão de Obra</label>
+                  <div className="flex flex-col gap-2">
+                    <input 
+                      type="number" 
+                      step="0.01"
+                      value={valorMaoObra} 
+                      onChange={e => setValorMaoObra(e.target.value)} 
+                      className="w-full border border-[#c0c7d6] rounded-lg p-2.5 outline-none focus:border-[#005daa] text-sm font-medium bg-[#f0f9ff]"
+                      placeholder="Valor Estimado (R$)"
+                    />
+                    {/* Placeholder para alinhar o layout se necessário */}
+                    <div className="h-[46px] hidden"></div> 
+                  </div>
+                </div>
                 <div>
                   <label className="block text-xs font-bold text-[#707785] uppercase mb-1">Materiais</label>
                   <div className="flex flex-col gap-2">
@@ -591,6 +611,7 @@ export const OSView: React.FC<OSViewProps> = ({ authSession }) => {
                       setSelectedEquipeId(selectedOs.equipe_id || '');
                       setMateriais(selectedOs.materiais || '');
                       setValorMateriais(selectedOs.valor_materiais ? selectedOs.valor_materiais.toString() : '');
+                      setValorMaoObra(selectedOs.valor_mao_obra ? selectedOs.valor_mao_obra.toString() : '');
                       setFerramentas(selectedOs.ferramentas || '');
                       setValorFerramentas(selectedOs.valor_ferramentas ? selectedOs.valor_ferramentas.toString() : '');
                       setEquipamentos(selectedOs.equipamentos || '');
@@ -631,10 +652,14 @@ export const OSView: React.FC<OSViewProps> = ({ authSession }) => {
                     <div>
                       <p className="text-xs font-bold text-[#707785] uppercase tracking-wider mb-1">Equipe Executora Designada</p>
                       <div className="flex items-center gap-2">
-                        <span className="px-3 py-1 bg-blue-50 border border-blue-200 text-[#005daa] font-bold text-xs rounded-lg flex items-center gap-1.5">
+                        <button 
+                          onClick={() => alert('O módulo de dimensionamento detalhado de equipe será implementado na próxima versão.')}
+                          className="px-4 py-1.5 bg-blue-50 border border-blue-200 text-[#005daa] font-bold text-xs rounded-lg flex items-center gap-1.5 hover:bg-blue-100 transition-colors cursor-pointer"
+                        >
                           <span className="material-symbols-outlined text-sm">groups</span>
                           {selectedOs.equipes.nome}
-                        </span>
+                          <span className="material-symbols-outlined text-[14px] ml-1">edit</span>
+                        </button>
                       </div>
                     </div>
                     {selectedOs.responsavel_rdo && (
@@ -652,7 +677,16 @@ export const OSView: React.FC<OSViewProps> = ({ authSession }) => {
                 )}
               </div>
 
-              <div className="grid grid-cols-3 gap-4 mb-6">
+              <div className="grid grid-cols-4 gap-4 mb-6">
+                <div className="bg-white border border-[#005daa] bg-[#f0f9ff] rounded-lg p-4">
+                  <div className="flex justify-between items-start mb-2">
+                    <h4 className="font-bold text-[#005daa] text-xs uppercase tracking-wide flex items-center gap-1"><span className="material-symbols-outlined text-[16px]">groups</span> Mão de Obra</h4>
+                    <span className="font-bold text-[#005daa] text-xs bg-white px-2 py-0.5 rounded border border-blue-200">{Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(selectedOs.valor_mao_obra || 0)}</span>
+                  </div>
+                  <div className="text-sm text-[#404753]">
+                    <span className="italic text-[#a0a5b1]">Clique na equipe acima para editar o dimensionamento.</span>
+                  </div>
+                </div>
                 <div className="bg-white border border-[#e1e2e8] rounded-lg p-4">
                   <div className="flex justify-between items-start mb-2">
                     <h4 className="font-bold text-[#191c1e] text-xs uppercase tracking-wide flex items-center gap-1"><span className="material-symbols-outlined text-[16px] text-slate-500">inventory_2</span> Materiais</h4>

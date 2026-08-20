@@ -1,5 +1,13 @@
 # Histórico de Versões e Releases - Works Manager (Gestor de Obras)
 
+## Versão 1.4.2 (2026-08-20) - Mapeamento da Cadeia de Processos (CUB e Orçamentação)
+
+### 🧠 1. Expansão da Base de Conhecimento e Agentes
+- **Cadeia de Processos Orçamentários**: Mapeamento integral e persistente da arquitetura funcional, partindo da importação de índices **CUB (Sinduscon)**, passando pela estruturação do **Orçamento Base (Valor Global)** até o _handoff_ automatizado para a **EAP do Projeto**.
+- **Capacitação do Modelo de Testes**: Definição de invariantes para testes E2E e de integração na esteira orçamentária, garantindo a validação de nós EAP e exatidão matemática dos custos de obra.
+
+---
+
 ## Versão 1.4.1 (2026-08-20) - Preparação Módulo II: Valoração de Recursos na OS
 
 ### 💰 1. Estrutura Financeira (OS)

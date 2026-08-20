@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabaseClient';
 import { AuthSession } from '../types';
 import { Gantt, ITask, ILink, IApi } from '@svar-ui/react-gantt';
 import { CadastroEtapaModal, type EapItemOption } from './CadastroEtapaModal';
+import { ParametrosExecucaoModal } from './ParametrosExecucaoModal';
 import {
   EapEngineItem,
   processUserInteraction,
@@ -123,6 +124,7 @@ export const CronogramaExecutivoView: React.FC<CronogramaExecutivoViewProps> = (
   const [saving, setSaving] = useState(false);
   const [itemToEdit, setItemToEdit] = useState<EapItemOption | null>(null);
   const [timeScale, setTimeScale] = useState<'month' | 'week' | 'day'>('week');
+  const [isParametrosOpen, setIsParametrosOpen] = useState(false);
 
   // Refs para acesso sem stale closures dentro dos handlers do Gantt
   const rawItemsRef = useRef<ItemEap[]>([]);
@@ -820,7 +822,15 @@ export const CronogramaExecutivoView: React.FC<CronogramaExecutivoViewProps> = (
 
 
 
-          <div className="relative group">
+          <div className="relative group flex gap-2">
+            <button
+              onClick={() => setIsParametrosOpen(true)}
+              disabled={!selectedProjetoId}
+              className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg shadow-md hover:bg-indigo-700 transition-colors font-bold text-sm cursor-pointer disabled:opacity-50"
+            >
+              <span className="material-symbols-outlined text-[18px]">engineering</span>
+              Parametrizar H/H
+            </button>
             <button className="flex items-center gap-2 bg-slate-800 text-white px-4 py-2 rounded-lg shadow-md hover:bg-slate-900 transition-colors font-bold text-sm cursor-pointer">
               <span className="material-symbols-outlined text-[18px]">download</span>
               Exportar
@@ -965,6 +975,15 @@ export const CronogramaExecutivoView: React.FC<CronogramaExecutivoViewProps> = (
           }))}
           itemToEdit={itemToEdit}
           authSession={authSession}
+          onSuccess={() => fetchEapItems(selectedProjetoId)}
+        />
+      )}
+
+      {isParametrosOpen && (
+        <ParametrosExecucaoModal
+          isOpen={isParametrosOpen}
+          onClose={() => setIsParametrosOpen(false)}
+          projetoId={selectedProjetoId}
           onSuccess={() => fetchEapItems(selectedProjetoId)}
         />
       )}

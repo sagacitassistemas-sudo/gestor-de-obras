@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { NavigationTab } from '../types';
 
 interface SidebarProps {
@@ -30,6 +30,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
   isCollapsed = false,
   onToggleCollapse
 }) => {
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
+    cadastros: false,
+    orcamento: true,
+    obra: true,
+    gestao: false
+  });
+
+  const toggleGroup = (group: string) => {
+    if (!isCollapsed) {
+      setExpandedGroups(prev => ({ ...prev, [group]: !prev[group] }));
+    }
+  };
+
   const isAdmin = userRole === 'ADMIN';
   const hasAccess = (key: string) => isAdmin || (permissions && permissions[key]);
   
@@ -155,12 +168,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
           {hasAccess('empresas_ler') && (
             <div className="space-y-1">
               {!isCollapsed && (
-                <div className="px-3 pb-1">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                <button 
+                  onClick={() => toggleGroup('cadastros')}
+                  className="w-full px-3 pb-1 pt-2 flex items-center justify-between text-left group/header"
+                >
+                  <span className="text-[10px] font-bold text-slate-400 group-hover/header:text-slate-600 uppercase tracking-wider transition-colors">
                     Cadastros
                   </span>
-                </div>
+                  <span className="material-symbols-outlined text-[16px] text-slate-400 group-hover/header:text-slate-600 transition-transform" style={{ transform: expandedGroups.cadastros ? 'rotate(180deg)' : 'none' }}>
+                    expand_more
+                  </span>
+                </button>
               )}
+              
+              <div className={`space-y-1 transition-all overflow-hidden ${(!isCollapsed && !expandedGroups.cadastros) ? 'h-0 opacity-0' : 'h-auto opacity-100'}`}>
               <button
                 onClick={() => handleNavClick('empresas')}
                 className={`w-full text-left ${navItemClass('empresas')}`}
@@ -219,19 +240,71 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <span className="material-symbols-outlined" style={{ fontVariationSettings: activeTab === 'materiais' ? "'FILL' 1" : "'FILL' 0" }}>inventory_2</span>
                 {!isCollapsed && <span className="font-label-bold text-label-bold">Materiais</span>}
               </button>
+              </div> {/* Close accordion */}
+            </div>
+          )}
+
+          {/* GRUPO: ORÇAMENTO DE OBRAS */}
+          {hasAccess('projetos_ler') && (
+            <div className="space-y-1">
+              {!isCollapsed && (
+                <button 
+                  onClick={() => toggleGroup('orcamento')}
+                  className="w-full px-3 pb-1 pt-2 flex items-center justify-between text-left group/header"
+                >
+                  <span className="text-[10px] font-bold text-slate-400 group-hover/header:text-slate-600 uppercase tracking-wider transition-colors">
+                    Orçamento de Obras
+                  </span>
+                  <span className="material-symbols-outlined text-[16px] text-slate-400 group-hover/header:text-slate-600 transition-transform" style={{ transform: expandedGroups.orcamento ? 'rotate(180deg)' : 'none' }}>
+                    expand_more
+                  </span>
+                </button>
+              )}
+              
+              <div className={`space-y-1 transition-all overflow-hidden ${(!isCollapsed && !expandedGroups.orcamento) ? 'h-0 opacity-0' : 'h-auto opacity-100'}`}>
+              <button
+                onClick={() => handleNavClick('importacao_cub')}
+                className={`w-full text-left ${navItemClass('importacao_cub')}`}
+              >
+                <span className="material-symbols-outlined" style={{ fontVariationSettings: activeTab === 'importacao_cub' ? "'FILL' 1" : "'FILL' 0" }}>download_for_offline</span>
+                {!isCollapsed && <span className="font-label-bold text-label-bold">Importação CUB</span>}
+              </button>
+              <button
+                onClick={() => handleNavClick('orcamento_base')}
+                className={`w-full text-left ${navItemClass('orcamento_base')}`}
+              >
+                <span className="material-symbols-outlined" style={{ fontVariationSettings: activeTab === 'orcamento_base' ? "'FILL' 1" : "'FILL' 0" }}>calculate</span>
+                {!isCollapsed && <span className="font-label-bold text-label-bold">Orçamento Base</span>}
+              </button>
+              <button
+                onClick={() => handleNavClick('orcamentacao')}
+                className={`w-full text-left ${navItemClass('orcamentacao')}`}
+              >
+                <span className="material-symbols-outlined" style={{ fontVariationSettings: activeTab === 'orcamentacao' ? "'FILL' 1" : "'FILL' 0" }}>analytics</span>
+                {!isCollapsed && <span className="font-label-bold text-label-bold">Simulador Obra</span>}
+              </button>
+              </div> {/* Close accordion */}
             </div>
           )}
 
           {/* GRUPO: OBRA */}
           {(hasAccess('projetos_ler') || hasAccess('medicoes_ler')) && (
-            <div className="space-y-1">
+            <div className="space-y-1 mt-4">
               {!isCollapsed && (
-                <div className="pt-2 px-3 pb-1">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                <button 
+                  onClick={() => toggleGroup('obra')}
+                  className="w-full px-3 pb-1 pt-2 flex items-center justify-between text-left group/header"
+                >
+                  <span className="text-[10px] font-bold text-slate-400 group-hover/header:text-slate-600 uppercase tracking-wider transition-colors">
                     Obra
                   </span>
-                </div>
+                  <span className="material-symbols-outlined text-[16px] text-slate-400 group-hover/header:text-slate-600 transition-transform" style={{ transform: expandedGroups.obra ? 'rotate(180deg)' : 'none' }}>
+                    expand_more
+                  </span>
+                </button>
               )}
+              
+              <div className={`space-y-1 transition-all overflow-hidden ${(!isCollapsed && !expandedGroups.obra) ? 'h-0 opacity-0' : 'h-auto opacity-100'}`}>
               {hasAccess('projetos_ler') && (
                 <button
                   onClick={() => handleNavClick('projetos_eap')}
@@ -257,6 +330,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 >
                   <span className="material-symbols-outlined" style={{ fontVariationSettings: activeTab === 'cronograma_financeiro' ? "'FILL' 1" : "'FILL' 0" }}>payments</span>
                   {!isCollapsed && <span className="font-label-bold text-label-bold">Físico-Financeiro</span>}
+                </button>
+              )}
+              {hasAccess('projetos_ler') && (
+                <button
+                  onClick={() => handleNavClick('histograma')}
+                  className={`w-full text-left ${navItemClass('histograma')}`}
+                >
+                  <span className="material-symbols-outlined" style={{ fontVariationSettings: activeTab === 'histograma' ? "'FILL' 1" : "'FILL' 0" }}>bar_chart</span>
+                  {!isCollapsed && <span className="font-label-bold text-label-bold">Histograma</span>}
                 </button>
               )}
               {(hasAccess('projetos_ler') || hasAccess('medicoes_ler')) && (
@@ -286,18 +368,27 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   {!isCollapsed && <span className="font-label-bold text-label-bold">Medições</span>}
                 </button>
               )}
+              </div> {/* Close accordion */}
             </div>
           )}
 
           {/* GRUPO: GESTÃO */}
-          <div className="space-y-1">
+          <div className="space-y-1 mt-4">
             {!isCollapsed && (
-              <div className="pt-2 px-3 pb-1">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+              <button 
+                onClick={() => toggleGroup('gestao')}
+                className="w-full px-3 pb-1 pt-2 flex items-center justify-between text-left group/header"
+              >
+                <span className="text-[10px] font-bold text-slate-400 group-hover/header:text-slate-600 uppercase tracking-wider transition-colors">
                   Gestão
                 </span>
-              </div>
+                <span className="material-symbols-outlined text-[16px] text-slate-400 group-hover/header:text-slate-600 transition-transform" style={{ transform: expandedGroups.gestao ? 'rotate(180deg)' : 'none' }}>
+                  expand_more
+                </span>
+              </button>
             )}
+            
+            <div className={`space-y-1 transition-all overflow-hidden ${(!isCollapsed && !expandedGroups.gestao) ? 'h-0 opacity-0' : 'h-auto opacity-100'}`}>
             {hasAccess('financeiro_ler') && (
               <button
                 onClick={() => handleNavClick('financeiro')}
@@ -369,6 +460,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 {!isCollapsed && <span className="font-label-bold text-label-bold">Matriz de acessos</span>}
               </button>
             )}
+            </div> {/* Close accordion */}
           </div>
         </nav>
 
