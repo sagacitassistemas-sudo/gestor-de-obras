@@ -1,5 +1,28 @@
 # Histórico de Versões e Releases - Works Manager (Gestor de Obras)
 
+## Versão 1.3.1 (2026-08-20) - Correções de PWA, CORS e Autenticação Zero Trust
+
+### 📱 1. Homologação do RDO_WM como PWA e Ambientes de Produção
+- **Configuração de Variáveis na Nuvem (Vercel):**
+  - Integração do projeto Vercel (`rdo-wm`) via CLI para injeção nativa da variável `VITE_API_BASE_URL` no bundle de produção estático.
+  - O aplicativo Front-End agora não mais executa chamadas em si mesmo (que causavam 404 e falsos logoffs), sendo totalmente acoplado à URL de produção do `gestor-de-obras`.
+
+### 🛡️ 2. Segurança e Comunicação (CORS e Vercel Auth)
+- **Deployment Protection da Vercel Desativado:** 
+  - A API do `gestor-de-obras` estava bloqueada para chamadas externas devido à proteção nativa da Vercel (`vercel_auth_enabled: true`), retornando um status fixo `401 Unauthorized` por debaixo dos panos. Proteção removida para restaurar o comportamento esperado da API pública protegida por token.
+- **Whitelist de CORS no Backend:**
+  - O `server.ts` agora aceita explícitamente as novas origens de produção (`https://rdo-wm.vercel.app` e `https://rdo-wm-puce.vercel.app`), resolvendo bloqueios de _preflight_ do navegador.
+- **Autorização OAuth do Firebase:**
+  - Inserção do domínio produtivo no *Authorized Domains* do console Firebase, liberando popup de login (Google SSO) no domínio customizado.
+
+### 🧠 3. Estabilidade de Middleware de Autenticação
+- **Resolução Tolerante de E-mail (Case Insensitive):**
+  - O arquivo `mobileAuth.middleware.ts` teve a query de resolução alterada para tolerar diferenças de caixa alta/baixa no retorno do Firebase versus Supabase (mudança de `.eq()` para `.ilike()`). Isso resolveu o problema que mostrava "Acesso Negado: Usuário Não Cadastrado" se houvesse qualquer letra maiúscula na conta Google do usuário.
+- **Documentação de Isolamento PWA:**
+  - Mapeado no _post-mortem_ interno (`.ai/errors`) a peculiaridade das instâncias PWA em dispositivos móveis que geram um LocalStorage próprio, disparando corretamente a validação _Zero Trust_ e criando status `PENDENTE` independentemente de já haver um navegador comum aprovado para o mesmo usuário.
+
+---
+
 ## Versão 1.3.0 (2026-08-18) - Arquitetura, Segregação de Módulos e Gestão de Fornecedores
 
 ### 🏛️ 1. Mapeamento Arquitetural (Archify)
