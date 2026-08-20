@@ -138,7 +138,7 @@ export const mobileAuthMiddleware = (getSupabaseClient: (req: Request) => Supaba
       }
 
       // 3. Injeção do userContext para os controllers
-      req.userContext = {
+      mobileReq.userContext = {
         contrato_id: tenantId,
         funcionario_id: funcionario.id,
         empresa_id: funcionario.empresa_id
