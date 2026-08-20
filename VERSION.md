@@ -1,5 +1,19 @@
 # Histórico de Versões e Releases - Works Manager (Gestor de Obras)
 
+## Versão 1.4.0 (2026-08-20) - Estabilidade Cloud, API Proxy e RDO Mobile
+
+### ☁️ 1. Governança e Autenticação na Nuvem (Vercel & Supabase)
+- **Supabase Third-Party Auth Integrado**: Configuração nativa via CLI (`supabase config push`) para habilitar o Firebase Auth (`systems-storage`) no Supabase remoto contornando restrições visuais do plano Free, acabando com erros 403 Forbidden.
+- **Validador Firebase Serverless**: Injeção da variável de ambiente `FIREBASE_SERVICE_ACCOUNT` no backend, capacitando o Vercel a autenticar as sessões do front-end sem depender de arquivos `.json` sensíveis hospedados.
+
+### 🌐 2. Roteamento e Interoperabilidade
+- **API Proxy Unificado**: Adição do proxy `/api` ao `vite.config.ts`, harmonizando o ambiente local com o ambiente de cloud (Vercel) e solucionando bloqueios CORS.
+- **RDO Mobile PWA (CORS)**: Abertura das portas de origens no `server.ts` para acesso cross-domain das implantações dos aplicativos móveis PWA (`https://rdo-wm.vercel.app` e `https://rdo-wm-puce.vercel.app`).
+
+### 🗄️ 3. Transição Segura de Dados (Dev -> Prod)
+- **Script Autônomo de Migração (Wipe & Sync)**: Implementação do `sync-local-to-web.mjs`. Este pipeline esvazia as tabelas do banco remoto em ordem segura (preservando Foreign Keys) e as realimenta (Upsert) com os dados estruturais de desenvolvimento, garantindo paridade total entre instâncias.
+
+
 ## Versão 1.3.1 (2026-08-20) - Correções de PWA, CORS e Autenticação Zero Trust
 
 ### 📱 1. Homologação do RDO_WM como PWA e Ambientes de Produção
