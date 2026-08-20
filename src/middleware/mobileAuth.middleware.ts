@@ -27,12 +27,13 @@ export const mobileAuthMiddleware = (getSupabaseClient: (req: Request) => Supaba
         return res.status(401).json({ error: "Token Firebase inválido ou sem email." });
       }
 
-      // 1. Resolução de Tenant: Buscar funcionário pelo email no tenant
+      // 1. Resolução de Tenant: Buscar funcionário pelo email no tenant (case-insensitive)
+      console.log(`[BFF] Buscando funcionário: email="${emailFirebase}" tenant="${tenantId}"`);
       const { data: funcionario, error: funcError } = await client
         .from("funcionarios")
-        .select("id, empresa_id")
+        .select("id, empresa_id, nome, email")
         .eq("tenant_id", tenantId)
-        .eq("email", emailFirebase)
+        .ilike("email", emailFirebase)
         .maybeSingle();
 
       if (funcError) {
@@ -41,7 +42,13 @@ export const mobileAuthMiddleware = (getSupabaseClient: (req: Request) => Supaba
       }
 
       if (!funcionario) {
-        console.warn(`[BFF] Funcionário não encontrado para email: ${emailFirebase} no tenant: ${tenantId}`);
+        // Diagnóstico: verificar se existe em qualquer tenant
+        const { data: anyTenant } = await client
+          .from("funcionarios")
+          .select("id, email, tenant_id")
+          .ilike("email", emailFirebase)
+          .limit(1);
+        console.warn(`[BFF] Funcionário NÃO encontrado para email: ${emailFirebase} no tenant: ${tenantId}. Existe em outro tenant? ${JSON.stringify(anyTenant)}`);
         return res.status(404).json({
           error: "FuncionarioNaoCadastrado",
           message: `Nenhum funcionário cadastrado com o email "${emailFirebase}" neste contrato. Solicite ao gestor da obra o seu cadastro como funcionário no sistema.`,
@@ -49,6 +56,8 @@ export const mobileAuthMiddleware = (getSupabaseClient: (req: Request) => Supaba
           tenant: tenantId,
         });
       }
+
+      console.log(`[BFF] Funcionário encontrado: id=${funcionario.id} nome=${funcionario.nome} email_banco=${funcionario.email}`);
 
       if (!funcionario.empresa_id) {
         return res.status(404).json({
