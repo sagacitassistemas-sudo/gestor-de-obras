@@ -396,7 +396,12 @@ function startServer() {
 
   // Habilita requisições do App Mobile
   app.use(cors({
-    origin: ['http://localhost:15000', 'http://127.0.0.1:15000'],
+    origin: [
+      'http://localhost:15000',
+      'http://127.0.0.1:15000',
+      'https://rdo-wm.vercel.app',
+      'https://rdo-wm-puce.vercel.app'
+    ],
     methods: ['GET', 'POST', 'PATCH'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Device-ID']
   }));
