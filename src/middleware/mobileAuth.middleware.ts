@@ -13,11 +13,12 @@ export interface MobileAuthenticatedRequest extends AuthenticatedRequest {
 }
 
 export const mobileAuthMiddleware = (getSupabaseClient: (req: Request) => SupabaseClient | null) => {
-  return async (req: MobileAuthenticatedRequest, res: Response, next: NextFunction) => {
+  return async (req: Request, res: Response, next: NextFunction) => {
     try {
+      const mobileReq = req as MobileAuthenticatedRequest;
       const client = getSupabaseClient(req);
-      const tenantId = req.decodedToken?.contrato_id || "CTR-2026-SYS";
-      const emailFirebase = req.decodedToken?.email;
+      const tenantId = mobileReq.decodedToken?.contrato_id || "CTR-2026-SYS";
+      const emailFirebase = mobileReq.decodedToken?.email;
 
       if (!client) {
         return res.status(401).json({ error: "Unauthorized" });
