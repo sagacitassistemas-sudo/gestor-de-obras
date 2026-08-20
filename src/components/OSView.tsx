@@ -27,8 +27,11 @@ interface OS {
   equipe_id?: string;
   data_emissao: string;
   materiais?: string;
+  valor_materiais?: number;
   ferramentas?: string;
+  valor_ferramentas?: number;
   equipamentos?: string;
+  valor_equipamentos?: number;
   responsavel_rdo_id?: string;
   created_at: string;
   itens_eap?: {
@@ -69,8 +72,11 @@ export const OSView: React.FC<OSViewProps> = ({ authSession }) => {
   const [selectedEapId, setSelectedEapId] = useState<string>('');
   const [selectedEquipeId, setSelectedEquipeId] = useState<string>('');
   const [materiais, setMateriais] = useState<string>('');
+  const [valorMateriais, setValorMateriais] = useState<string>('');
   const [ferramentas, setFerramentas] = useState<string>('');
+  const [valorFerramentas, setValorFerramentas] = useState<string>('');
   const [equipamentos, setEquipamentos] = useState<string>('');
+  const [valorEquipamentos, setValorEquipamentos] = useState<string>('');
   const [responsavelRdoId, setResponsavelRdoId] = useState<string>('');
   
   const [saving, setSaving] = useState(false);
@@ -146,8 +152,11 @@ export const OSView: React.FC<OSViewProps> = ({ authSession }) => {
     setSelectedEapId('');
     setSelectedEquipeId('');
     setMateriais('');
+    setValorMateriais('');
     setFerramentas('');
+    setValorFerramentas('');
     setEquipamentos('');
+    setValorEquipamentos('');
     setResponsavelRdoId('');
   };
 
@@ -164,8 +173,11 @@ export const OSView: React.FC<OSViewProps> = ({ authSession }) => {
         numero_os: numeroOs.trim() || undefined,
         descricao: descricao,
         materiais: materiais || undefined,
+        valor_materiais: valorMateriais || undefined,
         ferramentas: ferramentas || undefined,
+        valor_ferramentas: valorFerramentas || undefined,
         equipamentos: equipamentos || undefined,
+        valor_equipamentos: valorEquipamentos || undefined,
         responsavel_rdo_id: responsavelRdoId || undefined,
         data_emissao: dataEmissao
       };
@@ -212,8 +224,11 @@ export const OSView: React.FC<OSViewProps> = ({ authSession }) => {
         equipe_id: selectedEquipeId || undefined,
         descricao: descricao,
         materiais: materiais || undefined,
+        valor_materiais: valorMateriais || undefined,
         ferramentas: ferramentas || undefined,
+        valor_ferramentas: valorFerramentas || undefined,
         equipamentos: equipamentos || undefined,
+        valor_equipamentos: valorEquipamentos || undefined,
         responsavel_rdo_id: responsavelRdoId || undefined,
         data_emissao: dataEmissao
       };
@@ -467,33 +482,63 @@ export const OSView: React.FC<OSViewProps> = ({ authSession }) => {
               <div className="grid grid-cols-3 gap-4 mb-4">
                 <div>
                   <label className="block text-xs font-bold text-[#707785] uppercase mb-1">Materiais</label>
-                  <textarea 
-                    rows={2}
-                    value={materiais} 
-                    onChange={e => setMateriais(e.target.value)} 
-                    className="w-full border border-[#c0c7d6] rounded-lg p-2.5 outline-none focus:border-[#005daa] text-sm resize-none"
-                    placeholder="Materiais..."
-                  />
+                  <div className="flex flex-col gap-2">
+                    <input 
+                      type="number" 
+                      step="0.01"
+                      value={valorMateriais} 
+                      onChange={e => setValorMateriais(e.target.value)} 
+                      className="w-full border border-[#c0c7d6] rounded-lg p-2.5 outline-none focus:border-[#005daa] text-sm font-medium"
+                      placeholder="Valor Estimado (R$)"
+                    />
+                    <textarea 
+                      rows={2}
+                      value={materiais} 
+                      onChange={e => setMateriais(e.target.value)} 
+                      className="w-full border border-[#c0c7d6] rounded-lg p-2.5 outline-none focus:border-[#005daa] text-sm resize-none"
+                      placeholder="Descrição dos Materiais..."
+                    />
+                  </div>
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-[#707785] uppercase mb-1">Ferramentas</label>
-                  <textarea 
-                    rows={2}
-                    value={ferramentas} 
-                    onChange={e => setFerramentas(e.target.value)} 
-                    className="w-full border border-[#c0c7d6] rounded-lg p-2.5 outline-none focus:border-[#005daa] text-sm resize-none"
-                    placeholder="Ferramentas..."
-                  />
+                  <div className="flex flex-col gap-2">
+                    <input 
+                      type="number" 
+                      step="0.01"
+                      value={valorFerramentas} 
+                      onChange={e => setValorFerramentas(e.target.value)} 
+                      className="w-full border border-[#c0c7d6] rounded-lg p-2.5 outline-none focus:border-[#005daa] text-sm font-medium"
+                      placeholder="Valor Estimado (R$)"
+                    />
+                    <textarea 
+                      rows={2}
+                      value={ferramentas} 
+                      onChange={e => setFerramentas(e.target.value)} 
+                      className="w-full border border-[#c0c7d6] rounded-lg p-2.5 outline-none focus:border-[#005daa] text-sm resize-none"
+                      placeholder="Descrição das Ferramentas..."
+                    />
+                  </div>
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-[#707785] uppercase mb-1">Equipamentos</label>
-                  <textarea 
-                    rows={2}
-                    value={equipamentos} 
-                    onChange={e => setEquipamentos(e.target.value)} 
-                    className="w-full border border-[#c0c7d6] rounded-lg p-2.5 outline-none focus:border-[#005daa] text-sm resize-none"
-                    placeholder="Equipamentos..."
-                  />
+                  <div className="flex flex-col gap-2">
+                    <input 
+                      type="number" 
+                      step="0.01"
+                      value={valorEquipamentos} 
+                      onChange={e => setValorEquipamentos(e.target.value)} 
+                      className="w-full border border-[#c0c7d6] rounded-lg p-2.5 outline-none focus:border-[#005daa] text-sm font-medium"
+                      placeholder="Valor Estimado (R$)"
+                    />
+                    <textarea 
+                      rows={2}
+                      value={equipamentos} 
+                      onChange={e => setEquipamentos(e.target.value)} 
+                      className="w-full border border-[#c0c7d6] rounded-lg p-2.5 outline-none focus:border-[#005daa] text-sm resize-none"
+                      placeholder="Descrição dos Equipamentos..."
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -545,8 +590,11 @@ export const OSView: React.FC<OSViewProps> = ({ authSession }) => {
                       setSelectedEapId(selectedOs.item_eap_id);
                       setSelectedEquipeId(selectedOs.equipe_id || '');
                       setMateriais(selectedOs.materiais || '');
+                      setValorMateriais(selectedOs.valor_materiais ? selectedOs.valor_materiais.toString() : '');
                       setFerramentas(selectedOs.ferramentas || '');
+                      setValorFerramentas(selectedOs.valor_ferramentas ? selectedOs.valor_ferramentas.toString() : '');
                       setEquipamentos(selectedOs.equipamentos || '');
+                      setValorEquipamentos(selectedOs.valor_equipamentos ? selectedOs.valor_equipamentos.toString() : '');
                       setResponsavelRdoId(selectedOs.responsavel_rdo_id || '');
                       setIsEditing(true);
                     }} 
@@ -606,15 +654,24 @@ export const OSView: React.FC<OSViewProps> = ({ authSession }) => {
 
               <div className="grid grid-cols-3 gap-4 mb-6">
                 <div className="bg-white border border-[#e1e2e8] rounded-lg p-4">
-                  <h4 className="font-bold text-[#191c1e] text-xs uppercase tracking-wide mb-2 flex items-center gap-1"><span className="material-symbols-outlined text-[16px] text-slate-500">inventory_2</span> Materiais</h4>
+                  <div className="flex justify-between items-start mb-2">
+                    <h4 className="font-bold text-[#191c1e] text-xs uppercase tracking-wide flex items-center gap-1"><span className="material-symbols-outlined text-[16px] text-slate-500">inventory_2</span> Materiais</h4>
+                    <span className="font-bold text-[#005daa] text-xs bg-blue-50 px-2 py-0.5 rounded border border-blue-100">{Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(selectedOs.valor_materiais || 0)}</span>
+                  </div>
                   <div className="text-sm text-[#404753] whitespace-pre-wrap">{selectedOs.materiais || <span className="italic text-[#a0a5b1]">Não definido.</span>}</div>
                 </div>
                 <div className="bg-white border border-[#e1e2e8] rounded-lg p-4">
-                  <h4 className="font-bold text-[#191c1e] text-xs uppercase tracking-wide mb-2 flex items-center gap-1"><span className="material-symbols-outlined text-[16px] text-slate-500">handyman</span> Ferramentas</h4>
+                  <div className="flex justify-between items-start mb-2">
+                    <h4 className="font-bold text-[#191c1e] text-xs uppercase tracking-wide flex items-center gap-1"><span className="material-symbols-outlined text-[16px] text-slate-500">handyman</span> Ferramentas</h4>
+                    <span className="font-bold text-[#005daa] text-xs bg-blue-50 px-2 py-0.5 rounded border border-blue-100">{Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(selectedOs.valor_ferramentas || 0)}</span>
+                  </div>
                   <div className="text-sm text-[#404753] whitespace-pre-wrap">{selectedOs.ferramentas || <span className="italic text-[#a0a5b1]">Não definido.</span>}</div>
                 </div>
                 <div className="bg-white border border-[#e1e2e8] rounded-lg p-4">
-                  <h4 className="font-bold text-[#191c1e] text-xs uppercase tracking-wide mb-2 flex items-center gap-1"><span className="material-symbols-outlined text-[16px] text-slate-500">precision_manufacturing</span> Equipamentos</h4>
+                  <div className="flex justify-between items-start mb-2">
+                    <h4 className="font-bold text-[#191c1e] text-xs uppercase tracking-wide flex items-center gap-1"><span className="material-symbols-outlined text-[16px] text-slate-500">precision_manufacturing</span> Equipamentos</h4>
+                    <span className="font-bold text-[#005daa] text-xs bg-blue-50 px-2 py-0.5 rounded border border-blue-100">{Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(selectedOs.valor_equipamentos || 0)}</span>
+                  </div>
                   <div className="text-sm text-[#404753] whitespace-pre-wrap">{selectedOs.equipamentos || <span className="italic text-[#a0a5b1]">Não definido.</span>}</div>
                 </div>
               </div>

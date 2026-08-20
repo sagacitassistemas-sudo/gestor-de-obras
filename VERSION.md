@@ -1,5 +1,11 @@
 # Histórico de Versões e Releases - Works Manager (Gestor de Obras)
 
+## Versão 1.4.1 (2026-08-20) - Preparação Módulo II: Valoração de Recursos na OS
+
+### 💰 1. Estrutura Financeira (OS)
+- **Campos de Valor nos Recursos**: Inclusão de `valor_materiais`, `valor_ferramentas` e `valor_equipamentos` na Ordem de Serviço, suportando a entrada manual no Módulo I.
+- **Formatação de Moeda**: Valores exibidos nativamente em BRL (R$) na visualização do frontend, preparando a base de dados para totalização automática de tabelas filhas no futuro (Módulo II).
+
 ## Versão 1.4.0 (2026-08-20) - Estabilidade Cloud, API Proxy e RDO Mobile
 
 ### ☁️ 1. Governança e Autenticação na Nuvem (Vercel & Supabase)
