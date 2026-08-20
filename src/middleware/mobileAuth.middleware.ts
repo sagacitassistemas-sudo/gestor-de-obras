@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import { SupabaseClient } from "@supabase/supabase-js";
-import { AuthenticatedRequest } from "./verifyFirebaseJWT";
+import { AuthenticatedRequest } from "../types/middleware.types";
 
 export interface MobileAuthenticatedRequest extends AuthenticatedRequest {
   userContext?: {

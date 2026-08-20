@@ -4268,9 +4268,8 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
           return res.status(500).json({ error: error.message });
         }
 
-        await logAudit({
-          client,
-          tenant_id: tenantId,
+        await logAudit(client, {
+          contrato_id: tenantId,
           usuario_uid: req.decodedToken?.uid,
           usuario_email: req.decodedToken?.email,
           cod_evento: "DEVICE_UPDATE",
@@ -4314,9 +4313,8 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
           return res.status(500).json({ error: error.message });
         }
 
-        await logAudit({
-          client,
-          tenant_id: tenantId,
+        await logAudit(client, {
+          contrato_id: tenantId,
           usuario_uid: req.decodedToken?.uid,
           usuario_email: req.decodedToken?.email,
           cod_evento: "DEVICE_DELETE",
@@ -5147,9 +5145,8 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
           return res.status(500).json({ error: error.message });
         }
 
-        await logAudit({
-          client,
-          tenant_id: tenantId,
+        await logAudit(client, {
+          contrato_id: tenantId,
           usuario_uid: req.decodedToken?.uid,
           usuario_email: req.decodedToken?.email,
           cod_evento: "OS_UPDATE",
@@ -5172,7 +5169,7 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
     verifyFirebaseJWT,
     async (req: AuthenticatedRequest, res) => {
       try {
-        const userRole = req.decodedToken?.role;
+        const userRole = req.decodedToken?.perfil;
         if (userRole !== "GESTOR" && userRole !== "ADMIN") {
           return res.status(403).json({ error: "Acesso negado. Apenas Gestores e Administradores podem excluir uma Ordem de Serviço." });
         }
@@ -5202,9 +5199,8 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
           return res.status(500).json({ error: error.message });
         }
 
-        await logAudit({
-          client,
-          tenant_id: tenantId,
+        await logAudit(client, {
+          contrato_id: tenantId,
           usuario_uid: req.decodedToken?.uid,
           usuario_email: req.decodedToken?.email,
           cod_evento: "OS_DELETE",
@@ -6500,7 +6496,7 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
   // GET /api/mobile/os/ativas
   // Retorna apenas as OS das equipes da empresa do funcionário autenticado
   // -------------------------------------------------------
-  app.get("/api/mobile/os/ativas", verifyFirebaseJWT, mobileAuthMiddleware(getSupabaseClient), async (req: MobileAuthenticatedRequest, res) => {
+  app.get("/api/mobile/os/ativas", verifyFirebaseJWT, mobileAuthMiddleware(getSupabaseClient), async (req: any, res) => {
     try {
       const client = getSupabaseClient(req);
       if (!client) return res.status(401).json({ error: "Unauthorized" });
@@ -6600,7 +6596,7 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
   // POST /api/mobile/rdo
   // Cria um RDO vinculado ao funcionário autenticado
   // -------------------------------------------------------
-  app.post("/api/mobile/rdo", verifyFirebaseJWT, mobileAuthMiddleware(getSupabaseClient), async (req: MobileAuthenticatedRequest, res) => {
+  app.post("/api/mobile/rdo", verifyFirebaseJWT, mobileAuthMiddleware(getSupabaseClient), async (req: any, res) => {
     try {
       const client = getSupabaseClient(req);
       if (!client) return res.status(401).json({ error: "Unauthorized" });

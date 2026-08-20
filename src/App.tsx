@@ -103,7 +103,9 @@ export default function App() {
             displayName: firebaseUser.displayName || '',
             idToken: idToken,
             photoURL: firebaseUser.photoURL || undefined,
-            customClaims: claims
+            customClaims: claims as any,
+            mfaVerified: claims?.mfa_verified === true,
+            lastLoginAt: firebaseUser.metadata.lastSignInTime || new Date().toISOString()
           };
 
           // Re-establish Supabase session in the client

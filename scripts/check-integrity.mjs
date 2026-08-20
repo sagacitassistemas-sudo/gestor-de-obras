@@ -35,15 +35,18 @@ srcFiles.forEach((filePath) => {
   let match;
   while ((match = apiFetchRegex.exec(content)) !== null) {
     let rawRoute = match[1];
-    // Normalizar parâmetros dinâmicos ${id}
-    let routeBase = rawRoute.replace(/\$\{[^}]+\}/g, '').replace(/\/+$/, '');
+    // Normalizar parâmetros dinâmicos ${varName} para regex genérico
+    let routeBase = rawRoute.replace(/\$\{[^}]+\}/g, ':[a-zA-Z0-9_]+').replace(/\/+$/, '');
     
     // Obter parte do caminho relevante (ex: /api/permissoes/tipo -> permissoes/tipo)
     const routePattern = routeBase.replace(/^\/api\//, '');
 
-    if (routePattern && !serverContent.includes(routePattern)) {
-      const relPath = path.relative(process.cwd(), filePath);
-      missingRoutes.add(`- Rota '${rawRoute}' chamada em '${relPath}' não foi encontrada em server.ts`);
+    if (routePattern) {
+      const regex = new RegExp(`['"\`]\\/api\\/${routePattern}['"\`]`);
+      if (!regex.test(serverContent)) {
+        const relPath = path.relative(process.cwd(), filePath);
+        missingRoutes.add(`- Rota '${rawRoute}' chamada em '${relPath}' não foi encontrada em server.ts`);
+      }
     }
   }
 });
