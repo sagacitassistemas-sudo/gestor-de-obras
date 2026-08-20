@@ -360,10 +360,14 @@ try {
 if (!getAdminApps().length) {
   try {
     const hasCreds =
+      !!process.env.FIREBASE_SERVICE_ACCOUNT ||
       !!process.env.GOOGLE_APPLICATION_CREDENTIALS ||
       fs.existsSync(path.join(process.cwd(), "serviceAccountKey.json"));
     if (hasCreds) {
-      if (!process.env.GOOGLE_APPLICATION_CREDENTIALS && fs.existsSync(path.join(process.cwd(), "serviceAccountKey.json"))) {
+      if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+        const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+        initAdminApp({ credential: cert(serviceAccount), projectId: configData.projectId });
+      } else if (!process.env.GOOGLE_APPLICATION_CREDENTIALS && fs.existsSync(path.join(process.cwd(), "serviceAccountKey.json"))) {
         const serviceAccount = JSON.parse(fs.readFileSync(path.join(process.cwd(), "serviceAccountKey.json"), "utf8"));
         initAdminApp({ credential: cert(serviceAccount), projectId: configData.projectId });
       } else {

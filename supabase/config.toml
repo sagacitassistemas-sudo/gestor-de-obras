@@ -342,7 +342,7 @@ enabled = false
 # Use Firebase Auth as a third-party provider alongside Supabase Auth.
 [auth.third_party.firebase]
 enabled = true
-project_id = "e-learning-2ac36"
+project_id = "systems-storage"
 
 # Use Auth0 as a third-party provider alongside Supabase Auth.
 [auth.third_party.auth0]
