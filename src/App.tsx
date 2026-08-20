@@ -124,13 +124,8 @@ export default function App() {
           }));
           setIsAuthenticated(true);
           
-          // Restore tab if it was saved
-          const savedTab = localStorage.getItem('gestor_obras_active_tab') as NavigationTab;
-          if (savedTab && savedTab !== 'login') {
-             setActiveTab(savedTab);
-          } else {
-             setActiveTab('dashboard');
-          }
+          // Sempre iniciar na página Início (home)
+          setActiveTab('home');
         } catch (error) {
            console.error("Erro ao restaurar sessão:", error);
            auth.signOut();
@@ -142,19 +137,13 @@ export default function App() {
         setIsAuthenticated(false);
         setAuthSession(null);
         setActiveTab('login');
-        localStorage.removeItem('gestor_obras_active_tab');
       }
     });
 
     return () => unsubscribe();
   }, []);
 
-  // Save activeTab to localStorage
-  React.useEffect(() => {
-    if (isAuthenticated && activeTab !== 'login') {
-      localStorage.setItem('gestor_obras_active_tab', activeTab);
-    }
-  }, [activeTab, isAuthenticated]);
+  // Save activeTab to localStorage removido a pedido do usuário (sempre iniciar na home)
 
   // Load alert list whenever user.uid or activeTab changes
   React.useEffect(() => {

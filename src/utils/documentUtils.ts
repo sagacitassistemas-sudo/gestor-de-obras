@@ -1,27 +1,27 @@
 export const formatCNPJ = (value: string): string => {
   if (!value) return '';
-  const digits = value.replace(/\\D/g, '');
+  const digits = value.replace(/\D/g, '');
   return digits
-    .replace(/^(\\d{2})(\\d)/, '$1.$2')
-    .replace(/^(\\d{2})\\.(\\d{3})(\\d)/, '$1.$2.$3')
-    .replace(/\\.(\\d{3})(\\d)/, '.$1/$2')
-    .replace(/(\\d{4})(\\d)/, '$1-$2')
+    .replace(/^(\d{2})(\d)/, '$1.$2')
+    .replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3')
+    .replace(/\.(\d{3})(\d)/, '.$1/$2')
+    .replace(/(\d{4})(\d)/, '$1-$2')
     .substring(0, 18);
 };
 
 export const formatCPF = (value: string): string => {
   if (!value) return '';
-  const digits = value.replace(/\\D/g, '');
+  const digits = value.replace(/\D/g, '');
   return digits
-    .replace(/^(\\d{3})(\\d)/, '$1.$2')
-    .replace(/^(\\d{3})\\.(\\d{3})(\\d)/, '$1.$2.$3')
-    .replace(/\\.(\\d{3})(\\d)/, '.$1-$2')
+    .replace(/^(\d{3})(\d)/, '$1.$2')
+    .replace(/^(\d{3})\.(\d{3})(\d)/, '$1.$2.$3')
+    .replace(/\.(\d{3})(\d)/, '.$1-$2')
     .substring(0, 14);
 };
 
 export const formatCpfCnpj = (value: string): string => {
   if (!value) return '';
-  const digits = value.replace(/\\D/g, '');
+  const digits = value.replace(/\D/g, '');
   if (digits.length <= 11) {
     return formatCPF(digits);
   }
@@ -30,7 +30,7 @@ export const formatCpfCnpj = (value: string): string => {
 
 export const isValidCNPJ = (cnpj: string): boolean => {
   const b = [ 6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2 ];
-  let c: string | number = String(cnpj).replace(/[^\\d]/g, '');
+  let c: string | number = String(cnpj).replace(/[^\d]/g, '');
 
   if (c.length !== 14) return false;
 
@@ -55,7 +55,7 @@ export const isValidCNPJ = (cnpj: string): boolean => {
 
 export const isValidCPF = (cpf: string): boolean => {
   if (typeof cpf !== 'string') return false;
-  cpf = cpf.replace(/[\\s.-]/g, '');
+  cpf = cpf.replace(/[\s.-]/g, '');
   if (cpf.length !== 11 || !Array.from(cpf).filter(e => e !== cpf[0]).length) {
     return false;
   }
@@ -76,7 +76,7 @@ export const isValidCPF = (cpf: string): boolean => {
 };
 
 export const isValidCpfCnpj = (value: string): boolean => {
-  const digits = value.replace(/\\D/g, '');
+  const digits = value.replace(/\D/g, '');
   if (digits.length === 11) return isValidCPF(digits);
   if (digits.length === 14) return isValidCNPJ(digits);
   return false;
