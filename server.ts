@@ -2966,6 +2966,139 @@ Forneça um insight conciso, profissional e prático em português (máximo 2 fr
     }
   );
 
+  // GET /api/ref-encargos-complementares - Listar encargos complementares gerais
+  app.get(
+    "/api/ref-encargos-complementares",
+    verifyFirebaseJWT,
+    async (req: AuthenticatedRequest, res) => {
+      if (!req.decodedToken) return res.status(401).json({ error: "Acesso não autorizado." });
+      if (!(await checkPermission(req, "financeiro_ler"))) return res.status(403).json({ error: "Acesso negado." });
+
+      try {
+        const client = getSupabaseClient(req);
+        if (!client) throw new Error("No client");
+        const { data, error } = await client.from('ref_encargos_complementares').select('*').order('categoria');
+        if (error) throw error;
+        return res.json({ success: true, data: data || [] });
+      } catch (err) {
+        console.error("GET /api/ref-encargos-complementares error:", err);
+        return res.status(500).json({ error: "Erro interno", details: err instanceof Error ? err.message : String(err) });
+      }
+    }
+  );
+
+  // GET /api/ref-encargos-especificos - Listar encargos específicos por função (EPI e Ferramentas)
+  app.get(
+    "/api/ref-encargos-especificos",
+    verifyFirebaseJWT,
+    async (req: AuthenticatedRequest, res) => {
+      if (!req.decodedToken) return res.status(401).json({ error: "Acesso não autorizado." });
+      if (!(await checkPermission(req, "financeiro_ler"))) return res.status(403).json({ error: "Acesso negado." });
+
+      try {
+        const client = getSupabaseClient(req);
+        if (!client) throw new Error("No client");
+        const { data, error } = await client.from('ref_encargos_especificos_funcao').select('*').order('nome_funcao');
+        if (error) throw error;
+        return res.json({ success: true, data: data || [] });
+      } catch (err) {
+        console.error("GET /api/ref-encargos-especificos error:", err);
+        return res.status(500).json({ error: "Erro interno", details: err instanceof Error ? err.message : String(err) });
+      }
+    }
+  );
+
+  // GET /api/tenant-parametros-mao-obra/:obra_id - Buscar parâmetros de mão de obra (horas_mes e pct_encargos)
+  app.get(
+    "/api/tenant-parametros-mao-obra/:obra_id",
+    verifyFirebaseJWT,
+    async (req: AuthenticatedRequest, res) => {
+      if (!req.decodedToken) return res.status(401).json({ error: "Acesso não autorizado." });
+      if (!(await checkPermission(req, "financeiro_ler"))) return res.status(403).json({ error: "Acesso negado." });
+
+      const obraId = req.params.obra_id;
+      const tenantId = req.decodedToken.contrato_id;
+      try {
+        const client = getSupabaseClient(req);
+        if (!client) throw new Error("No client");
+        const { data, error } = await client.from('tenant_parametros_mao_obra')
+          .select('*')
+          .eq('tenant_id', tenantId)
+          .eq('obra_id', obraId)
+          .maybeSingle();
+
+        if (error) throw error;
+
+        // Se não existir, retorna um padrão em memória para inicializar
+        if (!data) {
+           return res.json({ success: true, data: { horas_mes: 165.00, pct_encargos_sociais: 85.0000 } });
+        }
+
+        return res.json({ success: true, data });
+      } catch (err) {
+        console.error("GET /api/tenant-parametros-mao-obra error:", err);
+        return res.status(500).json({ error: "Erro interno", details: err instanceof Error ? err.message : String(err) });
+      }
+    }
+  );
+
+  // POST /api/tenant-parametros-mao-obra - Criar/Atualizar parâmetros de mão de obra
+  app.post(
+    "/api/tenant-parametros-mao-obra",
+    verifyFirebaseJWT,
+    async (req: AuthenticatedRequest, res) => {
+      if (!req.decodedToken) return res.status(401).json({ error: "Acesso não autorizado." });
+      if (!(await checkPermission(req, "financeiro_criar"))) return res.status(403).json({ error: "Acesso negado." });
+
+      try {
+        const { obra_id, horas_mes, pct_encargos_sociais } = req.body;
+        const tenant_id = req.decodedToken.contrato_id;
+        const client = getSupabaseClient(req);
+        if (!client) throw new Error("No client");
+        
+        const { data, error } = await client.from('tenant_parametros_mao_obra').upsert({
+          tenant_id,
+          obra_id,
+          horas_mes,
+          pct_encargos_sociais,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'obra_id' }).select().single();
+
+        if (error) throw error;
+        return res.json({ success: true, data });
+      } catch (err) {
+        console.error("POST /api/tenant-parametros-mao-obra error:", err);
+        return res.status(500).json({ error: "Erro interno", details: err instanceof Error ? err.message : String(err) });
+      }
+    }
+  );
+
+  // GET /api/custo-hora-real/:obra_id - Listar os custos horistas reais consolidados (View v_custo_hora_real_mao_obra)
+  app.get(
+    "/api/custo-hora-real/:obra_id",
+    verifyFirebaseJWT,
+    async (req: AuthenticatedRequest, res) => {
+      if (!req.decodedToken) return res.status(401).json({ error: "Acesso não autorizado." });
+      
+      const obraId = req.params.obra_id;
+      const tenantId = req.decodedToken.contrato_id;
+      try {
+        const client = getSupabaseClient(req);
+        if (!client) throw new Error("No client");
+        const { data, error } = await client.from('v_custo_hora_real_mao_obra')
+          .select('*')
+          .eq('tenant_id', tenantId)
+          .eq('obra_id', obraId);
+
+        if (error) throw error;
+        return res.json({ success: true, data: data || [] });
+      } catch (err) {
+        console.error("GET /api/custo-hora-real error:", err);
+        return res.status(500).json({ error: "Erro interno", details: err instanceof Error ? err.message : String(err) });
+      }
+    }
+  );
+
   // GET /api/tenant-cargos - Listar salários adotados pela empresa
   app.get(
     "/api/tenant-cargos",
@@ -4306,11 +4439,12 @@ app.post('/api/cub/save', verifyFirebaseJWT, async (req: any, res: any) => {
                   const seqStr = osSeq.toString().padStart(3, "0");
                   const generatedNumeroOs = `OS-${seqStr}-P${shortProjCode}-${yearStr}`;
 
-                  // Calcular fatias (MO, MAT, EQP) baseado no valorCalculado da etapa
+                  // Calcular fatias (MO, MAT, EQP, FERR) baseado no valorCalculado da etapa
                   const vCalc = etapa.valorCalculado || 0;
                   const moPerc = etapa.decomposicao?.mo || 0;
                   const matPerc = etapa.decomposicao?.mat || 0;
                   const eqpPerc = etapa.decomposicao?.eqp || 0;
+                  const ferrPerc = etapa.decomposicao?.ferr || 0;
 
                   osRows.push({
                     tenant_id: tenantId,
@@ -4323,7 +4457,8 @@ app.post('/api/cub/save', verifyFirebaseJWT, async (req: any, res: any) => {
                     data_emissao: data_inicio,
                     valor_mao_obra: vCalc * (moPerc / 100),
                     valor_materiais: vCalc * (matPerc / 100),
-                    valor_equipamentos: vCalc * (eqpPerc / 100)
+                    valor_equipamentos: vCalc * (eqpPerc / 100),
+                    valor_ferramentas: vCalc * (ferrPerc / 100)
                   });
                   osSeq++;
                 }

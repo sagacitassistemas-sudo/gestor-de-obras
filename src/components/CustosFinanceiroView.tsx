@@ -6,13 +6,18 @@ interface CustosFinanceiroViewProps {
 }
 
 export const CustosFinanceiroView: React.FC<CustosFinanceiroViewProps> = ({ authSession }) => {
-  const [activeTab, setActiveTab] = useState<'salarios' | 'encargos' | 'bdi'>('salarios');
+  const [activeTab, setActiveTab] = useState<'salarios' | 'encargos' | 'custos_indiretos' | 'bdi'>('salarios');
 
   // Custos States
   const [refCargos, setRefCargos] = useState<RefCargoSalario[]>([]);
   const [refEncargos, setRefEncargos] = useState<RefMatrizEncargo[]>([]);
   const [tenantCargos, setTenantCargos] = useState<TenantCargoSalario[]>([]);
   const [tenantBdi, setTenantBdi] = useState<TenantBdiConfig[]>([]);
+
+  // Custos Indiretos
+  const [refEncargosComp, setRefEncargosComp] = useState<any[]>([]);
+  const [refEncargosEsp, setRefEncargosEsp] = useState<any[]>([]);
+  const [parametrosMo, setParametrosMo] = useState({ horas_mes: 165.00, pct_encargos_sociais: 85.00 });
 
   // Filtros Custos
   const [ufSelecionada, setUfSelecionada] = useState<string>('ES');
@@ -48,16 +53,25 @@ export const CustosFinanceiroView: React.FC<CustosFinanceiroViewProps> = ({ auth
     setLoading(true);
     try {
       const headers = { Authorization: `Bearer ${authSession.idToken}` };
-      const [resCargos, resEncargos, resTenant, resBdi] = await Promise.all([
+      const [resCargos, resEncargos, resTenant, resBdi, resComp, resEsp, resParam] = await Promise.all([
         fetch(`/api/ref-cargos-salarios?uf=${ufSelecionada}`, { headers }),
         fetch(`/api/ref-encargos?uf=${ufSelecionada}`, { headers }),
         fetch(`/api/tenant-cargos`, { headers }),
-        fetch(`/api/tenant-bdi`, { headers })
+        fetch(`/api/tenant-bdi`, { headers }),
+        fetch(`/api/ref-encargos-complementares`, { headers }),
+        fetch(`/api/ref-encargos-especificos`, { headers }),
+        fetch(`/api/tenant-parametros-mao-obra/default`, { headers }) // Using default for view
       ]);
 
       if (resCargos.ok) setRefCargos((await resCargos.json()).data || []);
       if (resEncargos.ok) setRefEncargos((await resEncargos.json()).data || []);
       if (resTenant.ok) setTenantCargos((await resTenant.json()).data || []);
+      if (resComp.ok) setRefEncargosComp((await resComp.json()).data || []);
+      if (resEsp.ok) setRefEncargosEsp((await resEsp.json()).data || []);
+      if (resParam.ok) {
+        const p = await resParam.json();
+        if (p.data) setParametrosMo(p.data);
+      }
       if (resBdi.ok) {
         const bdis = (await resBdi.json()).data || [];
         setTenantBdi(bdis);
@@ -147,6 +161,17 @@ export const CustosFinanceiroView: React.FC<CustosFinanceiroViewProps> = ({ auth
           >
             <span className="material-symbols-outlined text-[16px]">monitoring</span>
             Encargos Sociais
+          </button>
+          <button
+            onClick={() => setActiveTab('custos_indiretos')}
+            className={`px-3 py-2 text-xs font-bold rounded-md transition-all flex items-center gap-1.5 ${
+              activeTab === 'custos_indiretos'
+                ? 'bg-white text-emerald-700 shadow-2xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <span className="material-symbols-outlined text-[16px]">engineering</span>
+            Custos Indiretos (EC)
           </button>
           <button
             onClick={() => setActiveTab('bdi')}
@@ -303,6 +328,144 @@ export const CustosFinanceiroView: React.FC<CustosFinanceiroViewProps> = ({ auth
                 </div>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {/* ABA 2.5: CUSTOS INDIRETOS */}
+      {!loading && activeTab === 'custos_indiretos' && (
+        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-2xs space-y-6">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-100 pb-4">
+            <div>
+              <h3 className="font-bold text-slate-800 text-lg">Encargos Complementares e Custos Indiretos</h3>
+              <p className="text-xs text-slate-500 mt-0.5">Custos indiretos exigidos por CCT, NR-06 e NR-07 aplicados ao custo total da mão de obra.</p>
+            </div>
+            
+            <div className="flex flex-wrap items-center gap-4 bg-slate-50 p-3 rounded-lg border border-slate-200">
+              <div className="flex flex-col">
+                <label className="text-[10px] font-bold text-slate-500 uppercase">Horas / Mês</label>
+                <input 
+                  type="number" 
+                  value={parametrosMo.horas_mes}
+                  onChange={e => setParametrosMo(p => ({...p, horas_mes: Number(e.target.value)}))}
+                  className="w-20 p-1 border rounded text-sm outline-none font-mono"
+                />
+              </div>
+              <div className="flex flex-col">
+                <label className="text-[10px] font-bold text-slate-500 uppercase">% Encargos</label>
+                <div className="flex items-center gap-1">
+                  <input 
+                    type="number" 
+                    value={parametrosMo.pct_encargos_sociais}
+                    onChange={e => setParametrosMo(p => ({...p, pct_encargos_sociais: Number(e.target.value)}))}
+                    className="w-20 p-1 border rounded text-sm outline-none font-mono"
+                  />
+                  <span className="text-sm font-bold text-slate-600">%</span>
+                </div>
+              </div>
+              <button 
+                className="mt-4 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-xs font-bold transition-colors"
+                onClick={async () => {
+                  try {
+                    setSaving(true);
+                    await fetch('/api/tenant-parametros-mao-obra', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authSession?.idToken}` },
+                      body: JSON.stringify({ obra_id: 'default', ...parametrosMo })
+                    });
+                    showNotification('success', 'Parâmetros atualizados.');
+                  } finally { setSaving(false); }
+                }}
+              >
+                Salvar
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="space-y-3">
+              <h4 className="font-bold text-slate-700 text-sm flex items-center gap-2">
+                <span className="material-symbols-outlined text-emerald-600 text-[18px]">group</span>
+                Encargos Fixos Universais (Por Trabalhador)
+              </h4>
+              <div className="border border-slate-200 rounded-lg overflow-hidden">
+                <table className="w-full text-left">
+                  <thead className="bg-slate-50 border-b border-slate-200">
+                    <tr>
+                      <th className="py-2 px-3 text-xs font-bold text-slate-600">Categoria</th>
+                      <th className="py-2 px-3 text-xs font-bold text-slate-600">Item</th>
+                      <th className="py-2 px-3 text-xs font-bold text-slate-600 text-right">R$/h</th>
+                      <th className="py-2 px-3 text-xs font-bold text-slate-600 text-right">R$/mês</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {refEncargosComp.map((ec, idx) => (
+                      <tr key={ec.id} className={`border-b border-slate-100 last:border-0 ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/20'}`}>
+                        <td className="py-2 px-3 text-xs font-bold text-slate-700">{ec.categoria}</td>
+                        <td className="py-2 px-3 text-xs text-slate-600 truncate max-w-[150px]" title={ec.regra_calculo}>{ec.item}</td>
+                        <td className="py-2 px-3 text-xs font-mono text-slate-800 text-right">R$ {Number(ec.custo_horista_ref).toFixed(2)}</td>
+                        <td className="py-2 px-3 text-xs font-mono text-slate-800 text-right">R$ {Number(ec.custo_mensalista_ref).toFixed(2)}</td>
+                      </tr>
+                    ))}
+                    <tr className="bg-emerald-50 border-t border-emerald-100">
+                      <td colSpan={2} className="py-2 px-3 text-xs font-bold text-emerald-800 text-right">TOTAL GERAL:</td>
+                      <td className="py-2 px-3 text-xs font-bold font-mono text-emerald-800 text-right">
+                        R$ {refEncargosComp.reduce((acc, curr) => acc + Number(curr.custo_horista_ref), 0).toFixed(2)}
+                      </td>
+                      <td className="py-2 px-3 text-xs font-bold font-mono text-emerald-800 text-right">
+                        R$ {refEncargosComp.reduce((acc, curr) => acc + Number(curr.custo_mensalista_ref), 0).toFixed(2)}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <h4 className="font-bold text-slate-700 text-sm flex items-center gap-2">
+                <span className="material-symbols-outlined text-amber-600 text-[18px]">construction</span>
+                EPIs e Ferramentas (Específico por Função)
+              </h4>
+              <div className="border border-slate-200 rounded-lg overflow-hidden h-[300px] overflow-y-auto">
+                <table className="w-full text-left">
+                  <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
+                    <tr>
+                      <th className="py-2 px-3 text-xs font-bold text-slate-600">Função</th>
+                      <th className="py-2 px-3 text-xs font-bold text-slate-600 text-right">EPI (R$/h)</th>
+                      <th className="py-2 px-3 text-xs font-bold text-slate-600 text-right">Ferr (R$/h)</th>
+                      <th className="py-2 px-3 text-xs font-bold text-slate-600 text-right">Total (R$/h)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {refEncargosEsp.map((es, idx) => (
+                      <tr key={es.id} className={`border-b border-slate-100 last:border-0 ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/20'}`}>
+                        <td className="py-2 px-3 text-xs font-bold text-slate-700">{es.nome_funcao}</td>
+                        <td className="py-2 px-3 text-xs font-mono text-slate-600 text-right">R$ {Number(es.epi_horista_ref).toFixed(2)}</td>
+                        <td className="py-2 px-3 text-xs font-mono text-slate-600 text-right">R$ {Number(es.ferramentas_horista_ref).toFixed(2)}</td>
+                        <td className="py-2 px-3 text-xs font-bold font-mono text-amber-700 text-right">
+                          R$ {(Number(es.epi_horista_ref) + Number(es.ferramentas_horista_ref)).toFixed(2)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-slate-800 text-white p-6 rounded-xl relative overflow-hidden">
+            <div className="absolute top-0 right-0 p-4 opacity-10">
+              <span className="material-symbols-outlined text-9xl">functions</span>
+            </div>
+            <div className="relative z-10">
+              <h4 className="font-bold text-emerald-400 mb-2">Modelo Matemático: Custo de Mão de Obra Horista</h4>
+              <p className="text-sm text-slate-300 font-mono bg-slate-900/50 p-3 rounded-lg border border-slate-700">
+                Custo_Real/h = [ Salário_Base / <span className="text-blue-300">{parametrosMo.horas_mes}h</span> ] × ( 1 + <span className="text-purple-300">{parametrosMo.pct_encargos_sociais}%</span> ) + <span className="text-emerald-300">EC_Gerais</span> + <span className="text-amber-300">EPI</span> + <span className="text-amber-300">Ferramentas</span>
+              </p>
+              <p className="text-xs text-slate-400 mt-3">
+                Esta fórmula será aplicada automaticamente no Orçamento Base e na Curva Físico-Financeira no momento da alocação do profissional.
+              </p>
+            </div>
           </div>
         </div>
       )}

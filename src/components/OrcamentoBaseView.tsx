@@ -11,22 +11,23 @@ interface EtapaVariacional {
     mo: number;
     mat: number;
     eqp: number;
+    ferr: number;
   };
 }
 
 const ETAPAS_BASE: EtapaVariacional[] = [
-  { id: '1', nome: 'Projetos e Licenciamento', min: 3, max: 5, valorPadrao: 4, decomposicao: { mo: 85, mat: 5, eqp: 10 } },
-  { id: '2', nome: 'Serviços Preliminares e Canteiro', min: 2, max: 4, valorPadrao: 3, decomposicao: { mo: 45, mat: 35, eqp: 20 } },
-  { id: '3', nome: 'Infraestrutura / Fundações', min: 5, max: 7, valorPadrao: 6, decomposicao: { mo: 30, mat: 50, eqp: 20 } },
-  { id: '4', nome: 'Contrapiso e Regularizações', min: 1, max: 2, valorPadrao: 2, decomposicao: { mo: 50, mat: 45, eqp: 5 } },
-  { id: '5', nome: 'Impermeabilização', min: 2, max: 4, valorPadrao: 3, decomposicao: { mo: 35, mat: 60, eqp: 5 } },
-  { id: '6', nome: 'Estrutura', min: 12, max: 20, valorPadrao: 16, decomposicao: { mo: 35, mat: 55, eqp: 10 } },
-  { id: '7', nome: 'Fechamentos (Alvenaria/Esquadrias)', min: 10, max: 19, valorPadrao: 15, decomposicao: { mo: 45, mat: 50, eqp: 5 } },
-  { id: '8', nome: 'Cobertura', min: 3, max: 5, valorPadrao: 4, decomposicao: { mo: 35, mat: 60, eqp: 5 } },
-  { id: '9', nome: 'Instalação Hidráulica', min: 9, max: 12, valorPadrao: 10, decomposicao: { mo: 45, mat: 50, eqp: 5 } },
-  { id: '10', nome: 'Instalação Elétrica', min: 5, max: 7, valorPadrao: 6, decomposicao: { mo: 45, mat: 50, eqp: 5 } },
-  { id: '11', nome: 'Revestimentos, Acabamentos e Pintura', min: 20, max: 38, valorPadrao: 30, decomposicao: { mo: 55, mat: 40, eqp: 5 } },
-  { id: '12', nome: 'Serviços Complementares e Limpeza', min: 0, max: 1, valorPadrao: 1, decomposicao: { mo: 50, mat: 45, eqp: 5 } },
+  { id: '1', nome: 'Projetos e Licenciamento', min: 3, max: 5, valorPadrao: 4, decomposicao: { mo: 80, mat: 5, eqp: 10, ferr: 5 } },
+  { id: '2', nome: 'Serviços Preliminares e Canteiro', min: 2, max: 4, valorPadrao: 3, decomposicao: { mo: 40, mat: 35, eqp: 20, ferr: 5 } },
+  { id: '3', nome: 'Infraestrutura / Fundações', min: 5, max: 7, valorPadrao: 6, decomposicao: { mo: 25, mat: 50, eqp: 20, ferr: 5 } },
+  { id: '4', nome: 'Contrapiso e Regularizações', min: 1, max: 2, valorPadrao: 2, decomposicao: { mo: 45, mat: 45, eqp: 5, ferr: 5 } },
+  { id: '5', nome: 'Impermeabilização', min: 2, max: 4, valorPadrao: 3, decomposicao: { mo: 30, mat: 60, eqp: 5, ferr: 5 } },
+  { id: '6', nome: 'Estrutura', min: 12, max: 20, valorPadrao: 16, decomposicao: { mo: 30, mat: 55, eqp: 10, ferr: 5 } },
+  { id: '7', nome: 'Fechamentos (Alvenaria/Esquadrias)', min: 10, max: 19, valorPadrao: 15, decomposicao: { mo: 40, mat: 50, eqp: 5, ferr: 5 } },
+  { id: '8', nome: 'Cobertura', min: 3, max: 5, valorPadrao: 4, decomposicao: { mo: 30, mat: 60, eqp: 5, ferr: 5 } },
+  { id: '9', nome: 'Instalação Hidráulica', min: 9, max: 12, valorPadrao: 10, decomposicao: { mo: 40, mat: 50, eqp: 5, ferr: 5 } },
+  { id: '10', nome: 'Instalação Elétrica', min: 5, max: 7, valorPadrao: 6, decomposicao: { mo: 40, mat: 50, eqp: 5, ferr: 5 } },
+  { id: '11', nome: 'Revestimentos, Acabamentos e Pintura', min: 20, max: 38, valorPadrao: 30, decomposicao: { mo: 50, mat: 40, eqp: 5, ferr: 5 } },
+  { id: '12', nome: 'Serviços Complementares e Limpeza', min: 0, max: 1, valorPadrao: 1, decomposicao: { mo: 45, mat: 45, eqp: 5, ferr: 5 } },
 ];
 
 const TIPOLOGIA_NOMES: Record<string, string> = {
@@ -241,6 +242,7 @@ export const OrcamentoBaseView: React.FC<OrcamentoBaseViewProps> = ({ authSessio
   let globalMO = 0;
   let globalMAT = 0;
   let globalEQP = 0;
+  let globalFERR = 0;
   let totalCalculated = 0;
 
   ETAPAS_BASE.forEach(etapa => {
@@ -249,12 +251,14 @@ export const OrcamentoBaseView: React.FC<OrcamentoBaseViewProps> = ({ authSessio
     globalMO += stageValue * (etapa.decomposicao.mo / 100);
     globalMAT += stageValue * (etapa.decomposicao.mat / 100);
     globalEQP += stageValue * (etapa.decomposicao.eqp / 100);
+    globalFERR += stageValue * (etapa.decomposicao.ferr / 100);
     totalCalculated += stageValue;
   });
 
   const percGlobalMO = totalCalculated > 0 ? (globalMO / totalCalculated) * 100 : 0;
   const percGlobalMAT = totalCalculated > 0 ? (globalMAT / totalCalculated) * 100 : 0;
   const percGlobalEQP = totalCalculated > 0 ? (globalEQP / totalCalculated) * 100 : 0;
+  const percGlobalFERR = totalCalculated > 0 ? (globalFERR / totalCalculated) * 100 : 0;
 
   const activeBase = bases.find(b => b.id === selectedBaseId);
 
@@ -497,6 +501,10 @@ export const OrcamentoBaseView: React.FC<OrcamentoBaseViewProps> = ({ authSessio
                     <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-amber-500"></div><span className="font-bold text-[#404753]">Equipamentos</span></div>
                     <span className="font-bold text-[#191c1e]">{formatCurrency(globalEQP)} <span className="text-xs font-normal text-slate-500">({formatPercent(percGlobalEQP)})</span></span>
                   </div>
+                  <div className="flex justify-between items-center text-sm">
+                    <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-indigo-500"></div><span className="font-bold text-[#404753]">Ferramentas</span></div>
+                    <span className="font-bold text-[#191c1e]">{formatCurrency(globalFERR)} <span className="text-xs font-normal text-slate-500">({formatPercent(percGlobalFERR)})</span></span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -528,6 +536,7 @@ export const OrcamentoBaseView: React.FC<OrcamentoBaseViewProps> = ({ authSessio
             const valMO = calculatedValue * (etapa.decomposicao.mo / 100);
             const valMAT = calculatedValue * (etapa.decomposicao.mat / 100);
             const valEQP = calculatedValue * (etapa.decomposicao.eqp / 100);
+            const valFERR = calculatedValue * (etapa.decomposicao.ferr / 100);
             
             return (
               <div key={etapa.id} className="bg-white rounded-xl shadow-sm border border-[#e1e2e8] p-5 flex flex-col hover:border-[#c0c7d6] transition-all group">
@@ -555,19 +564,24 @@ export const OrcamentoBaseView: React.FC<OrcamentoBaseViewProps> = ({ authSessio
                       <div className="bg-blue-500" style={{ width: `${etapa.decomposicao.mo}%` }}></div>
                       <div className="bg-emerald-500" style={{ width: `${etapa.decomposicao.mat}%` }}></div>
                       <div className="bg-amber-500" style={{ width: `${etapa.decomposicao.eqp}%` }}></div>
+                      <div className="bg-indigo-500" style={{ width: `${etapa.decomposicao.ferr}%` }}></div>
                     </div>
-                    <div className="grid grid-cols-3 gap-1 text-center divide-x divide-slate-200">
+                    <div className="grid grid-cols-4 gap-1 text-center divide-x divide-slate-200">
                       <div>
-                        <p className="text-[9px] font-bold text-blue-600 uppercase">MO ({etapa.decomposicao.mo}%)</p>
-                        <p className="text-[11px] font-bold text-slate-700">{formatCurrency(valMO)}</p>
+                        <p className="text-[8px] font-bold text-blue-600 uppercase">MO ({etapa.decomposicao.mo}%)</p>
+                        <p className="text-[10px] font-bold text-slate-700">{formatCurrency(valMO)}</p>
                       </div>
                       <div>
-                        <p className="text-[9px] font-bold text-emerald-600 uppercase">MAT ({etapa.decomposicao.mat}%)</p>
-                        <p className="text-[11px] font-bold text-slate-700">{formatCurrency(valMAT)}</p>
+                        <p className="text-[8px] font-bold text-emerald-600 uppercase">MAT ({etapa.decomposicao.mat}%)</p>
+                        <p className="text-[10px] font-bold text-slate-700">{formatCurrency(valMAT)}</p>
                       </div>
                       <div>
-                        <p className="text-[9px] font-bold text-amber-600 uppercase">EQP ({etapa.decomposicao.eqp}%)</p>
-                        <p className="text-[11px] font-bold text-slate-700">{formatCurrency(valEQP)}</p>
+                        <p className="text-[8px] font-bold text-amber-600 uppercase">EQP ({etapa.decomposicao.eqp}%)</p>
+                        <p className="text-[10px] font-bold text-slate-700">{formatCurrency(valEQP)}</p>
+                      </div>
+                      <div>
+                        <p className="text-[8px] font-bold text-indigo-600 uppercase">FERR ({etapa.decomposicao.ferr}%)</p>
+                        <p className="text-[10px] font-bold text-slate-700">{formatCurrency(valFERR)}</p>
                       </div>
                     </div>
                   </div>
