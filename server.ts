@@ -312,13 +312,9 @@ console.log(
   supabaseUrl ? supabaseUrl.endsWith('"') : false,
 );
 if (supabaseUrl) {
-  // Use the verified valid Anon Key if the Service Role Key is known to be invalid or missing,
-  // ensuring the server can successfully connect and query the database tables.
-  const targetKey =
-    supabaseServiceKey &&
-    !supabaseServiceKey.startsWith("sb_secret_zeBtO4vusXk")
-      ? supabaseServiceKey
-      : supabaseAnonKey || supabaseServiceKey;
+  // Use the Service Role Key for the backend server to bypass RLS.
+  // The backend already enforces tenant isolation explicitly via .eq("contrato_id", ...) on all queries.
+  const targetKey = supabaseServiceKey || supabaseAnonKey;
 
   if (targetKey) {
     try {

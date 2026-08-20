@@ -122,7 +122,7 @@ export const CronogramaExecutivoView: React.FC<CronogramaExecutivoViewProps> = (
   const [hasPendingChanges, setHasPendingChanges] = useState(false);
   const [saving, setSaving] = useState(false);
   const [itemToEdit, setItemToEdit] = useState<EapItemOption | null>(null);
-  const [timeScale, setTimeScale] = useState<'month' | 'week' | 'day'>('day');
+  const [timeScale, setTimeScale] = useState<'month' | 'week' | 'day'>('week');
 
   // Refs para acesso sem stale closures dentro dos handlers do Gantt
   const rawItemsRef = useRef<ItemEap[]>([]);

@@ -721,11 +721,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
         <main className="w-full max-w-[480px] animate-in fade-in zoom-in duration-500">
           {/* Brand Header */}
           <div className="flex flex-col items-center mb-8">
-            <img 
-              src="/logo-entrada.png" 
-              alt="Logo do Sistema" 
-              className="max-h-24 w-auto object-contain mb-4"
-            />
             <p className="font-body-md text-[#404753] mt-1.5 text-center">
               Supplier Portal Infrastructure
             </p>
