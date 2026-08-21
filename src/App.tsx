@@ -38,6 +38,7 @@ import { ContratosObraView } from './components/ContratosObraView';
 import { AuditLogView } from './components/AuditLogView';
 import { ParametrosView } from './components/ParametrosView';
 import { FuncionariosView } from './components/FuncionariosView';
+import { CalendariosView } from './components/CalendariosView';
 import { CustosFinanceiroView } from './components/CustosFinanceiroView';
 import { EquipesView } from './components/EquipesView';
 import { DispositivosView } from './components/DispositivosView';
@@ -694,6 +695,16 @@ export default function App() {
             ) : (
               <div className="p-8 text-center bg-white rounded-xl border border-gray-200">
                 Acesso Restrito: Os Parâmetros do sistema são restritos a administradores.
+              </div>
+            )
+          )}
+
+          {activeTab === 'calendarios' && (
+            hasAccess('parametros') ? (
+              <CalendariosView authSession={authSession} />
+            ) : (
+              <div className="p-8 text-center bg-white rounded-xl border border-gray-200">
+                Acesso Restrito: A gestão de calendários é restrita.
               </div>
             )
           )}

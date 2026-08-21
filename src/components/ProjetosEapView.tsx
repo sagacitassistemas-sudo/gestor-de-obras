@@ -15,7 +15,8 @@ export const ProjetosEapView: React.FC<ProjetosEapViewProps> = ({ authSession })
   const [selectedProjetoId, setSelectedProjetoId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [editingProjeto, setEditingProjeto] = useState<any>(null);
-  const [projetoForm, setProjetoForm] = useState({ nome_projeto: '', data_inicio: '', codigo_projeto: '', empresa_id: '' });
+  const [projetoForm, setProjetoForm] = useState({ nome_projeto: '', data_inicio: '', codigo_projeto: '', empresa_id: '', calendario_id: '' });
+  const [calendarios, setCalendarios] = useState<any[]>([]);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isXmlImportModalOpen, setIsXmlImportModalOpen] = useState(false);
   const [empresasDisponiveis, setEmpresasDisponiveis] = useState<any[]>([]);
@@ -89,9 +90,24 @@ export const ProjetosEapView: React.FC<ProjetosEapViewProps> = ({ authSession })
     }
   };
 
+  const fetchCalendarios = async () => {
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      const token = session?.session?.access_token || authSession?.idToken;
+      const res = await fetch('/api/calendarios', { headers: { 'Authorization': `Bearer ${token}` } });
+      if (res.ok) {
+        const json = await res.json();
+        setCalendarios(json.data || []);
+      }
+    } catch (e) {
+      console.warn("Erro ao buscar calendários:", e);
+    }
+  };
+
   useEffect(() => {
     fetchProjetos();
     fetchEmpresas();
+    fetchCalendarios();
   }, []);
 
   const fetchEap = async (projetoId: string) => {
@@ -170,13 +186,13 @@ export const ProjetosEapView: React.FC<ProjetosEapViewProps> = ({ authSession })
   // ----- CRUD PROJETO -----
   const openNewProjeto = () => {
     setEditingProjeto(null);
-    setProjetoForm({ nome_projeto: '', data_inicio: new Date().toISOString().split('T')[0], codigo_projeto: '', empresa_id: '' });
+    setProjetoForm({ nome_projeto: '', data_inicio: new Date().toISOString().split('T')[0], codigo_projeto: '', empresa_id: '', calendario_id: '' });
     setPipelineState('editing_project');
   };
 
   const openEditProjeto = (proj: any) => {
     setEditingProjeto(proj);
-    setProjetoForm({ nome_projeto: proj.nome_projeto, data_inicio: proj.data_inicio.split('T')[0], codigo_projeto: proj.codigo_projeto || '', empresa_id: proj.empresa_id || '' });
+    setProjetoForm({ nome_projeto: proj.nome_projeto, data_inicio: proj.data_inicio.split('T')[0], codigo_projeto: proj.codigo_projeto || '', empresa_id: proj.empresa_id || '', calendario_id: proj.calendario_id || '' });
     setPipelineState('editing_project');
   };
 
@@ -196,7 +212,8 @@ export const ProjetosEapView: React.FC<ProjetosEapViewProps> = ({ authSession })
           nome_projeto: projetoForm.nome_projeto,
           data_inicio: projetoForm.data_inicio,
           codigo_projeto: projetoForm.codigo_projeto || undefined,
-          empresa_id: projetoForm.empresa_id || null
+          empresa_id: projetoForm.empresa_id || null,
+          calendario_id: projetoForm.calendario_id || null
         })
       });
       if (res.ok) {
@@ -803,6 +820,21 @@ export const ProjetosEapView: React.FC<ProjetosEapViewProps> = ({ authSession })
                     {empresasDisponiveis.map((emp) => (
                       <option key={emp.id} value={emp.id}>
                         {emp.nome} ({emp.id})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[#404753] text-sm font-bold mb-1.5">Calendário (Dias Úteis) <span className="text-slate-400 font-normal text-xs">(Opcional)</span></label>
+                  <select
+                    value={projetoForm.calendario_id || ''}
+                    onChange={(e) => setProjetoForm({ ...projetoForm, calendario_id: e.target.value })}
+                    className="w-full px-3.5 py-2.5 border border-[#e1e2e8] bg-white text-[#191c1e] rounded-md outline-none text-sm focus:border-[#005daa] shadow-xs"
+                  >
+                    <option value="">-- Sem Calendário (7 dias/semana) --</option>
+                    {calendarios.map((cal) => (
+                      <option key={cal.id} value={cal.id}>
+                        {cal.nome}
                       </option>
                     ))}
                   </select>

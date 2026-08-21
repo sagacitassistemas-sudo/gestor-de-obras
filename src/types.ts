@@ -1,4 +1,4 @@
-export type NavigationTab = 'home' | 'login' | 'dashboard' | 'financeiro' | 'contratos' | 'alertas' | 'onboarding' | 'auth-debug' | 'empresas' | 'fornecedores' | 'equipes' | 'funcionarios' | 'maquinas' | 'ferramentas' | 'materiais' | 'entidades' | 'matriz-acesso' | 'usuarios' | 'projetos_eap' | 'ordens_servico' | 'contratos_obra' | 'audit-log' | 'parametros' | 'cronograma_executivo' | 'cronograma_financeiro' | 'rdo' | 'medicoes' | 'custos_financeiro' | 'dispositivos' | 'orcamentacao' | 'importacao_cub' | 'orcamento_base' | 'histograma';
+export type NavigationTab = 'home' | 'login' | 'dashboard' | 'financeiro' | 'contratos' | 'alertas' | 'onboarding' | 'auth-debug' | 'empresas' | 'fornecedores' | 'equipes' | 'funcionarios' | 'maquinas' | 'ferramentas' | 'materiais' | 'entidades' | 'matriz-acesso' | 'usuarios' | 'projetos_eap' | 'ordens_servico' | 'contratos_obra' | 'audit-log' | 'parametros' | 'calendarios' | 'cronograma_executivo' | 'cronograma_financeiro' | 'rdo' | 'medicoes' | 'custos_financeiro' | 'dispositivos' | 'orcamentacao' | 'importacao_cub' | 'orcamento_base' | 'histograma';
 
 // Re-exports dos tipos modularizados para manter compatibilidade com o frontend
 export type { FirebaseCustomClaims as CustomClaims } from './types/firebase.types';
@@ -34,6 +34,7 @@ export interface EspecialidadeItem {
   descricao?: string;
   cor?: string;
   icone?: string;
+  valor_hora?: number;
   status: 'ATIVO' | 'INATIVO';
   created_at?: string;
 }

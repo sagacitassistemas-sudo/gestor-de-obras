@@ -128,7 +128,12 @@ function buildQuery(tableName: string) {
   let filters: Array<{ key: string; value: any }> = [];
 
   const applyFilters = () =>
-    getTable(tableName).filter(r => filters.every(f => r[f.key] === f.value));
+    getTable(tableName).filter(r => filters.every(f => {
+      if ((f as any).isIn) {
+        return f.value.includes(r[f.key]);
+      }
+      return r[f.key] === f.value;
+    }));
 
   let isCountMode = false;
 
@@ -158,6 +163,11 @@ function buildQuery(tableName: string) {
     eq(key: string, value: any) {
       filters.push({ key, value });
       return q; // chainable
+    },
+
+    in(key: string, values: any[]) {
+      filters.push({ key, value: values, isIn: true } as any);
+      return q;
     },
 
     limit(n?: number) {

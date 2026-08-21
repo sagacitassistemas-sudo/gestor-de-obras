@@ -2,6 +2,17 @@
 
 Este arquivo define as skills, responsabilidades e regras de raciocínio que a IA deve aplicar ao trabalhar neste projeto. Deve ser lido em conjunto com a `especificacao_sistema.md`.
 
+> [!IMPORTANT]
+> **DIRETRIZ SUPREMA DE AUTONOMIA (LOOP DE ENCERRAMENTO)**
+> Para **TODA** implementação de médio/alto volume que exija novos requisitos funcionais nos processos principais, o Agente de IA é **OBRIGADO a iniciar proativamente o Loop de Encerramento** sem aguardar permissão ou lembrete do usuário.
+> O Loop consiste incondicionalmente na sequência: 
+> 1) Escrever as Specs no diretório `.ai/specs/`.
+> 2) Criar e rodar testes de integração (`tests/integration/`).
+> 3) Rodar `tsc --noEmit`.
+> 4) Salvar histórico detalhado em `.ai/history/` e indexar em `README.md`.
+> 5) Incrementar o `VERSION.md`.
+> Nunca devolva o controle final da tarefa ("Terminei") sem que este ciclo autônomo tenha sido executado e validado.
+
 ---
 
 ## 🧠 Skills Prioritárias (por domínio)

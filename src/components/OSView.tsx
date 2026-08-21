@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { AuthSession } from '../types';
+import { supabase } from '../lib/supabaseClient';
 
 interface OSViewProps {
   authSession: AuthSession | null;
@@ -38,6 +39,9 @@ interface OS {
   itens_eap?: {
     descricao_servico: string;
     unidade_medida: string;
+    data_inicio?: string;
+    data_fim?: string;
+    duracao_dias?: number;
   };
   equipes?: {
     id: string;
@@ -48,6 +52,8 @@ interface OS {
     nome: string;
   };
 }
+
+import { DimensionamentoEquipeModal } from './DimensionamentoEquipeModal';
 
 export const OSView: React.FC<OSViewProps> = ({ authSession }) => {
   // Filtros Globais
@@ -61,6 +67,18 @@ export const OSView: React.FC<OSViewProps> = ({ authSession }) => {
   // EAP e Equipes Disponíveis (para dropdown de criação)
   const [itensEap, setItensEap] = useState<ItemEAP[]>([]);
   const [equipes, setEquipes] = useState<any[]>([]);
+
+  // Modal de Dimensionamento de Equipe
+  const [equipeModalOpen, setEquipeModalOpen] = useState(false);
+  const [equipeModalId, setEquipeModalId] = useState<string>('');
+  const [equipeModalNome, setEquipeModalNome] = useState<string>('');
+
+  const handleOpenEquipeModal = (id?: string, nome?: string) => {
+    if (!id || !nome) return;
+    setEquipeModalId(id);
+    setEquipeModalNome(nome);
+    setEquipeModalOpen(true);
+  };
 
   // Controle de Visualização
   const [isCreating, setIsCreating] = useState(false);
@@ -82,6 +100,13 @@ export const OSView: React.FC<OSViewProps> = ({ authSession }) => {
   const [responsavelRdoId, setResponsavelRdoId] = useState<string>('');
   
   const [saving, setSaving] = useState(false);
+  
+  const [realHours, setRealHours] = useState<{horas: number, has_calendar: boolean} | null>(null);
+  const [custoMaoObraDinamico, setCustoMaoObraDinamico] = useState<{
+    total_hourly_rate: number;
+    total_admission_costs: number;
+    total_dismissal_costs: number;
+  } | null>(null);
   const [loading, setLoading] = useState(false);
 
   // Carregar Projetos Iniciais e Equipes
@@ -110,6 +135,58 @@ export const OSView: React.FC<OSViewProps> = ({ authSession }) => {
         }
       });
   }, [authSession]);
+
+  // Buscar horas reais (considerando o calendário) quando uma OS é selecionada
+  useEffect(() => {
+    if (selectedOs && !isCreating && !isEditing && selectedProjetoId) {
+      if (selectedOs.itens_eap?.data_inicio && selectedOs.itens_eap?.data_fim) {
+        fetchRealHours(selectedOs.itens_eap.data_inicio, selectedOs.itens_eap.data_fim);
+        
+        // NOVO: Buscar custo da equipe alocada na OS através do motor dinâmico
+        const equipeQuery = selectedOs.equipe_id ? `&equipe_id=${selectedOs.equipe_id}` : '';
+        fetch(`/api/custos/simulacao-mao-obra?projeto_id=${selectedProjetoId}&os_id=${selectedOs.id}${equipeQuery}`, {
+             headers: { 'Authorization': `Bearer ${authSession?.idToken}` }
+        })
+        .then(res => res.json())
+        .then(dataCusto => {
+          if (dataCusto.success && dataCusto.calculo) {
+            setCustoMaoObraDinamico({
+              total_hourly_rate: dataCusto.calculo.total_hourly_rate,
+              total_admission_costs: dataCusto.calculo.total_admission_costs,
+              total_dismissal_costs: dataCusto.calculo.total_dismissal_costs
+            });
+          }
+        })
+        .catch(e => console.error("Erro ao buscar custo de mão de obra dinâmico:", e));
+
+      } else {
+        setRealHours(null);
+        setCustoMaoObraDinamico(null);
+      }
+    } else {
+      setRealHours(null);
+      setCustoMaoObraDinamico(null);
+    }
+  }, [selectedOs, isCreating, isEditing, selectedProjetoId, authSession]);
+
+  const fetchRealHours = async (inicio: string, fim: string) => {
+    if (!selectedProjetoId) return;
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      const token = session?.session?.access_token || authSession?.idToken;
+      const res = await fetch(`/api/projetos/${selectedProjetoId}/calendario/horas?inicio=${inicio}&fim=${fim}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success) {
+          setRealHours(json.data);
+        }
+      }
+    } catch (e) {
+      console.warn("Erro ao buscar horas reais:", e);
+    }
+  };
 
   // Carregar OS e itens EAP ao selecionar Projeto
   useEffect(() => {
@@ -594,6 +671,25 @@ export const OSView: React.FC<OSViewProps> = ({ authSession }) => {
                     <span className="material-symbols-outlined text-[16px]">calendar_today</span>
                     Emitida em: {new Date(selectedOs.data_emissao).toLocaleDateString('pt-BR')}
                   </p>
+                  {selectedOs.itens_eap?.duracao_dias && (
+                    <div className="mt-2 p-3 bg-[#f8fafc] border border-[#e1e2e8] rounded-lg">
+                      <p className="text-sm text-[#707785] flex items-center gap-1">
+                        <span className="material-symbols-outlined text-[16px]">schedule</span>
+                        Prazo EAP: <span className="font-bold text-[#191c1e]">{selectedOs.itens_eap.duracao_dias} dias corridos</span>
+                        {selectedOs.itens_eap.data_inicio && selectedOs.itens_eap.data_fim && (
+                          <span>
+                            (de {new Date(selectedOs.itens_eap.data_inicio).toLocaleDateString('pt-BR', { timeZone: 'UTC' })} até {new Date(selectedOs.itens_eap.data_fim).toLocaleDateString('pt-BR', { timeZone: 'UTC' })})
+                          </span>
+                        )}
+                      </p>
+                      {realHours && realHours.has_calendar && (
+                        <p className="text-sm text-[#005daa] flex items-center gap-1 mt-1 font-medium">
+                          <span className="material-symbols-outlined text-[16px]">work_history</span>
+                          Esforço Útil Calculado (Calendário da Obra): <span className="font-bold text-[#191c1e]">{realHours.horas} H/H</span>
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
                 <div className="flex items-center gap-3">
                   <span className={`px-3 py-1 font-bold text-xs rounded-full uppercase ${
@@ -653,7 +749,7 @@ export const OSView: React.FC<OSViewProps> = ({ authSession }) => {
                       <p className="text-xs font-bold text-[#707785] uppercase tracking-wider mb-1">Equipe Executora Designada</p>
                       <div className="flex items-center gap-2">
                         <button 
-                          onClick={() => alert('O módulo de dimensionamento detalhado de equipe será implementado na próxima versão.')}
+                          onClick={() => handleOpenEquipeModal(selectedOs.equipes?.id, selectedOs.equipes?.nome)}
                           className="px-4 py-1.5 bg-blue-50 border border-blue-200 text-[#005daa] font-bold text-xs rounded-lg flex items-center gap-1.5 hover:bg-blue-100 transition-colors cursor-pointer"
                         >
                           <span className="material-symbols-outlined text-sm">groups</span>
@@ -678,35 +774,126 @@ export const OSView: React.FC<OSViewProps> = ({ authSession }) => {
               </div>
 
               <div className="grid grid-cols-4 gap-4 mb-6">
-                <div className="bg-white border border-[#005daa] bg-[#f0f9ff] rounded-lg p-4">
+                {/* MÃO DE OBRA */}
+                <div className={`bg-white border rounded-lg p-4 ${(!selectedOs.equipe_id || !selectedOs.itens_eap?.data_inicio || !selectedOs.itens_eap?.data_fim) ? 'border-red-300 bg-red-50' : 'border-[#005daa] bg-[#f0f9ff]'}`}>
                   <div className="flex justify-between items-start mb-2">
-                    <h4 className="font-bold text-[#005daa] text-xs uppercase tracking-wide flex items-center gap-1"><span className="material-symbols-outlined text-[16px]">groups</span> Mão de Obra</h4>
-                    <span className="font-bold text-[#005daa] text-xs bg-white px-2 py-0.5 rounded border border-blue-200">{Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(selectedOs.valor_mao_obra || 0)}</span>
+                    <h4 className={`font-bold text-xs uppercase tracking-wide flex items-center gap-1 ${(!selectedOs.equipe_id || !selectedOs.itens_eap?.data_inicio || !selectedOs.itens_eap?.data_fim) ? 'text-red-700' : 'text-[#005daa]'}`}>
+                      <span className="material-symbols-outlined text-[16px]">groups</span> Mão de Obra
+                    </h4>
+                    <span className={`font-bold text-xs px-2 py-0.5 rounded border ${
+                      (!selectedOs.equipe_id || !selectedOs.itens_eap?.data_inicio || !selectedOs.itens_eap?.data_fim) 
+                        ? 'bg-red-100 text-red-700 border-red-200' 
+                        : 'bg-white text-[#005daa] border-blue-200'
+                    }`}>
+                      {custoMaoObraDinamico !== null && realHours !== null 
+                        ? Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(
+                            (custoMaoObraDinamico.total_hourly_rate * realHours.horas) + 
+                            custoMaoObraDinamico.total_admission_costs + 
+                            custoMaoObraDinamico.total_dismissal_costs
+                          )
+                        : Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(selectedOs.valor_mao_obra || 0)
+                      }
+                    </span>
                   </div>
                   <div className="text-sm text-[#404753]">
-                    <span className="italic text-[#a0a5b1]">Clique na equipe acima para editar o dimensionamento.</span>
+                    {(!selectedOs.equipe_id) ? (
+                      <span className="text-[10px] text-red-600 font-bold flex items-center gap-1 mt-2">
+                        <span className="material-symbols-outlined text-[12px]">warning</span>
+                        Pendência: Equipe Executora não designada
+                      </span>
+                    ) : (!selectedOs.itens_eap?.data_inicio || !selectedOs.itens_eap?.data_fim) ? (
+                      <span className="text-[10px] text-red-600 font-bold flex flex-col gap-0.5 mt-2">
+                        <span className="flex items-center gap-1">
+                          <span className="material-symbols-outlined text-[12px]">warning</span>
+                          Pendência: Prazos EAP
+                        </span>
+                        <span className="text-[9px] font-normal italic">Data de início ou fim não definidas.</span>
+                      </span>
+                    ) : custoMaoObraDinamico !== null && realHours !== null ? (
+                      <div className="flex flex-col gap-1">
+                        <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-1">
+                          <span className="material-symbols-outlined text-[12px]">auto_awesome</span>
+                          {Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(custoMaoObraDinamico.total_hourly_rate)}/h × {realHours.horas}h
+                        </span>
+                        {(custoMaoObraDinamico.total_admission_costs > 0 || custoMaoObraDinamico.total_dismissal_costs > 0) && (
+                          <span className="text-[10px] text-slate-500 font-semibold flex items-center gap-1">
+                            + {Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(custoMaoObraDinamico.total_admission_costs + custoMaoObraDinamico.total_dismissal_costs)} (Custos Adm/Dem)
+                          </span>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="italic text-[#a0a5b1]">Aguardando cálculo do motor...</span>
+                    )}
                   </div>
                 </div>
-                <div className="bg-white border border-[#e1e2e8] rounded-lg p-4">
+
+                {/* MATERIAIS */}
+                <div className={`bg-white border rounded-lg p-4 ${!selectedOs.valor_materiais ? 'border-red-300' : 'border-[#e1e2e8]'}`}>
                   <div className="flex justify-between items-start mb-2">
-                    <h4 className="font-bold text-[#191c1e] text-xs uppercase tracking-wide flex items-center gap-1"><span className="material-symbols-outlined text-[16px] text-slate-500">inventory_2</span> Materiais</h4>
-                    <span className="font-bold text-[#005daa] text-xs bg-blue-50 px-2 py-0.5 rounded border border-blue-100">{Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(selectedOs.valor_materiais || 0)}</span>
+                    <h4 className={`font-bold text-xs uppercase tracking-wide flex items-center gap-1 ${!selectedOs.valor_materiais ? 'text-red-700' : 'text-[#191c1e]'}`}>
+                      <span className="material-symbols-outlined text-[16px] text-slate-500">inventory_2</span> Materiais
+                    </h4>
+                    <span className={`font-bold text-xs px-2 py-0.5 rounded border ${!selectedOs.valor_materiais ? 'bg-red-50 text-red-600 border-red-200' : 'bg-blue-50 text-[#005daa] border-blue-100'}`}>
+                      {Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(selectedOs.valor_materiais || 0)}
+                    </span>
                   </div>
-                  <div className="text-sm text-[#404753] whitespace-pre-wrap">{selectedOs.materiais || <span className="italic text-[#a0a5b1]">Não definido.</span>}</div>
+                  <div className="text-sm text-[#404753] whitespace-pre-wrap">
+                    {selectedOs.materiais || (
+                      <span className="text-[10px] text-red-600 font-bold flex flex-col gap-0.5 mt-2">
+                        <span className="flex items-center gap-1">
+                          <span className="material-symbols-outlined text-[12px]">warning</span>
+                          Pendência de validação
+                        </span>
+                        <span className="text-[9px] font-normal italic">Custo ou escopo não informados.</span>
+                      </span>
+                    )}
+                  </div>
                 </div>
-                <div className="bg-white border border-[#e1e2e8] rounded-lg p-4">
+
+                {/* FERRAMENTAS */}
+                <div className={`bg-white border rounded-lg p-4 ${!selectedOs.valor_ferramentas ? 'border-red-300' : 'border-[#e1e2e8]'}`}>
                   <div className="flex justify-between items-start mb-2">
-                    <h4 className="font-bold text-[#191c1e] text-xs uppercase tracking-wide flex items-center gap-1"><span className="material-symbols-outlined text-[16px] text-slate-500">handyman</span> Ferramentas</h4>
-                    <span className="font-bold text-[#005daa] text-xs bg-blue-50 px-2 py-0.5 rounded border border-blue-100">{Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(selectedOs.valor_ferramentas || 0)}</span>
+                    <h4 className={`font-bold text-xs uppercase tracking-wide flex items-center gap-1 ${!selectedOs.valor_ferramentas ? 'text-red-700' : 'text-[#191c1e]'}`}>
+                      <span className="material-symbols-outlined text-[16px] text-slate-500">handyman</span> Ferramentas
+                    </h4>
+                    <span className={`font-bold text-xs px-2 py-0.5 rounded border ${!selectedOs.valor_ferramentas ? 'bg-red-50 text-red-600 border-red-200' : 'bg-blue-50 text-[#005daa] border-blue-100'}`}>
+                      {Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(selectedOs.valor_ferramentas || 0)}
+                    </span>
                   </div>
-                  <div className="text-sm text-[#404753] whitespace-pre-wrap">{selectedOs.ferramentas || <span className="italic text-[#a0a5b1]">Não definido.</span>}</div>
+                  <div className="text-sm text-[#404753] whitespace-pre-wrap">
+                    {selectedOs.ferramentas || (
+                      <span className="text-[10px] text-red-600 font-bold flex flex-col gap-0.5 mt-2">
+                        <span className="flex items-center gap-1">
+                          <span className="material-symbols-outlined text-[12px]">warning</span>
+                          Pendência de validação
+                        </span>
+                        <span className="text-[9px] font-normal italic">Custo ou escopo não informados.</span>
+                      </span>
+                    )}
+                  </div>
                 </div>
-                <div className="bg-white border border-[#e1e2e8] rounded-lg p-4">
+
+                {/* EQUIPAMENTOS */}
+                <div className={`bg-white border rounded-lg p-4 ${!selectedOs.valor_equipamentos ? 'border-red-300' : 'border-[#e1e2e8]'}`}>
                   <div className="flex justify-between items-start mb-2">
-                    <h4 className="font-bold text-[#191c1e] text-xs uppercase tracking-wide flex items-center gap-1"><span className="material-symbols-outlined text-[16px] text-slate-500">precision_manufacturing</span> Equipamentos</h4>
-                    <span className="font-bold text-[#005daa] text-xs bg-blue-50 px-2 py-0.5 rounded border border-blue-100">{Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(selectedOs.valor_equipamentos || 0)}</span>
+                    <h4 className={`font-bold text-xs uppercase tracking-wide flex items-center gap-1 ${!selectedOs.valor_equipamentos ? 'text-red-700' : 'text-[#191c1e]'}`}>
+                      <span className="material-symbols-outlined text-[16px] text-slate-500">precision_manufacturing</span> Equipamentos
+                    </h4>
+                    <span className={`font-bold text-xs px-2 py-0.5 rounded border ${!selectedOs.valor_equipamentos ? 'bg-red-50 text-red-600 border-red-200' : 'bg-blue-50 text-[#005daa] border-blue-100'}`}>
+                      {Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(selectedOs.valor_equipamentos || 0)}
+                    </span>
                   </div>
-                  <div className="text-sm text-[#404753] whitespace-pre-wrap">{selectedOs.equipamentos || <span className="italic text-[#a0a5b1]">Não definido.</span>}</div>
+                  <div className="text-sm text-[#404753] whitespace-pre-wrap">
+                    {selectedOs.equipamentos || (
+                      <span className="text-[10px] text-red-600 font-bold flex flex-col gap-0.5 mt-2">
+                        <span className="flex items-center gap-1">
+                          <span className="material-symbols-outlined text-[12px]">warning</span>
+                          Pendência de validação
+                        </span>
+                        <span className="text-[9px] font-normal italic">Custo ou escopo não informados.</span>
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -741,6 +928,18 @@ export const OSView: React.FC<OSViewProps> = ({ authSession }) => {
 
         </div>
       </div>
+
+      {equipeModalOpen && (
+        <DimensionamentoEquipeModal
+          authSession={authSession}
+          equipeId={equipeModalId}
+          equipeNome={equipeModalNome}
+          onClose={() => setEquipeModalOpen(false)}
+          onSaved={() => {
+            // Pode adicionar notificação aqui se desejar
+          }}
+        />
+      )}
     </div>
   );
 };

@@ -4110,7 +4110,7 @@ app.post('/api/cub/save', verifyFirebaseJWT, async (req: any, res: any) => {
         const { data, error } = await client
           .from("projetos")
           .select(
-            "*, empresas_fornecedores!projetos_empresa_id_tenant_id_fkey(nome)",
+            "*, empresas_fornecedores!projetos_empresa_id_tenant_id_fkey(nome), calendarios(nome)",
           )
           .order("created_at", { ascending: false });
 
@@ -4549,6 +4549,47 @@ app.post('/api/cub/save', verifyFirebaseJWT, async (req: any, res: any) => {
     }
   );
 
+  // GET /api/projetos/:id/calendario/horas
+  app.get(
+    "/api/projetos/:id/calendario/horas",
+    verifyFirebaseJWT,
+    async (req: AuthenticatedRequest, res) => {
+      try {
+        const client = getSupabaseClient(req);
+        if (!client) return res.status(401).json({ error: "Unauthorized" });
+
+        const { id } = req.params;
+        const { inicio, fim } = req.query;
+
+        if (!inicio || !fim) return res.status(400).json({ error: "inicio and fim are required" });
+
+        // Fetch projeto to get calendario_id
+        const { data: proj, error: projErr } = await client.from("projetos").select("calendario_id").eq("id", id).single();
+        if (projErr) return res.status(500).json({ error: projErr.message });
+
+        const calendario_id = proj?.calendario_id;
+        if (!calendario_id) {
+          return res.json({ success: true, data: { horas: 0, dias: 0, has_calendar: false } });
+        }
+
+        // Call the RPC function fn_calcular_horas_periodo
+        const { data: horas, error: horasErr } = await client.rpc('fn_calcular_horas_periodo', {
+          p_calendario_id: calendario_id,
+          p_data_inicio: inicio,
+          p_data_fim: fim
+        });
+
+        if (horasErr) return res.status(500).json({ error: horasErr.message });
+
+        return res.json({ success: true, data: { horas: Number(horas || 0), has_calendar: true } });
+
+      } catch (error: any) {
+        console.error("Erro GET /api/projetos/:id/calendario/horas:", error.message);
+        res.status(500).json({ error: error.message });
+      }
+    }
+  );
+
   // POST /api/projetos - Create or update a project
   app.post(
     "/api/projetos",
@@ -4560,7 +4601,7 @@ app.post('/api/cub/save', verifyFirebaseJWT, async (req: any, res: any) => {
         if (!client || !tenantId)
           return res.status(401).json({ error: "Unauthorized" });
 
-        const { id, nome_projeto, data_inicio } = req.body;
+        const { id, nome_projeto, data_inicio, calendario_id } = req.body;
         let { empresa_id } = req.body;
         if (!nome_projeto || !data_inicio) {
           return res.status(400).json({ error: "Missing required fields" });
@@ -4591,6 +4632,7 @@ app.post('/api/cub/save', verifyFirebaseJWT, async (req: any, res: any) => {
           nome_projeto,
           data_inicio,
           empresa_id: empresa_id || null,
+          calendario_id: calendario_id || null,
           updated_at: new Date().toISOString(),
         };
         if (codigo_projeto) upsertData.codigo_projeto = codigo_projeto;
@@ -5820,7 +5862,7 @@ app.post('/api/cub/save', verifyFirebaseJWT, async (req: any, res: any) => {
         let query = client
           .from("ordens_servico")
           .select(
-            "*, itens_eap(descricao_servico, unidade_medida), equipes(id, nome), responsavel_rdo:funcionarios!ordens_servico_responsavel_rdo_id_fkey(id, nome)",
+            "*, itens_eap(descricao_servico, unidade_medida, data_inicio, data_fim, duracao_dias), equipes(id, nome), responsavel_rdo:funcionarios!ordens_servico_responsavel_rdo_id_fkey(id, nome)",
           );
         if (projeto_id) query = query.eq("projeto_id", projeto_id);
 
@@ -6074,7 +6116,7 @@ app.post('/api/cub/save', verifyFirebaseJWT, async (req: any, res: any) => {
         const tenantId = req.decodedToken?.contrato_id || "CTR-2026-SYS";
         if (!client) return res.status(401).json({ error: "Unauthorized" });
 
-        const { id, nome, descricao, cor, icone, status } = req.body;
+        const { id, nome, descricao, cor, icone, status, valor_hora } = req.body;
         if (!nome)
           return res.status(400).json({ error: "Nome é obrigatório." });
 
@@ -6085,6 +6127,7 @@ app.post('/api/cub/save', verifyFirebaseJWT, async (req: any, res: any) => {
           cor: cor || "#005daa",
           icone: icone || "engineering",
           status: status || "ATIVO",
+          valor_hora: valor_hora ? parseFloat(valor_hora) : 0,
           updated_at: new Date().toISOString(),
         };
 
@@ -6129,6 +6172,145 @@ app.post('/api/cub/save', verifyFirebaseJWT, async (req: any, res: any) => {
           .from("especialidades")
           .delete()
           .eq("id", id);
+        if (error) return res.status(500).json({ error: error.message });
+        return res.json({ success: true });
+      } catch (err: any) {
+        return res.status(500).json({ error: err.message });
+      }
+    },
+  );
+
+  // ==========================================
+  // CALENDARIOS API
+  // ==========================================
+
+  // GET /api/calendarios
+  app.get(
+    "/api/calendarios",
+    verifyFirebaseJWT,
+    async (req: AuthenticatedRequest, res) => {
+      try {
+        const client = getSupabaseClient(req);
+        if (!client) return res.status(401).json({ error: "Unauthorized" });
+
+        const { data, error } = await client
+          .from("calendarios")
+          .select("*")
+          .order("created_at", { ascending: false });
+
+        if (error) return res.status(500).json({ error: error.message });
+        return res.json({ success: true, data });
+      } catch (err: any) {
+        return res.status(500).json({ error: err.message });
+      }
+    },
+  );
+
+  // POST /api/calendarios
+  app.post(
+    "/api/calendarios",
+    verifyFirebaseJWT,
+    async (req: AuthenticatedRequest, res) => {
+      try {
+        const client = getSupabaseClient(req);
+        const tenantId = req.decodedToken?.contrato_id;
+        if (!client || !tenantId) return res.status(401).json({ error: "Unauthorized" });
+
+        const { id, nome, carga_dom, carga_seg, carga_ter, carga_qua, carga_qui, carga_sex, carga_sab } = req.body;
+        if (!nome) return res.status(400).json({ error: "Nome é obrigatório." });
+
+        const upsertData: any = {
+          tenant_id: tenantId,
+          nome,
+          carga_dom: carga_dom || 0,
+          carga_seg: carga_seg !== undefined ? carga_seg : 8,
+          carga_ter: carga_ter !== undefined ? carga_ter : 8,
+          carga_qua: carga_qua !== undefined ? carga_qua : 8,
+          carga_qui: carga_qui !== undefined ? carga_qui : 8,
+          carga_sex: carga_sex !== undefined ? carga_sex : 8,
+          carga_sab: carga_sab || 0,
+          updated_at: new Date().toISOString()
+        };
+        if (id) upsertData.id = id;
+
+        const { data, error } = await saveRecord(client, "calendarios", upsertData);
+        if (error) return res.status(500).json({ error: error.message });
+        return res.json({ success: true, data });
+      } catch (err: any) {
+        return res.status(500).json({ error: err.message });
+      }
+    },
+  );
+
+  // GET /api/calendarios/:id/excecoes
+  app.get(
+    "/api/calendarios/:id/excecoes",
+    verifyFirebaseJWT,
+    async (req: AuthenticatedRequest, res) => {
+      try {
+        const client = getSupabaseClient(req);
+        if (!client) return res.status(401).json({ error: "Unauthorized" });
+
+        const { id } = req.params;
+        const { data, error } = await client
+          .from("calendario_excecoes")
+          .select("*")
+          .eq("calendario_id", id)
+          .order("data_excecao", { ascending: true });
+
+        if (error) return res.status(500).json({ error: error.message });
+        return res.json({ success: true, data });
+      } catch (err: any) {
+        return res.status(500).json({ error: err.message });
+      }
+    },
+  );
+
+  // POST /api/calendarios/:id/excecoes
+  app.post(
+    "/api/calendarios/:id/excecoes",
+    verifyFirebaseJWT,
+    async (req: AuthenticatedRequest, res) => {
+      try {
+        const client = getSupabaseClient(req);
+        if (!client) return res.status(401).json({ error: "Unauthorized" });
+
+        const { id } = req.params;
+        const { id: excecao_id, data_excecao, descricao, tipo, carga_horaria } = req.body;
+        
+        if (!data_excecao || !descricao) return res.status(400).json({ error: "Data e descrição são obrigatórios." });
+
+        const upsertData: any = {
+          calendario_id: id,
+          data_excecao,
+          descricao,
+          tipo: tipo || "FERIADO",
+          carga_horaria: carga_horaria || 0
+        };
+        if (excecao_id) upsertData.id = excecao_id;
+
+        const { data, error } = await saveRecord(client, "calendario_excecoes", upsertData);
+        if (error) return res.status(500).json({ error: error.message });
+        return res.json({ success: true, data });
+      } catch (err: any) {
+        return res.status(500).json({ error: err.message });
+      }
+    },
+  );
+
+  // DELETE /api/calendarios/excecoes
+  app.delete(
+    "/api/calendarios/excecoes",
+    verifyFirebaseJWT,
+    async (req: AuthenticatedRequest, res) => {
+      try {
+        const client = getSupabaseClient(req);
+        if (!client) return res.status(401).json({ error: "Unauthorized" });
+
+        const { id } = req.body;
+        if (!id) return res.status(400).json({ error: "ID é obrigatório." });
+
+        const { error } = await client.from("calendario_excecoes").delete().eq("id", id);
         if (error) return res.status(500).json({ error: error.message });
         return res.json({ success: true });
       } catch (err: any) {
@@ -6489,6 +6671,70 @@ app.post('/api/cub/save', verifyFirebaseJWT, async (req: any, res: any) => {
         return res.status(500).json({ error: err.message });
       }
     },
+  );
+
+  // GET /api/equipe-composicao
+  app.get(
+    "/api/equipe-composicao",
+    verifyFirebaseJWT,
+    async (req: AuthenticatedRequest, res) => {
+      try {
+        const client = getSupabaseClient(req);
+        if (!client) return res.status(401).json({ error: "Unauthorized" });
+
+        const { equipe_id } = req.query;
+        if (!equipe_id) return res.status(400).json({ error: "equipe_id is required" });
+
+        const { data, error } = await client
+          .from("equipe_composicao_especialidades")
+          .select("*, especialidades(nome, valor_hora)")
+          .eq("equipe_id", equipe_id);
+
+        if (error) return res.status(500).json({ error: error.message });
+        return res.json({ success: true, data });
+      } catch (err: any) {
+        return res.status(500).json({ error: err.message });
+      }
+    }
+  );
+
+  // POST /api/equipe-composicao
+  app.post(
+    "/api/equipe-composicao",
+    verifyFirebaseJWT,
+    async (req: AuthenticatedRequest, res) => {
+      try {
+        const client = getSupabaseClient(req);
+        const tenantId = req.decodedToken?.contrato_id;
+        if (!client || !tenantId) return res.status(401).json({ error: "Unauthorized" });
+
+        const { equipe_id, composicao } = req.body;
+        if (!equipe_id || !Array.isArray(composicao)) {
+          return res.status(400).json({ error: "equipe_id and composicao array are required" });
+        }
+
+        // Deletar composição atual
+        await client.from("equipe_composicao_especialidades").delete().eq("equipe_id", equipe_id);
+
+        // Inserir nova composição
+        if (composicao.length > 0) {
+          const payload = composicao.map((item: any) => ({
+            tenant_id: tenantId,
+            equipe_id,
+            especialidade_id: item.especialidade_id,
+            quantidade: item.quantidade,
+            valor_hora_projetado: item.valor_hora_projetado || 0
+          }));
+
+          const { error: insErr } = await client.from("equipe_composicao_especialidades").insert(payload);
+          if (insErr) return res.status(500).json({ error: insErr.message });
+        }
+
+        return res.json({ success: true });
+      } catch (err: any) {
+        return res.status(500).json({ error: err.message });
+      }
+    }
   );
 
   // DELETE /api/equipes
@@ -7227,6 +7473,134 @@ app.post('/api/cub/save', verifyFirebaseJWT, async (req: any, res: any) => {
         return res.status(500).json({ error: err.message });
       }
     },
+  );
+
+  // 3. Simulação Dinâmica de Mão de Obra
+  app.get(
+    "/api/custos/simulacao-mao-obra",
+    verifyFirebaseJWT,
+    async (req: AuthenticatedRequest, res) => {
+      try {
+        const client = getSupabaseClient(req);
+        if (!client) return res.status(401).json({ error: "Unauthorized" });
+
+        const { projeto_id, os_id, equipe_id } = req.query;
+        if (!projeto_id) return res.status(400).json({ error: "projeto_id is required" });
+
+        // 1. Fetch the project and its calendar
+        // Since we might not have a direct link to calendario yet, we use a fallback to the default calendar.
+        let horas_mes = 220; // Default fallback if no calendar
+        const { data: calendario } = await client
+          .from("calendarios")
+          .select("*")
+          .eq("is_default", true)
+          .single();
+        
+        if (calendario && calendario.horas_dia && calendario.dias_trabalho_semana) {
+           // estimate month hours: (horas_dia * dias_semana) * 4.33 weeks
+           horas_mes = Math.round((calendario.horas_dia * calendario.dias_trabalho_semana.length) * 4.33);
+        }
+        // 2. Determine equipe(s)
+        let equipesToFetch: string[] = [];
+        if (equipe_id) {
+          equipesToFetch = [equipe_id as string];
+        } else if (os_id) {
+          const { data: osData } = await client.from("ordens_servico").select("equipe_id").eq("id", os_id).single();
+          if (osData?.equipe_id) equipesToFetch = [osData.equipe_id];
+        } else if (projeto_id) {
+          const { data: osList } = await client.from("ordens_servico").select("equipe_id").eq("projeto_id", projeto_id);
+          if (osList) {
+             const uniqueEquipes = new Set(osList.map(os => os.equipe_id).filter(Boolean));
+             equipesToFetch = Array.from(uniqueEquipes);
+          }
+        }
+
+        let totalAdmissionCosts = 0;
+        let totalDismissalCosts = 0;
+        let totalHourlyCosts = 0;
+        const pendencias: string[] = [];
+
+        if (horas_mes === 220 && !calendario) {
+          pendencias.push("Calendário padrão não encontrado. Usando fallback de 220h/mês.");
+        }
+
+        if (equipesToFetch.length > 0) {
+          const { data: equipeMembros, error: equipeErr } = await client.from("equipe_membros").select(`
+              id, adicionado_em,
+              funcionarios!inner(id, cargo)
+            `).in("equipe_id", equipesToFetch);
+          
+          if (equipeErr) throw new Error(equipeErr.message);
+
+          // 3. Fetch costs references
+          const { data: refGerais } = await client.from("ref_encargos_complementares").select("*");
+          const { data: cargosSalariosTenant } = await client.from("tenant_cargos_salarios").select("*");
+          const { data: cargosSalariosRef } = await client.from("ref_cargos_salarios").select("*");
+          const cargosSalarios = (cargosSalariosTenant && cargosSalariosTenant.length > 0) ? cargosSalariosTenant : (cargosSalariosRef || []);
+
+          if (equipeMembros && equipeMembros.length > 0) {
+             const pcmsoAdmissional = (refGerais || []).find((r: any) => r.categoria === 'Exames (PCMSO)');
+             const rescisaoDemissional = (refGerais || []).find((r: any) => r.categoria === 'Rescisão');
+
+             const pcmsoValue = pcmsoAdmissional ? Number(pcmsoAdmissional.custo_mensalista_ref || 0) : 0;
+             const demissaoValue = rescisaoDemissional ? Number(rescisaoDemissional.custo_mensalista_ref || 0) : 0;
+
+             if (pcmsoValue === 0) {
+               pendencias.push("Custo Admissional (Exames PCMSO) não configurado ou zerado nas referências gerais.");
+             }
+             if (demissaoValue === 0) {
+               pendencias.push("Custo Demissional (Rescisão) não configurado ou zerado nas referências gerais.");
+             }
+
+             for (const membro of equipeMembros) {
+                totalAdmissionCosts += pcmsoValue;
+                totalDismissalCosts += demissaoValue;
+                
+                const cargoStr = (membro.funcionarios as any).cargo;
+                if (!cargoStr) {
+                  pendencias.push(`Membro da equipe (ID: ${membro.id}) não possui cargo definido.`);
+                  continue;
+                }
+
+                const cargo = cargosSalarios.find((c: any) => c.nome_cargo === cargoStr);
+                const salarioBaseMensal = cargo ? Number(cargo.salario_base_adotado || cargo.salario_medio || 0) : 0;
+                
+                if (salarioBaseMensal === 0) {
+                  pendencias.push(`Salário base não encontrado ou zerado para o cargo: ${cargoStr}`);
+                }
+
+                const encargosPerc = cargo && cargo.encargos_sociais_perc ? Number(cargo.encargos_sociais_perc) : 85.0;
+                
+                const salarioHora = salarioBaseMensal / horas_mes;
+                const encargosSociaisHora = salarioHora * (encargosPerc / 100);
+                
+                const geraisHora = (refGerais || [])
+                  .filter((r: any) => r.categoria !== 'Exames (PCMSO)' && r.categoria !== 'Rescisão')
+                  .reduce((acc: number, curr: any) => acc + Number(curr.custo_horista_ref || 0), 0);
+                
+                totalHourlyCosts += (salarioHora + encargosSociaisHora + geraisHora);
+             }
+          } else {
+             pendencias.push("A equipe designada não possui membros cadastrados (histograma vazio).");
+          }
+        } else {
+           pendencias.push("Nenhuma equipe executora mapeada para esta OS ou Projeto.");
+        }
+
+        return res.json({ 
+          success: true, 
+          calculo: {
+            horas_mes_adotadas: horas_mes,
+            total_admission_costs: totalAdmissionCosts,
+            total_dismissal_costs: totalDismissalCosts,
+            total_hourly_rate: totalHourlyCosts,
+            pendencias
+          }
+        });
+      } catch (err: any) {
+        return res.status(500).json({ error: err.message });
+      }
+    }
   );
 
   // 3. Checar Elegibilidade RDO

@@ -439,6 +439,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
             )}
             {isAdmin && (
               <button
+                onClick={() => handleNavClick('calendarios')}
+                className={`w-full text-left ${navItemClass('calendarios')}`}
+              >
+                <span className="material-symbols-outlined" style={{ fontVariationSettings: activeTab === 'calendarios' ? "'FILL' 1" : "'FILL' 0" }}>calendar_month</span>
+                {!isCollapsed && <span className="font-label-bold text-label-bold">Calendários</span>}
+              </button>
+            )}
+            {isAdmin && (
+              <button
                 onClick={() => handleNavClick('audit-log')}
                 className={`w-full text-left ${navItemClass('audit-log')} relative`}
               >

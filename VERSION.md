@@ -1,4 +1,24 @@
-# Histórico de Versões e Releases - Works Manager (Gestor de Obras)
+# Histórico de Versões
+
+## [1.4.5] - 2026-08-20
+- **Auditoria de Variáveis Zeradas (API & UI)**: Motor de cálculo da Simulação Dinâmica (`server.ts`) agora mapeia pendências de insumos bases (Salários ausentes, Exames não configurados) e devolve a lista para a UI exibir warnings de Compliance (`ComposicaoCustosMaoObraView.tsx`). Testes de Integração atualizados no Supabase Mock.
+
+---
+
+## Versão 1.4.4 (2026-08-21) - Auditoria de Composição de Custos na OS
+### 🎨 1. Compliance e Validação
+- **UI/UX**: Implementação de auditoria de pendências de composição de custo da OS (`OSView.tsx`). Destaque visual (vermelho) obrigando a validação de parâmetros de custos vazios em Mão de Obra, Materiais, Ferramentas e Equipamentos.
+
+---
+
+## Versão 1.4.3 (2026-08-20) - Motor Dinâmico de Mão de Obra e Integração do Histograma
+
+### ⚙️ 1. Engenharia de Custos (Módulo II)
+- **Cálculo Baseado em Calendário:** Substituição de horários fixos (165h/220h) por cálculo dinâmico baseado no calendário vigente do projeto.
+- **Custos Absolutos (Admissional/Demissional):** Separação de rubricas pontuais como PCMSO (Exames) da tarifa horária. Agora são injetados de forma absoluta com base na curva do Histograma de Equipe (`equipe_membros`).
+- **Simulação On-the-Fly:** Criação do endpoint `GET /api/custos/simulacao-mao-obra` e refatoração da UI (`OSView` e `ComposicaoCustosMaoObraView`) para consulta inteligente do custo das equipes designadas.
+
+---
 
 ## Versão 1.4.2 (2026-08-20) - Mapeamento da Cadeia de Processos (CUB e Orçamentação)
 

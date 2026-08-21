@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { AuthSession, RefCargoSalario, RefMatrizEncargo, TenantCargoSalario, TenantBdiConfig } from '../types';
+import { ComposicaoCustosMaoObraView } from './ComposicaoCustosMaoObraView';
 
 interface CustosFinanceiroViewProps {
   authSession: AuthSession | null;
 }
 
 export const CustosFinanceiroView: React.FC<CustosFinanceiroViewProps> = ({ authSession }) => {
-  const [activeTab, setActiveTab] = useState<'salarios' | 'encargos' | 'custos_indiretos' | 'bdi'>('salarios');
+  const [activeTab, setActiveTab] = useState<'salarios' | 'encargos' | 'custos_indiretos' | 'simulacao_mao_obra' | 'bdi'>('salarios');
 
   // Custos States
   const [refCargos, setRefCargos] = useState<RefCargoSalario[]>([]);
@@ -174,6 +175,17 @@ export const CustosFinanceiroView: React.FC<CustosFinanceiroViewProps> = ({ auth
             Custos Indiretos (EC)
           </button>
           <button
+            onClick={() => setActiveTab('simulacao_mao_obra')}
+            className={`px-3 py-2 text-xs font-bold rounded-md transition-all flex items-center gap-1.5 ${
+              activeTab === 'simulacao_mao_obra'
+                ? 'bg-white text-emerald-700 shadow-2xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <span className="material-symbols-outlined text-[16px]">calculate</span>
+            Motor MO
+          </button>
+          <button
             onClick={() => setActiveTab('bdi')}
             className={`px-3 py-2 text-xs font-bold rounded-md transition-all flex items-center gap-1.5 ${
               activeTab === 'bdi'
@@ -182,7 +194,7 @@ export const CustosFinanceiroView: React.FC<CustosFinanceiroViewProps> = ({ auth
             }`}
           >
             <span className="material-symbols-outlined text-[16px]">calculate</span>
-            Calculadora BDI
+            BDI
           </button>
         </div>
       </div>
@@ -468,6 +480,14 @@ export const CustosFinanceiroView: React.FC<CustosFinanceiroViewProps> = ({ auth
             </div>
           </div>
         </div>
+      )}
+
+      {/* MOTOR DE SIMULAÇÃO */}
+      {!loading && activeTab === 'simulacao_mao_obra' && (
+        <ComposicaoCustosMaoObraView 
+          authSession={authSession} 
+          projetoId="default" 
+        />
       )}
 
       {/* ABA 3: BDI */}

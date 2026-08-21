@@ -49,10 +49,12 @@ export const FuncionariosView: React.FC<FuncionariosViewProps> = ({ authSession 
   });
 
   const [espFormData, setEspFormData] = useState({
+    id: '',
     nome: '',
     descricao: '',
     cor: '#005daa',
     icone: 'engineering',
+    valor_hora: '' as string | number,
     status: 'ATIVO' as 'ATIVO' | 'INATIVO'
   });
 
@@ -204,19 +206,23 @@ export const FuncionariosView: React.FC<FuncionariosViewProps> = ({ authSession 
     if (esp) {
       setEditingEsp(esp);
       setEspFormData({
+        id: esp.id,
         nome: esp.nome,
         descricao: esp.descricao || '',
         cor: esp.cor || '#005daa',
         icone: esp.icone || 'engineering',
+        valor_hora: esp.valor_hora || '',
         status: esp.status || 'ATIVO'
       });
     } else {
       setEditingEsp(null);
       setEspFormData({
+        id: '',
         nome: '',
         descricao: '',
         cor: '#005daa',
         icone: 'engineering',
+        valor_hora: '',
         status: 'ATIVO'
       });
     }
@@ -815,22 +821,20 @@ export const FuncionariosView: React.FC<FuncionariosViewProps> = ({ authSession 
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-3 gap-4">
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">Cor do Badge</label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="color"
-                      value={espFormData.cor}
-                      onChange={(e) => setEspFormData({ ...espFormData, cor: e.target.value })}
-                      className="w-9 h-9 rounded-lg border border-slate-200 cursor-pointer p-0.5"
-                    />
-                    <span className="font-mono text-slate-500 uppercase">{espFormData.cor}</span>
-                  </div>
+                  <label className="block font-bold text-slate-700 mb-1">Custo Hora (Base)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    className="w-full border border-slate-200 rounded-xl px-4 py-2 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Ex: 25.00"
+                    value={espFormData.valor_hora}
+                    onChange={(e) => setEspFormData({ ...espFormData, valor_hora: e.target.value })}
+                  />
                 </div>
-
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">Ícone Material Symbol</label>
+                  <label className="block font-bold text-slate-700 mb-1">Ícone</label>
                   <select
                     value={espFormData.icone}
                     onChange={(e) => setEspFormData({ ...espFormData, icone: e.target.value })}
@@ -847,6 +851,20 @@ export const FuncionariosView: React.FC<FuncionariosViewProps> = ({ authSession 
                     <option value="supervisor_account">supervisor_account (Mestre)</option>
                     <option value="health_and_safety">health_and_safety (Segurança)</option>
                   </select>
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Cor</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="color"
+                      className="w-10 h-10 border border-slate-200 rounded-lg cursor-pointer p-0"
+                      value={espFormData.cor}
+                      onChange={(e) => setEspFormData({ ...espFormData, cor: e.target.value })}
+                    />
+                    <div className="flex-1 border border-slate-200 rounded-xl px-3 py-2 bg-slate-50 flex items-center">
+                      <span className="font-mono text-slate-500 uppercase">{espFormData.cor}</span>
+                    </div>
+                  </div>
                 </div>
               </div>
 
