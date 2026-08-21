@@ -42,6 +42,10 @@ export const CustosFinanceiroView: React.FC<CustosFinanceiroViewProps> = ({ auth
 
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  
+  // Modal de Encargos Sociais
+  const [showEncargoModal, setShowEncargoModal] = useState(false);
+  const [encargoEditing, setEncargoEditing] = useState<any>(null);
   const [notification, setNotification] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
 
   const showNotification = (type: 'success' | 'error' | 'info', message: string) => {
@@ -98,6 +102,44 @@ export const CustosFinanceiroView: React.FC<CustosFinanceiroViewProps> = ({ auth
       showNotification('error', 'Erro ao carregar dados de custos.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const saveEncargo = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!authSession?.idToken) return;
+    try {
+      setSaving(true);
+      const res = await fetch('/api/ref-encargos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authSession.idToken}` },
+        body: JSON.stringify({ ...encargoEditing, uf: ufSelecionada })
+      });
+      if (!res.ok) throw new Error("Falha ao salvar encargo");
+      showNotification('success', 'Encargo salvo com sucesso!');
+      setShowEncargoModal(false);
+      setEncargoEditing(null);
+      fetchCustos();
+    } catch (e) {
+      showNotification('error', 'Erro ao salvar encargo.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const deleteEncargo = async (id: string) => {
+    if (!authSession?.idToken) return;
+    if (!confirm('Deseja realmente excluir este encargo?')) return;
+    try {
+      const res = await fetch(`/api/ref-encargos/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${authSession.idToken}` }
+      });
+      if (!res.ok) throw new Error("Falha ao excluir encargo");
+      showNotification('success', 'Encargo excluído.');
+      fetchCustos();
+    } catch (e) {
+      showNotification('error', 'Erro ao excluir encargo.');
     }
   };
 
@@ -272,6 +314,16 @@ export const CustosFinanceiroView: React.FC<CustosFinanceiroViewProps> = ({ auth
             </div>
             
             <div className="flex flex-wrap items-center gap-4">
+              <button
+                onClick={() => {
+                  setEncargoEditing({ pct_com_deson_horista: 0, pct_com_deson_mensalista: 0, pct_sem_deson_horista: 0, pct_sem_deson_mensalista: 0, grupo: 'A' });
+                  setShowEncargoModal(true);
+                }}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-sm font-bold flex items-center gap-1 transition-colors shadow-sm"
+              >
+                <span className="material-symbols-outlined text-[18px]">add</span> Novo Encargo
+              </button>
+
               <div className="flex items-center gap-2 text-sm bg-slate-100 p-1 rounded-lg">
                 <button 
                   onClick={() => setTipoTrabalhador('horista')}
@@ -331,6 +383,16 @@ export const CustosFinanceiroView: React.FC<CustosFinanceiroViewProps> = ({ auth
                               <td className="py-2 px-4 text-xs font-mono text-slate-500 w-24">{item.codigo_item}</td>
                               <td className="py-2 px-4 text-xs text-slate-700">{item.descricao}</td>
                               <td className="py-2 px-4 text-xs font-bold text-slate-800 text-right w-24">{Number(val).toFixed(2)}%</td>
+                              <td className="py-2 px-4 text-right w-24">
+                                <div className="flex justify-end gap-1">
+                                  <button onClick={() => { setEncargoEditing(item); setShowEncargoModal(true); }} className="text-blue-600 hover:text-blue-800 p-1 rounded hover:bg-blue-50 transition-colors flex" title="Editar">
+                                    <span className="material-symbols-outlined text-[16px]">edit</span>
+                                  </button>
+                                  <button onClick={() => deleteEncargo(item.id)} className="text-red-600 hover:text-red-800 p-1 rounded hover:bg-red-50 transition-colors flex" title="Excluir">
+                                    <span className="material-symbols-outlined text-[16px]">delete</span>
+                                  </button>
+                                </div>
+                              </td>
                             </tr>
                           );
                         })}
@@ -602,6 +664,136 @@ export const CustosFinanceiroView: React.FC<CustosFinanceiroViewProps> = ({ auth
               </div>
             </div>
           </form>
+        </div>
+      )}
+      {/* MODAL ENCARGO */}
+      {showEncargoModal && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex justify-center items-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden border border-slate-200">
+            <div className="bg-slate-50 p-4 border-b border-slate-200 flex justify-between items-center">
+              <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                <span className="material-symbols-outlined text-emerald-600 text-[20px]">
+                  {encargoEditing?.id ? 'edit' : 'add_circle'}
+                </span>
+                {encargoEditing?.id ? 'Editar Encargo' : 'Novo Encargo'}
+              </h3>
+              <button onClick={() => setShowEncargoModal(false)} className="text-slate-400 hover:text-slate-600">
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+            <form onSubmit={saveEncargo} className="p-5 space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Código do Item</label>
+                  <input
+                    required
+                    type="text"
+                    value={encargoEditing?.codigo_item || ''}
+                    onChange={e => setEncargoEditing({ ...encargoEditing, codigo_item: e.target.value })}
+                    className="w-full p-2 border rounded-lg focus:border-emerald-500 outline-none uppercase font-mono text-sm"
+                    placeholder="Ex: A1"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Grupo</label>
+                  <select
+                    value={encargoEditing?.grupo || 'A'}
+                    onChange={e => setEncargoEditing({ ...encargoEditing, grupo: e.target.value })}
+                    className="w-full p-2 border rounded-lg focus:border-emerald-500 outline-none text-sm font-bold"
+                  >
+                    <option value="A">A</option>
+                    <option value="B">B</option>
+                    <option value="C">C</option>
+                    <option value="D">D</option>
+                    <option value="E">E</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Descrição</label>
+                <input
+                  required
+                  type="text"
+                  value={encargoEditing?.descricao || ''}
+                  onChange={e => setEncargoEditing({ ...encargoEditing, descricao: e.target.value })}
+                  className="w-full p-2 border rounded-lg focus:border-emerald-500 outline-none text-sm"
+                  placeholder="Nome do tributo ou taxa"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 pt-2 border-t border-slate-100">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">SEM DESONERAÇÃO (Horista)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    required
+                    value={encargoEditing?.pct_sem_deson_horista ?? 0}
+                    onChange={e => setEncargoEditing({ ...encargoEditing, pct_sem_deson_horista: Number(e.target.value) })}
+                    className="w-full p-2 border rounded-lg focus:border-emerald-500 outline-none text-sm bg-slate-50"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">SEM DESONERAÇÃO (Mensalista)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    required
+                    value={encargoEditing?.pct_sem_deson_mensalista ?? 0}
+                    onChange={e => setEncargoEditing({ ...encargoEditing, pct_sem_deson_mensalista: Number(e.target.value) })}
+                    className="w-full p-2 border rounded-lg focus:border-emerald-500 outline-none text-sm bg-slate-50"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 pt-2">
+                <div>
+                  <label className="block text-[10px] font-bold text-emerald-700 uppercase mb-1">COM DESONERAÇÃO (Horista)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    required
+                    value={encargoEditing?.pct_com_deson_horista ?? 0}
+                    onChange={e => setEncargoEditing({ ...encargoEditing, pct_com_deson_horista: Number(e.target.value) })}
+                    className="w-full p-2 border rounded-lg border-emerald-200 focus:border-emerald-500 outline-none text-sm bg-emerald-50/30"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-emerald-700 uppercase mb-1">COM DESONERAÇÃO (Mensalista)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    required
+                    value={encargoEditing?.pct_com_deson_mensalista ?? 0}
+                    onChange={e => setEncargoEditing({ ...encargoEditing, pct_com_deson_mensalista: Number(e.target.value) })}
+                    className="w-full p-2 border rounded-lg border-emerald-200 focus:border-emerald-500 outline-none text-sm bg-emerald-50/30"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-4 mt-4 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowEncargoModal(false)}
+                  className="px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="px-4 py-2 text-sm font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors flex items-center gap-2 shadow-sm"
+                >
+                  {saving ? (
+                    <span className="material-symbols-outlined text-[18px] animate-spin">sync</span>
+                  ) : (
+                    <span className="material-symbols-outlined text-[18px]">save</span>
+                  )}
+                  Salvar
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
     </div>

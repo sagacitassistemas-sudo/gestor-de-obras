@@ -34,3 +34,6 @@ docs/
 # Arquivos temporarios
 .temp/
 serviceAccountKey.json
+
+# IA e Histórico de Contexto
+.ai/

@@ -1,0 +1,30 @@
+INSERT INTO ref_matriz_encargos (uf, codigo_item, grupo, descricao, pct_sem_deson_horista, pct_sem_deson_mensalista) VALUES
+('BR', 'A1', 'A', 'INSS', 20.00, 20.00),
+('BR', 'A2', 'A', 'SESI', 1.50, 1.50),
+('BR', 'A3', 'A', 'SENAI', 1.00, 1.00),
+('BR', 'A4', 'A', 'INCRA', 0.20, 0.20),
+('BR', 'A5', 'A', 'SEBRAE', 0.60, 0.60),
+('BR', 'A6', 'A', 'Salário - Educação', 2.50, 2.50),
+('BR', 'A7', 'A', 'Seguro Contra Acidentes de Trabalho', 3.00, 3.00),
+('BR', 'A8', 'A', 'FGTS', 8.00, 8.00),
+('BR', 'A9', 'A', 'SECONCI', 0.00, 0.00),
+
+('BR', 'B1', 'B', 'Repouso Semanal Remunerado', 17.87, 0.00),
+('BR', 'B2', 'B', 'Feriados', 3.72, 0.00),
+('BR', 'B3', 'B', 'Auxílio Enfermidade', 0.91, 0.69),
+('BR', 'B4', 'B', '13º Salário', 10.92, 8.33),
+('BR', 'B5', 'B', 'Licença Paternidade', 0.08, 0.06),
+('BR', 'B6', 'B', 'Faltas Justificadas', 0.73, 0.56),
+('BR', 'B7', 'B', 'Dias de chuva', 1.65, 0.00),
+('BR', 'B8', 'B', 'Auxílio Acidente de Trabalho', 0.12, 0.09),
+('BR', 'B9', 'B', 'Férias Gozadas', 10.42, 7.96),
+('BR', 'B10', 'B', 'Salário Maternidade', 0.03, 0.02),
+
+('BR', 'C1', 'C', 'Aviso Prévio Indenizado', 6.35, 4.85),
+('BR', 'C2', 'C', 'Aviso Prévio Trabalhado', 0.15, 0.11),
+('BR', 'C3', 'C', 'Férias Indenizadas', 3.56, 2.72),
+('BR', 'C4', 'C', 'Depósito Rescisão Sem Justa Causa', 4.84, 3.69),
+('BR', 'C5', 'C', 'Indenização Adicional', 0.53, 0.41),
+
+('BR', 'D1', 'D', 'Reincidência de A sobre B', 17.09, 6.52),
+('BR', 'D2', 'D', 'Reincidência de Grupo A sobre Aviso Prévio Trabalhado e Reincidência do FGTS sobre Aviso Prévio Indenizado', 0.56, 0.43);

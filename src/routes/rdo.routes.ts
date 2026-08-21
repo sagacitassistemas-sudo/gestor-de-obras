@@ -1,70 +1,102 @@
-import { Router } from 'express';
+import { Router } from "express";
+import { getSupabaseClient, saveRecord } from "../lib/server.lib";
+import { verifyFirebaseJWT } from "../middleware/verifyFirebaseJWT";
+import { AuthenticatedRequest } from "../types/middleware.types";
 
-const rdoRouter = Router();
+const app = Router();
 
-// In-Memory Fallback e Controle de Idempotência
-const inMemoryRdos = new Map<string, any>();
-const processedProtocolos = new Set<string>();
+  // GET /api/rdos
+  app.get(
+    "/api/rdos",
+    verifyFirebaseJWT,
+    async (req: AuthenticatedRequest, res) => {
+      try {
+        const client = getSupabaseClient(req);
+        if (!client) return res.status(401).json({ error: "Unauthorized" });
 
-rdoRouter.post('/', async (req, res) => {
-  try {
-    const payload = req.body;
-    
-    // 1. Mapeamento CamelCase -> SnakeCase
-    const payloadSnakeCase = {
-      protocolo_id: payload.protocoloId,
-      os_id: payload.osId,
-      clima_manha: payload.climaManha,
-      data_registro: payload.dataRegistro || new Date().toISOString(),
-      contrato_id: payload._contratoId // Injetado via Middleware de Auth (Carteira de Gestão)
-    };
+        const { ordem_servico_id, projeto_id } = req.query;
+        let query = client.from("rdos").select("*");
 
-    if (!payloadSnakeCase.protocolo_id) {
-      return res.status(400).json({ error: 'Protocolo ID (protocoloId) ausente.' });
-    }
+        if (ordem_servico_id) {
+          query = query.eq("ordem_servico_id", ordem_servico_id);
+        } else if (projeto_id) {
+          query = query.eq("projeto_id", projeto_id);
+        }
 
-    // 2. Idempotência por protocolo_id
-    if (
-      processedProtocolos.has(payloadSnakeCase.protocolo_id) || 
-      inMemoryRdos.has(payloadSnakeCase.protocolo_id)
-    ) {
-      return res.status(200).json({ message: 'Registro idempotent: já processado anteriormente.' });
-    }
+        const { data, error } = await query.order("created_at", {
+          ascending: false,
+        });
+        if (error) return res.status(500).json({ error: error.message });
+        return res.json({ success: true, data });
+      } catch (err: any) {
+        return res.status(500).json({ error: err.message });
+      }
+    },
+  );
 
-    // 3. Simular falha de conexão no Supabase caso o teste dispare 'UUID-OFFLINE-003'
-    if (payloadSnakeCase.protocolo_id === 'UUID-OFFLINE-003') {
-      throw new Error('Supabase Connection timeout');
-    }
+  // POST /api/rdos
+  app.post(
+    "/api/rdos",
+    verifyFirebaseJWT,
+    async (req: AuthenticatedRequest, res) => {
+      try {
+        const client = getSupabaseClient(req);
+        if (!client) return res.status(401).json({ error: "Unauthorized" });
 
-    // [Cenário Real: aqui seria await supabase.from('rdo_apontamentos').insert([payloadSnakeCase])]
+        const rdoData = req.body;
+        const tenantId = req.decodedToken?.contrato_id;
+        const ano = new Date(rdoData.data_rdo || new Date())
+          .getFullYear()
+          .toString()
+          .slice(-2);
 
-    // Registrar sucesso da idempotência e retornar 201 Created (Caminho Feliz - inclusive Retroativo)
-    processedProtocolos.add(payloadSnakeCase.protocolo_id);
-    
-    return res.status(201).json({ 
-      success: true, 
-      data: payloadSnakeCase 
-    });
+        const { data: countData } = await client
+          .from("rdos")
+          .select("id", { count: "exact" })
+          .eq("tenant_id", tenantId);
+        const seq = ((countData?.length || 0) + 1).toString().padStart(3, "0");
+        const numero_rdo = `RDO-${seq}-${ano}`;
 
-  } catch (error) {
-    // 4. Fallback (Resiliência in-memory)
-    const payload = req.body;
-    const payloadSnakeCase = {
-      protocolo_id: payload.protocoloId,
-      os_id: payload.osId,
-      clima_manha: payload.climaManha,
-      data_registro: payload.dataRegistro || new Date().toISOString(),
-      contrato_id: payload._contratoId
-    };
+        const payload = {
+          tenant_id: tenantId,
+          projeto_id: rdoData.projeto_id,
+          ordem_servico_id: rdoData.ordem_servico_id,
+          numero_rdo: numero_rdo,
+          data_rdo: rdoData.data_rdo,
+          clima_manha: rdoData.clima_manha,
+          clima_tarde: rdoData.clima_tarde,
+          status: "Rascunho",
+        };
 
-    inMemoryRdos.set(payloadSnakeCase.protocolo_id, payloadSnakeCase);
+        const { data, error } = await client
+          .from("rdos")
+          .insert(payload)
+          .select()
+          .single();
+        if (error) return res.status(500).json({ error: error.message });
 
-    return res.status(202).json({
-      synced: false,
-      protocolo_id: payloadSnakeCase.protocolo_id,
-      message: 'Salvo via offline fallback em cache de memória'
-    });
-  }
-});
+        // Salvar os itens do RDO
+        if (rdoData.itens && rdoData.itens.length > 0) {
+          const itensPayload = rdoData.itens.map((item: any) => ({
+            tenant_id: tenantId,
+            rdo_id: data.id,
+            item_eap_id: item.item_eap_id,
+            qtd_medida: item.qtd_medida_hoje || 0,
+            valor_unitario_contrato: 0,
+            valor_total_dia: 0,
+          }));
+          const { error: itemsError } = await client
+            .from("rdo_items")
+            .insert(itensPayload);
+          if (itemsError)
+            console.error("Erro ao salvar rdo_items:", itemsError);
+        }
 
-export default rdoRouter;
+        return res.json({ success: true, data });
+      } catch (err: any) {
+        return res.status(500).json({ error: err.message });
+      }
+    },
+  );
+
+export default app;
