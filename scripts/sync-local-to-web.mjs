@@ -43,6 +43,8 @@ const tables = [
   'permissoes_empresa',
   'permissoes_usuario',
   'especialidades',
+  'calendarios',
+  'calendario_excecoes',
   'projetos',
   'itens_eap',
   'cronograma_financeiro_semanas',
@@ -70,6 +72,9 @@ const tables = [
   'tenant_bdi_configuracao',
   'tenant_cargos_salarios',
   'validacoes_desenvolvedor',
+  'ref_cub_bases',
+  'ref_bases_servicos',
+  'ref_bases_insumos',
   'audit_log',
   'system_error_log'
 ];
@@ -100,18 +105,38 @@ async function wipeTable(tableName) {
 async function syncTable(tableName) {
   console.log(`\n--- Sincronizando tabela: ${tableName} ---`);
   
-  // 1. Buscar do Local
-  const { data: localData, error: localError } = await localSupabase
-    .from(tableName)
-    .select('*');
+  // 1. Buscar do Local (com paginação)
+  let localData = [];
+  let fetchError = null;
+  let page = 0;
+  const pageSize = 1000;
+  
+  while (true) {
+    const { data, error } = await localSupabase
+      .from(tableName)
+      .select('*')
+      .range(page * pageSize, (page + 1) * pageSize - 1);
+      
+    if (error) {
+      fetchError = error;
+      break;
+    }
+    
+    if (data.length === 0) break;
+    
+    localData = localData.concat(data);
+    
+    if (data.length < pageSize) break;
+    page++;
+  }
 
-  if (localError) {
+  if (fetchError) {
     // Se a tabela não existir, ignora
-    if (localError.code === '42P01') {
+    if (fetchError.code === '42P01') {
       console.log(`⚠️ Tabela ${tableName} não existe localmente. Ignorando.`);
       return;
     }
-    console.error(`❌ Erro ao ler ${tableName} do banco local:`, localError.message);
+    console.error(`❌ Erro ao ler ${tableName} do banco local:`, fetchError.message);
     return;
   }
 
