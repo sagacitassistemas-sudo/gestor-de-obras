@@ -55,7 +55,7 @@ import { NotificationsDrawer } from './components/NotificationsDrawer';
 import { ExportReportModal } from './components/ExportReportModal';
 
 import { auth } from './lib/firebase';
-import { onAuthStateChanged } from 'firebase/auth';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { supabase } from './lib/supabaseClient';
 
 export default function App() {
@@ -162,18 +162,28 @@ export default function App() {
       if (url.startsWith('/api/') && [401, 403, 429].includes(response.status)) {
         // Ignora endpoints de auth para evitar loops de interceptação ao tentar logar
         if (!url.includes('/api/auth/oauth-login') && !url.includes('/api/auth/login-mfa')) {
-          try {
-            const cloned = response.clone();
-            const json = await cloned.json();
-            const msg = json.error || 'Sessão expirada ou bloqueada.';
-            alert(`⚠️ Controle de Acesso:\n${msg}\n\nPor favor, faça login novamente para continuar.`);
-          } catch {
-            alert('⚠️ Controle de Acesso:\nSessão expirada ou acesso bloqueado pelo servidor.\n\nPor favor, faça login novamente para continuar.');
+          if (!(window as any)._isAlerting401) {
+            (window as any)._isAlerting401 = true;
+            try {
+              const cloned = response.clone();
+              const json = await cloned.json();
+              const msg = json.error || 'Sessão expirada ou bloqueada.';
+              alert(`⚠️ Controle de Acesso:\n${msg}\n\nPor favor, faça login novamente para continuar.`);
+            } catch {
+              alert('⚠️ Controle de Acesso:\nSessão expirada ou acesso bloqueado pelo servidor.\n\nPor favor, faça login novamente para continuar.');
+            }
+            
+            // Força deslogar do Firebase para evitar novas tentativas falhas
+            signOut(auth).catch(() => {});
+            
+            // Força o relogin no estado do React
+            setAuthSession(null);
+            setIsAuthenticated(false);
+            setActiveTab('login');
+            
+            // Libera o alerta após 3 segundos para evitar travamento em cascata
+            setTimeout(() => { (window as any)._isAlerting401 = false; }, 3000);
           }
-          // Força o relogin no estado do React
-          setAuthSession(null);
-          setIsAuthenticated(false);
-          setActiveTab('login');
         }
       }
       return response;

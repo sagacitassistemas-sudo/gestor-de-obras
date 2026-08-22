@@ -22,12 +22,21 @@ export async function verifyFirebaseJWT(req: AuthenticatedRequest, res: Response
   try {
     let decodedToken: any;
     try {
-      // Tenta Firebase Admin SDK primeiro
-      decodedToken = await getAuth().verifyIdToken(idToken);
+      // Decode header to check algorithm before verifying
+      const headerB64 = idToken.split('.')[0];
+      const headerStr = Buffer.from(headerB64, 'base64').toString('utf-8');
+      const header = JSON.parse(headerStr);
+
+      if (header.alg === 'HS256') {
+        // Validação via Supabase JWT Secret
+        const jwtSecret = process.env.SUPABASE_JWT_SECRET || "super-secret-jwt-token-with-at-least-32-characters-long";
+        decodedToken = jwt.verify(idToken, jwtSecret);
+      } else {
+        // Validação Firebase Admin SDK
+        decodedToken = await getAuth().verifyIdToken(idToken);
+      }
     } catch (e: any) {
-      // Se falhar (ex: app/no-app ou invalid signature), tenta validar via Supabase JWT Secret
-      const jwtSecret = process.env.SUPABASE_JWT_SECRET || "super-secret-jwt-token-with-at-least-32-characters-long";
-      decodedToken = jwt.verify(idToken, jwtSecret);
+      throw e; // Rethrow para ser pego pelo bloco catch externo e logado corretamente
     }
     
     req.decodedToken = {
