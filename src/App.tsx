@@ -27,6 +27,7 @@ import { CronogramaExecutivoView } from './components/CronogramaExecutivoView';
 import { CronogramaFisicoFinanceiroView } from './components/CronogramaFisicoFinanceiroView';
 import { HistogramaView } from './components/HistogramaView';
 import { RDOView } from './components/RDOView';
+import { RdosRecebidosView } from './components/RdosRecebidosView';
 import { OSView } from './components/OSView';
 import { AlertasView } from './components/AlertasView';
 import { EmpresasView } from './components/EmpresasView';
@@ -280,6 +281,7 @@ export default function App() {
       case 'cronograma_financeiro': return !!effectivePermissions.cronogramas_ler;
       case 'histograma': return !!effectivePermissions.cronogramas_ler;
       case 'rdo': return !!effectivePermissions.rdo_ler;
+      case 'rdos_recebidos': return !!effectivePermissions.rdo_ler;
       case 'contratos_obra': return !!effectivePermissions.contratos_ler;
       case 'medicoes': return !!effectivePermissions.medicoes_ler;
       case 'usuarios': return !!effectivePermissions.usuarios_ler;
@@ -707,6 +709,12 @@ export default function App() {
           {activeTab === 'rdo' && (
             hasAccess('rdo') ? (
               <RDOView authSession={authSession} />
+            ) : <div className="p-8 text-center bg-white rounded-xl border border-gray-200">Acesso Restrito: Sem permissão ao RDO</div>
+          )}
+
+          {activeTab === 'rdos_recebidos' && (
+            hasAccess('rdos_recebidos') ? (
+              <RdosRecebidosView authSession={authSession} />
             ) : <div className="p-8 text-center bg-white rounded-xl border border-gray-200">Acesso Restrito: Sem permissão ao RDO</div>
           )}
 

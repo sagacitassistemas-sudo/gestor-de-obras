@@ -15,7 +15,16 @@ const app = Router();
         if (!client) return res.status(401).json({ error: "Unauthorized" });
 
         const { ordem_servico_id, projeto_id } = req.query;
-        let query = client.from("rdos").select("*");
+        let query = client.from("rdos").select(`
+          *,
+          projetos (nome_projeto),
+          ordens_servico (numero_os, descricao),
+          responsavel:responsavel_id (raw_user_meta_data),
+          rdo_items (
+            *,
+            itens_eap (descricao_servico, unidade_medida)
+          )
+        `);
 
         if (ordem_servico_id) {
           query = query.eq("ordem_servico_id", ordem_servico_id);
@@ -26,6 +35,7 @@ const app = Router();
         const { data, error } = await query.order("created_at", {
           ascending: false,
         });
+        
         if (error) return res.status(500).json({ error: error.message });
         return res.json({ success: true, data });
       } catch (err: any) {
@@ -33,6 +43,34 @@ const app = Router();
       }
     },
   );
+
+  // PATCH /api/rdos/:id/status
+  app.patch(
+    "/api/rdos/:id/status",
+    verifyFirebaseJWT,
+    async (req: AuthenticatedRequest, res) => {
+      try {
+        const client = getSupabaseClient(req);
+        if (!client) return res.status(401).json({ error: "Unauthorized" });
+
+        const { id } = req.params;
+        const { status, observacao_revisao } = req.body;
+
+        const { data, error } = await client
+          .from("rdos")
+          .update({ status, observacao_revisao })
+          .eq("id", id)
+          .select()
+          .single();
+
+        if (error) return res.status(500).json({ error: error.message });
+        return res.json({ success: true, data });
+      } catch (err: any) {
+        return res.status(500).json({ error: err.message });
+      }
+    }
+  );
+
 
   // POST /api/rdos
   app.post(

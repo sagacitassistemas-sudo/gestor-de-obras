@@ -357,7 +357,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   className={`w-full text-left ${navItemClass('rdo')}`}
                 >
                   <span className="material-symbols-outlined" style={{ fontVariationSettings: activeTab === 'rdo' ? "'FILL' 1" : "'FILL' 0" }}>fact_check</span>
-                  {!isCollapsed && <span className="font-label-bold text-label-bold">RDO's</span>}
+                  {!isCollapsed && <span className="font-label-bold text-label-bold">RDO's (Diário)</span>}
+                </button>
+              )}
+              {(hasAccess('projetos_ler') || hasAccess('medicoes_ler')) && (
+                <button
+                  onClick={() => handleNavClick('rdos_recebidos')}
+                  className={`w-full text-left ${navItemClass('rdos_recebidos')}`}
+                >
+                  <span className="material-symbols-outlined" style={{ fontVariationSettings: activeTab === 'rdos_recebidos' ? "'FILL' 1" : "'FILL' 0" }}>inbox</span>
+                  {!isCollapsed && <span className="font-label-bold text-label-bold">RDO's Recebidos</span>}
                 </button>
               )}
               {hasAccess('medicoes_ler') && (
