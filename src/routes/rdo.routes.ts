@@ -19,7 +19,7 @@ const app = Router();
           *,
           projetos (nome_projeto),
           ordens_servico (numero_os, descricao),
-          responsavel:responsavel_id (raw_user_meta_data),
+          responsavel:funcionarios!rdos_responsavel_rdo_id_fkey(nome),
           rdo_items (
             *,
             itens_eap (descricao_servico, unidade_medida)

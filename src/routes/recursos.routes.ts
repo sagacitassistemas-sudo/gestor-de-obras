@@ -544,8 +544,7 @@ router.get("/cessoes-pessoal", verifyFirebaseJWT, async (req: AuthenticatedReque
       funcionarios:funcionario_id(id, nome, cargo),
       equipe_origem:equipes!cessoes_pessoal_equipe_origem_id_fkey(id, nome),
       equipe_destino:equipes!cessoes_pessoal_equipe_destino_id_fkey(id, nome),
-      ordens_servico(id, numero_os, descricao),
-      autorizador:auth.users!cessoes_pessoal_autorizado_por_fkey(id, email)
+      ordens_servico(id, numero_os, descricao)
     `);
 
     if (status) query = query.eq("status", status);
