@@ -18,10 +18,20 @@ const router = Router();
             .json({ error: "Missing Supabase client / token" });
         }
 
-        const { data, error } = await client
+        const tenantId = req.decodedToken?.contrato_id;
+        const empresaId = req.decodedToken?.empresa_id;
+
+        let query = client
           .from("v_contratos_obra_resumo")
           .select("*")
+          .eq("tenant_id", tenantId)
           .order("data_assinatura", { ascending: false });
+
+        if (empresaId) {
+          query = query.eq("fornecedor_id", empresaId);
+        }
+
+        const { data, error } = await query;
 
         if (error) {
           console.error("GET /api/contratos-obra Supabase error:", error);
@@ -161,24 +171,41 @@ const router = Router();
         const from = (page - 1) * limit;
         const to = from + limit - 1;
 
-        const { data, error } = await client
+        const tenantId = req.decodedToken?.contrato_id;
+        const empresaId = req.decodedToken?.empresa_id;
+
+        let query = client
           .from("projetos")
           .select(
             "*, empresas_fornecedores!projetos_empresa_id_tenant_id_fkey(nome), calendarios(nome)",
           )
+          .eq("tenant_id", tenantId)
           .order("created_at", { ascending: false })
           .range(from, to);
+
+        if (empresaId) {
+          query = query.eq("empresa_id", empresaId);
+        }
+
+        const { data, error } = await query;
 
         if (error) {
           console.warn(
             "GET /api/projetos join failed, falling back to simple query:",
             error.message,
           );
-          const { data: fallbackData, error: fallbackErr } = await client
+          let fallbackQuery = client
             .from("projetos")
             .select("*")
+            .eq("tenant_id", tenantId)
             .order("created_at", { ascending: false })
             .range(from, to);
+            
+          if (empresaId) {
+            fallbackQuery = fallbackQuery.eq("empresa_id", empresaId);
+          }
+            
+          const { data: fallbackData, error: fallbackErr } = await fallbackQuery;
           if (fallbackErr)
             return res.status(500).json({ error: fallbackErr.message });
           return res.json({ projetos: fallbackData || [] });

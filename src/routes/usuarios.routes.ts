@@ -36,7 +36,9 @@ const router = Router();
         const from = (page - 1) * limit;
         const to = from + limit - 1;
 
-        const { data, error } = await client
+        const empresaId = req.decodedToken?.empresa_id;
+
+        let query = client
           .from("usuarios")
           .select(
             "*, empresas_fornecedores!usuarios_empresa_id_contrato_id_fkey(nome)",
@@ -44,16 +46,28 @@ const router = Router();
           .eq("contrato_id", tenantId)
           .range(from, to);
 
+        if (empresaId) {
+          query = query.eq("empresa_id", empresaId);
+        }
+
+        const { data, error } = await query;
+
         if (error) {
           // Fallback: if the join fails (e.g. FK not yet established), query without join
           console.warn(
             "GET /api/usuarios join failed, falling back to simple query:",
             error.message,
           );
-          const { data: fallbackData, error: fallbackErr } = await client
+          let fallbackQuery = client
             .from("usuarios")
             .select("*")
             .eq("contrato_id", tenantId);
+
+          if (empresaId) {
+            fallbackQuery = fallbackQuery.eq("empresa_id", empresaId);
+          }
+
+          const { data: fallbackData, error: fallbackErr } = await fallbackQuery;
           if (fallbackErr)
             return res.status(500).json({ error: fallbackErr.message });
           return res.json({ usuarios: fallbackData || [] });

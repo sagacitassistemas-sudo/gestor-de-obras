@@ -130,38 +130,42 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </span>
               {!isCollapsed && <span className="font-label-bold text-label-bold">Início</span>}
             </button>
-            <button
-              onClick={() => handleNavClick('dashboard')}
-              className={`w-full text-left ${navItemClass('dashboard')}`}
-            >
-              <span
-                className="material-symbols-outlined"
-                style={{ fontVariationSettings: activeTab === 'dashboard' ? "'FILL' 1" : "'FILL' 0" }}
+            {hasAccess('dashboard_ler') && (
+              <button
+                onClick={() => handleNavClick('dashboard')}
+                className={`w-full text-left ${navItemClass('dashboard')}`}
               >
-                dashboard
-              </span>
-              {!isCollapsed && <span className="font-label-bold text-label-bold">Dashboard</span>}
-            </button>
-            <button
-              onClick={() => handleNavClick('alertas')}
-              className={`w-full text-left relative ${navItemClass('alertas')}`}
-            >
-              <span
-                className="material-symbols-outlined"
-                style={{ fontVariationSettings: activeTab === 'alertas' ? "'FILL' 1" : "'FILL' 0" }}
-              >
-                warning
-              </span>
-              {!isCollapsed && <span className="font-label-bold text-label-bold flex-1">Alertas</span>}
-              {!isCollapsed && alertCount > 0 && (
-                <span className="px-2 py-0.5 text-[10px] bg-[#f59e0b] text-white font-bold rounded-full">
-                  {alertCount}
+                <span
+                  className="material-symbols-outlined"
+                  style={{ fontVariationSettings: activeTab === 'dashboard' ? "'FILL' 1" : "'FILL' 0" }}
+                >
+                  dashboard
                 </span>
-              )}
-              {isCollapsed && alertCount > 0 && (
-                <span className="absolute top-2 right-2 w-2 h-2 bg-[#f59e0b] rounded-full"></span>
-              )}
-            </button>
+                {!isCollapsed && <span className="font-label-bold text-label-bold">Dashboard</span>}
+              </button>
+            )}
+            {hasAccess('alertas_ler') && (
+              <button
+                onClick={() => handleNavClick('alertas')}
+                className={`w-full text-left relative ${navItemClass('alertas')}`}
+              >
+                <span
+                  className="material-symbols-outlined"
+                  style={{ fontVariationSettings: activeTab === 'alertas' ? "'FILL' 1" : "'FILL' 0" }}
+                >
+                  warning
+                </span>
+                {!isCollapsed && <span className="font-label-bold text-label-bold flex-1">Alertas</span>}
+                {!isCollapsed && alertCount > 0 && (
+                  <span className="px-2 py-0.5 text-[10px] bg-[#f59e0b] text-white font-bold rounded-full">
+                    {alertCount}
+                  </span>
+                )}
+                {isCollapsed && alertCount > 0 && (
+                  <span className="absolute top-2 right-2 w-2 h-2 bg-[#f59e0b] rounded-full"></span>
+                )}
+              </button>
+            )}
           </div>
 
           {/* GRUPO: CADASTROS */}

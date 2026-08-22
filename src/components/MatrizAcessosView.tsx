@@ -9,6 +9,13 @@ interface MatrizAcessosViewProps {
 
 const MODULOS_GROUPED = [
   {
+    titulo: 'VISÃO GERAL',
+    modulos: [
+      { id: 'dashboard', label: 'Dashboard / Painel' },
+      { id: 'alertas', label: 'Central de Alertas' }
+    ]
+  },
+  {
     titulo: 'MÓDULO I: Gestão Executiva e Obras',
     modulos: [
       { id: 'empresas', label: 'Empresas / Fornecedores' },
@@ -102,7 +109,8 @@ export const MatrizAcessosView: React.FC<MatrizAcessosViewProps> = ({ authSessio
           const list = json.usuarios.map((u: any) => ({
             uid: u.uid,
             nome: u.nome,
-            empresa_id: u.empresa_id || null
+            empresa_id: u.empresa_id || null,
+            perfil: u.perfil || 'VISITANTE'
           }));
           setUsuariosList(list);
           if (list.length > 0) {
@@ -137,6 +145,7 @@ export const MatrizAcessosView: React.FC<MatrizAcessosViewProps> = ({ authSessio
         } else {
           setPermContratante({
             contrato_id: tenantId,
+            dashboard_ler: true, alertas_ler: true,
             empresas_criar: true, empresas_ler: true, empresas_editar: true, empresas_excluir: true,
             projetos_criar: true, projetos_ler: true, projetos_editar: true, projetos_excluir: true,
             medicoes_criar: true, medicoes_ler: true, medicoes_editar: true, medicoes_excluir: true,
@@ -155,6 +164,7 @@ export const MatrizAcessosView: React.FC<MatrizAcessosViewProps> = ({ authSessio
         // On error, use safe defaults
         setPermContratante({
           contrato_id: tenantId,
+          dashboard_ler: true, alertas_ler: true,
           empresas_criar: true, empresas_ler: true, empresas_editar: true, empresas_excluir: true,
           projetos_criar: true, projetos_ler: true, projetos_editar: true, projetos_excluir: true,
           medicoes_criar: true, medicoes_ler: true, medicoes_editar: true, medicoes_excluir: true,
@@ -203,6 +213,7 @@ export const MatrizAcessosView: React.FC<MatrizAcessosViewProps> = ({ authSessio
           setPermTipo({
             contrato_id: tenantId,
             perfil: selectedTipo,
+            dashboard_ler: false, alertas_ler: false,
             empresas_criar: selectedTipo === 'ADMIN',
             empresas_ler: true,
             empresas_editar: selectedTipo === 'ADMIN',
@@ -255,6 +266,7 @@ export const MatrizAcessosView: React.FC<MatrizAcessosViewProps> = ({ authSessio
         setPermTipo({
           contrato_id: tenantId,
           perfil: selectedTipo,
+          dashboard_ler: false, alertas_ler: false,
           empresas_criar: false, empresas_ler: true, empresas_editar: false, empresas_excluir: false,
           projetos_criar: false, projetos_ler: true, projetos_editar: false, projetos_excluir: false,
           medicoes_criar: false, medicoes_ler: true, medicoes_editar: false, medicoes_excluir: false,
@@ -303,6 +315,7 @@ export const MatrizAcessosView: React.FC<MatrizAcessosViewProps> = ({ authSessio
           setPermEmpresa({
             contrato_id: tenantId,
             empresa_id: selectedEmpresaId,
+            dashboard_ler: false, alertas_ler: false,
             empresas_criar: false, empresas_ler: true, empresas_editar: false, empresas_excluir: false,
             projetos_criar: false, projetos_ler: true, projetos_editar: false, projetos_excluir: false,
             medicoes_criar: false, medicoes_ler: true, medicoes_editar: false, medicoes_excluir: false,
@@ -321,6 +334,7 @@ export const MatrizAcessosView: React.FC<MatrizAcessosViewProps> = ({ authSessio
         setPermEmpresa({
           contrato_id: tenantId,
           empresa_id: selectedEmpresaId,
+          dashboard_ler: false, alertas_ler: false,
           empresas_criar: false, empresas_ler: true, empresas_editar: false, empresas_excluir: false,
           projetos_criar: false, projetos_ler: true, projetos_editar: false, projetos_excluir: false,
           medicoes_criar: false, medicoes_ler: true, medicoes_editar: false, medicoes_excluir: false,
@@ -367,23 +381,46 @@ export const MatrizAcessosView: React.FC<MatrizAcessosViewProps> = ({ authSessio
           setPermUsuario(found);
         } else {
           const user = usuariosList.find(u => u.uid === selectedUsuarioId);
-          setPermUsuario({
-            usuario_uid: selectedUsuarioId,
-            contrato_id: tenantId,
-            empresa_id: user?.empresa_id || null,
-            empresas_criar: false, empresas_ler: true, empresas_editar: false, empresas_excluir: false,
-            projetos_criar: false, projetos_ler: true, projetos_editar: false, projetos_excluir: false,
-            medicoes_criar: false, medicoes_ler: true, medicoes_editar: false, medicoes_excluir: false,
-            financeiro_criar: false, financeiro_ler: true, financeiro_editar: false, financeiro_excluir: false,
-            relatorios_ler: true,
-            usuarios_criar: false, usuarios_ler: false, usuarios_editar: false, usuarios_excluir: false,
-            cronogramas_criar: false, cronogramas_ler: true, cronogramas_editar: false, cronogramas_excluir: false,
-            rdo_criar: false, rdo_ler: true, rdo_editar: false, rdo_excluir: false,
-            os_criar: false, os_ler: true, os_editar: false, os_excluir: false,
-            contratos_criar: false, contratos_ler: true, contratos_editar: false, contratos_excluir: false,
-            entidades_criar: false, entidades_ler: true, entidades_editar: false, entidades_excluir: false,
-            configuracoes_criar: false, configuracoes_ler: false, configuracoes_editar: false, configuracoes_excluir: false,
-          });
+          
+          // Fetch the role's defaults to pre-fill
+          let roleDefaults: any = null;
+          try {
+            const resTipo = await fetch('/api/permissoes/tipo', {
+              headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (resTipo.ok) {
+              const jsonTipo = await resTipo.json();
+              roleDefaults = jsonTipo.data?.find((p: any) => p.perfil === user?.perfil);
+            }
+          } catch (e) {}
+
+          if (roleDefaults) {
+            setPermUsuario({
+              ...roleDefaults,
+              id: undefined, // remove id so it creates a new record
+              usuario_uid: selectedUsuarioId,
+              empresa_id: user?.empresa_id || null,
+            });
+          } else {
+            setPermUsuario({
+              usuario_uid: selectedUsuarioId,
+              contrato_id: tenantId,
+              empresa_id: user?.empresa_id || null,
+              dashboard_ler: false, alertas_ler: false,
+              empresas_criar: false, empresas_ler: true, empresas_editar: false, empresas_excluir: false,
+              projetos_criar: false, projetos_ler: true, projetos_editar: false, projetos_excluir: false,
+              medicoes_criar: false, medicoes_ler: true, medicoes_editar: false, medicoes_excluir: false,
+              financeiro_criar: false, financeiro_ler: true, financeiro_editar: false, financeiro_excluir: false,
+              relatorios_ler: true,
+              usuarios_criar: false, usuarios_ler: false, usuarios_editar: false, usuarios_excluir: false,
+              cronogramas_criar: false, cronogramas_ler: true, cronogramas_editar: false, cronogramas_excluir: false,
+              rdo_criar: false, rdo_ler: true, rdo_editar: false, rdo_excluir: false,
+              os_criar: false, os_ler: true, os_editar: false, os_excluir: false,
+              contratos_criar: false, contratos_ler: true, contratos_editar: false, contratos_excluir: false,
+              entidades_criar: false, entidades_ler: true, entidades_editar: false, entidades_excluir: false,
+              configuracoes_criar: false, configuracoes_ler: false, configuracoes_editar: false, configuracoes_excluir: false,
+            });
+          }
         }
       } else {
         const user = usuariosList.find(u => u.uid === selectedUsuarioId);
@@ -391,18 +428,19 @@ export const MatrizAcessosView: React.FC<MatrizAcessosViewProps> = ({ authSessio
           usuario_uid: selectedUsuarioId,
           contrato_id: tenantId,
           empresa_id: user?.empresa_id || null,
+          dashboard_ler: false, alertas_ler: false,
           empresas_criar: false, empresas_ler: true, empresas_editar: false, empresas_excluir: false,
           projetos_criar: false, projetos_ler: true, projetos_editar: false, projetos_excluir: false,
           medicoes_criar: false, medicoes_ler: true, medicoes_editar: false, medicoes_excluir: false,
           financeiro_criar: false, financeiro_ler: true, financeiro_editar: false, financeiro_excluir: false,
           relatorios_ler: true,
           usuarios_criar: false, usuarios_ler: false, usuarios_editar: false, usuarios_excluir: false,
-            cronogramas_criar: false, cronogramas_ler: true, cronogramas_editar: false, cronogramas_excluir: false,
-            rdo_criar: false, rdo_ler: true, rdo_editar: false, rdo_excluir: false,
-            os_criar: false, os_ler: true, os_editar: false, os_excluir: false,
-            contratos_criar: false, contratos_ler: true, contratos_editar: false, contratos_excluir: false,
-            entidades_criar: false, entidades_ler: true, entidades_editar: false, entidades_excluir: false,
-            configuracoes_criar: false, configuracoes_ler: false, configuracoes_editar: false, configuracoes_excluir: false,
+          cronogramas_criar: false, cronogramas_ler: true, cronogramas_editar: false, cronogramas_excluir: false,
+          rdo_criar: false, rdo_ler: true, rdo_editar: false, rdo_excluir: false,
+          os_criar: false, os_ler: true, os_editar: false, os_excluir: false,
+          contratos_criar: false, contratos_ler: true, contratos_editar: false, contratos_excluir: false,
+          entidades_criar: false, entidades_ler: true, entidades_editar: false, entidades_excluir: false,
+          configuracoes_criar: false, configuracoes_ler: false, configuracoes_editar: false, configuracoes_excluir: false,
         });
       }
     } catch (err) {
@@ -538,7 +576,7 @@ export const MatrizAcessosView: React.FC<MatrizAcessosViewProps> = ({ authSessio
                     <td className="p-3 font-bold text-slate-800 pl-6 border-r border-slate-100">{modulo.label}</td>
                     {['criar', 'ler', 'editar', 'excluir'].map((action) => {
                       const key = `${modulo.id}_${action}`;
-                      if (modulo.id === 'relatorios' && action !== 'ler') {
+                      if (['relatorios', 'dashboard', 'alertas'].includes(modulo.id) && action !== 'ler') {
                         return <td key={action} className="p-3 text-center bg-slate-50 border-r border-slate-100"></td>;
                       }
 

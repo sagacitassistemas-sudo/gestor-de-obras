@@ -224,15 +224,17 @@ function startServer() {
 
   // Configuração do Helmet para headers de segurança
   app.use(helmet({
-    crossOriginOpenerPolicy: { policy: "unsafe-none" }, // Firebase Auth Popup compatibilidade
+    crossOriginOpenerPolicy: false, // Desabilita para não conflitar com popups do Firebase Auth
+    crossOriginEmbedderPolicy: false,
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://apis.google.com", "https://www.gstatic.com"],
-        connectSrc: ["'self'", "ws://localhost:*", "ws://127.0.0.1:*", "http://localhost:*", "http://127.0.0.1:*", "https://identitytoolkit.googleapis.com", "https://securetoken.googleapis.com", "https://*.supabase.co"],
+        scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://apis.google.com", "https://www.gstatic.com", "https://*.firebaseapp.com"],
+        connectSrc: ["'self'", "ws://localhost:*", "ws://127.0.0.1:*", "http://localhost:*", "http://127.0.0.1:*", "https://identitytoolkit.googleapis.com", "https://securetoken.googleapis.com", "https://*.supabase.co", "https://*.firebaseapp.com"],
         styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
         fontSrc: ["'self'", "data:", "http://localhost:*", "http://127.0.0.1:*", "https://fonts.gstatic.com", "https://fonts.googleapis.com"],
         imgSrc: ["'self'", "data:", "https://*", "http://*"],
+        frameSrc: ["'self'", "https://*.firebaseapp.com", "https://apis.google.com"],
       },
     },
   }));

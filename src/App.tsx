@@ -556,15 +556,17 @@ export default function App() {
           )}
 
           {activeTab === 'dashboard' && (
-            <DashboardView
-              contracts={contracts}
-              invoices={invoices}
-              activities={activities}
-              onNavigateTab={setActiveTab}
-              onOpenNFDrawer={() => setIsNFDrawerOpen(true)}
-              onOpenNovoChamado={() => setIsNovoChamadoOpen(true)}
-              searchQuery={searchQuery}
-            />
+            hasAccess('dashboard_ler') ? (
+              <DashboardView
+                contracts={contracts}
+                invoices={invoices}
+                activities={activities}
+                onNavigateTab={setActiveTab}
+                onOpenNFDrawer={() => setIsNFDrawerOpen(true)}
+                onOpenNovoChamado={() => setIsNovoChamadoOpen(true)}
+                searchQuery={searchQuery}
+              />
+            ) : <div className="p-8 text-center bg-white rounded-xl border border-gray-200">Acesso Restrito: Sem permissão ao Dashboard</div>
           )}
 
           {activeTab === 'financeiro' && (
@@ -600,7 +602,9 @@ export default function App() {
           )}
 
           {activeTab === 'alertas' && (
-            <AlertasView alerts={alerts} searchQuery={searchQuery} />
+            hasAccess('alertas_ler') ? (
+              <AlertasView alerts={alerts} searchQuery={searchQuery} />
+            ) : <div className="p-8 text-center bg-white rounded-xl border border-gray-200">Acesso Restrito: Sem permissão aos Alertas</div>
           )}
 
           {activeTab === 'empresas' && (

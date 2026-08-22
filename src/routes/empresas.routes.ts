@@ -269,10 +269,16 @@ const inMemoryEmpresas = new Map<string, any[]>();
           });
         }
 
-        const { data, error } = await client
+        let query = client
           .from("empresas_fornecedores")
           .select("*")
           .eq("contrato_id", contrato_id);
+
+        if (req.decodedToken.empresa_id) {
+          query = query.eq("id", req.decodedToken.empresa_id);
+        }
+
+        const { data, error } = await query;
 
         if (error) {
           console.warn(
