@@ -5,7 +5,6 @@ import { getOrSetCache } from "../services/cache.service";
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import iconv from 'iconv-lite';
-import { PDFParse } from 'pdf-parse';
 import multer from 'multer';
 
 const upload = multer({ storage: multer.memoryStorage() });
@@ -122,10 +121,10 @@ app.post('/import-pdf', verifyFirebaseJWT, upload.single('file'), async (req: an
     if (!req.file) {
       return res.status(400).json({ message: "Nenhum arquivo enviado." });
     }
-
     const { uf } = req.body;
-    
-    const parser = new PDFParse({ data: req.file.buffer });
+    const pdfParseMod = await import('pdf-parse');
+    const PDFParse = pdfParseMod.default || pdfParseMod.PDFParse || pdfParseMod;
+    const parser = new (PDFParse as any)({ data: req.file.buffer });
     const result = await parser.getText();
     const text = result.text;
     await parser.destroy();
