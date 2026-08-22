@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { getSupabaseClient } from "../lib/server.lib";
 import { verifyFirebaseJWT } from "../middleware/verifyFirebaseJWT";
+import { getOrSetCache } from "../services/cache.service";
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import iconv from 'iconv-lite';
@@ -18,20 +19,23 @@ app.get('/bases', verifyFirebaseJWT, async (req: any, res: any) => {
     }
 
     const client = getSupabaseClient(req);
-    const { data, error } = await client
-      .from('ref_cub_bases')
-      .select('id, uf, sinduscon_nome, mes_referencia, dados_json, atualizado_em')
-      .eq('contrato_id', contrato_id)
-      .order('atualizado_em', { ascending: false });
-
-    if (error) throw error;
+    const cacheKey = `cub_bases_${contrato_id}`;
     
-    // Process the status on backend
-    const bases = data.map(base => ({
-      ...base,
-      status: 'ATUALIZADO', // Lógica futura para definir status real
-      projetos: 10 // Mock para contagem
-    }));
+    const bases = await getOrSetCache(cacheKey, async () => {
+      const { data, error } = await client
+        .from('ref_cub_bases')
+        .select('id, uf, sinduscon_nome, mes_referencia, dados_json, atualizado_em')
+        .eq('contrato_id', contrato_id)
+        .order('atualizado_em', { ascending: false });
+
+      if (error) throw error;
+      
+      return data.map(base => ({
+        ...base,
+        status: 'ATUALIZADO',
+        projetos: 10
+      }));
+    }, 14400); // 4 horas de cache
 
     res.json({ bases });
   } catch (error: any) {

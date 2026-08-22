@@ -12,6 +12,8 @@ Este arquivo define as skills, responsabilidades e regras de raciocínio que a I
 > 4) Salvar histórico detalhado em `.ai/history/` e indexar em `README.md`.
 > 5) Incrementar o `VERSION.md`.
 > Nunca devolva o controle final da tarefa ("Terminei") sem que este ciclo autônomo tenha sido executado e validado.
+> 
+> **GUARD RAILS:** Leia SEMPRE os documentos no diretório `.ai/guard-rails/` antes de projetar mudanças estruturais. Eles contêm as limitações invioláveis do sistema.
 
 ---
 

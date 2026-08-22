@@ -197,7 +197,6 @@ export const OrcamentoBaseView: React.FC<OrcamentoBaseViewProps> = ({ authSessio
           'Authorization': `Bearer ${authSession.idToken}`
         },
         body: JSON.stringify({
-          id: simulacaoId || undefined,
           nome,
           dados_json
         })
@@ -235,6 +234,31 @@ export const OrcamentoBaseView: React.FC<OrcamentoBaseViewProps> = ({ authSessio
       if (d.selectedPadrao) setSelectedPadrao(d.selectedPadrao);
       if (d.percentuais) setPercentuais(d.percentuais);
       if (d.adicoes) setAdicoes(d.adicoes);
+    }
+  };
+
+  const handleDeleteSimulacao = async () => {
+    if (!simulacaoId || !authSession) return;
+    if (!window.confirm('Tem certeza que deseja excluir este rascunho? Esta ação não pode ser desfeita.')) return;
+
+    try {
+      const res = await fetch(`/api/simulacoes/${simulacaoId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${authSession.idToken}`
+        }
+      });
+      const data = await res.json();
+      if (data.success) {
+        alert('Rascunho excluído com sucesso!');
+        setSimulacaoId('');
+        setSimulacaoNome('');
+        fetchSimulacoes();
+      } else {
+        alert('Erro ao excluir rascunho: ' + data.error);
+      }
+    } catch (err) {
+      alert('Erro na comunicação com o servidor.');
     }
   };
 
@@ -284,6 +308,16 @@ export const OrcamentoBaseView: React.FC<OrcamentoBaseViewProps> = ({ authSessio
               <option key={s.id} value={s.id}>{s.nome} ({new Date(s.updated_at).toLocaleDateString()})</option>
             ))}
           </select>
+
+          {simulacaoId && (
+            <button 
+              onClick={handleDeleteSimulacao}
+              className="flex items-center justify-center p-2 text-rose-500 hover:bg-rose-50 hover:text-rose-700 border border-transparent hover:border-rose-200 rounded-lg transition-colors"
+              title="Excluir este rascunho"
+            >
+              <span className="material-symbols-outlined text-[20px]">delete</span>
+            </button>
+          )}
 
           <button 
             onClick={handleSalvarRascunho}

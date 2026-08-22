@@ -31,12 +31,18 @@ const router = Router();
 
         const tenantId = req.decodedToken?.contrato_id || "CTR-2026-SYS";
 
+        const page = parseInt(req.query.page as string) || 1;
+        const limit = parseInt(req.query.limit as string) || 100;
+        const from = (page - 1) * limit;
+        const to = from + limit - 1;
+
         const { data, error } = await client
           .from("usuarios")
           .select(
             "*, empresas_fornecedores!usuarios_empresa_id_contrato_id_fkey(nome)",
           )
-          .eq("contrato_id", tenantId);
+          .eq("contrato_id", tenantId)
+          .range(from, to);
 
         if (error) {
           // Fallback: if the join fails (e.g. FK not yet established), query without join

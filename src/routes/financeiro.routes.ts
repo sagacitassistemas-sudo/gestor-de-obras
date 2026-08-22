@@ -18,6 +18,7 @@ import { Router } from "express";
 import { verifyFirebaseJWT } from "../middleware/verifyFirebaseJWT";
 import { AuthenticatedRequest } from "../types/middleware.types";
 import { getSupabaseClient, checkPermission } from "../lib/server.lib";
+import { getOrSetCache, invalidateCache } from "../services/cache.service";
 
 const router = Router();
 
@@ -30,9 +31,13 @@ router.get("/ref-cargos-salarios", verifyFirebaseJWT, async (req: AuthenticatedR
   try {
     const client = getSupabaseClient(req);
     if (!client) throw new Error("No client");
-    const { data, error } = await client.from("ref_cargos_salarios").select("*").eq("uf", uf).order("nome_cargo");
-    if (error) throw error;
-    return res.json({ success: true, data: data || [] });
+    const cacheKey = `ref_cargos_salarios_${uf}`;
+    const data = await getOrSetCache(cacheKey, async () => {
+      const { data, error } = await client.from("ref_cargos_salarios").select("*").eq("uf", uf).order("nome_cargo");
+      if (error) throw error;
+      return data || [];
+    }, 14400); // 4 hours
+    return res.json({ success: true, data });
   } catch (err) {
     console.error("GET /api/ref-cargos-salarios error:", err);
     return res.status(500).json({ error: "Erro interno", details: err instanceof Error ? err.message : String(err) });
@@ -257,6 +262,7 @@ router.post("/tenant-cargos", verifyFirebaseJWT, async (req: AuthenticatedReques
       result = await client.from("tenant_cargos_salarios").insert(upsertData).select().single();
     }
     if (result.error) throw result.error;
+    invalidateCache(`tenant_cargos_${tenant_id}`);
     return res.json({ success: true, data: result.data });
   } catch (err) {
     console.error("POST /api/tenant-cargos error:", err);

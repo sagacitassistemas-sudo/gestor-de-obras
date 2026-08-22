@@ -177,11 +177,10 @@ const app = Router();
         const client = getSupabaseClient(req);
         if (!client) return res.status(401).json({ error: "Unauthorized" });
 
-        const { projeto_id, os_id, equipe_id } = req.query;
+        const { projeto_id, os_id, equipe_id, modo_simulacao, composicao_simulada } = req.query;
         if (!projeto_id) return res.status(400).json({ error: "projeto_id is required" });
 
         // 1. Fetch the project and its calendar
-        // Since we might not have a direct link to calendario yet, we use a fallback to the default calendar.
         let horas_mes = 220; // Default fallback if no calendar
         const { data: calendario } = await client
           .from("calendarios")
@@ -190,22 +189,7 @@ const app = Router();
           .single();
         
         if (calendario && calendario.horas_dia && calendario.dias_trabalho_semana) {
-           // estimate month hours: (horas_dia * dias_semana) * 4.33 weeks
            horas_mes = Math.round((calendario.horas_dia * calendario.dias_trabalho_semana.length) * 4.33);
-        }
-        // 2. Determine equipe(s)
-        let equipesToFetch: string[] = [];
-        if (equipe_id) {
-          equipesToFetch = [equipe_id as string];
-        } else if (os_id) {
-          const { data: osData } = await client.from("ordens_servico").select("equipe_id").eq("id", os_id).single();
-          if (osData?.equipe_id) equipesToFetch = [osData.equipe_id];
-        } else if (projeto_id) {
-          const { data: osList } = await client.from("ordens_servico").select("equipe_id").eq("projeto_id", projeto_id);
-          if (osList) {
-             const uniqueEquipes = new Set(osList.map(os => os.equipe_id).filter(Boolean));
-             equipesToFetch = Array.from(uniqueEquipes);
-          }
         }
 
         let totalAdmissionCosts = 0;
@@ -217,67 +201,116 @@ const app = Router();
           pendencias.push("Calendário padrão não encontrado. Usando fallback de 220h/mês.");
         }
 
-        if (equipesToFetch.length > 0) {
-          const { data: equipeMembros, error: equipeErr } = await client.from("equipe_membros").select(`
-              id, adicionado_em,
-              funcionarios!inner(id, cargo)
-            `).in("equipe_id", equipesToFetch);
-          
-          if (equipeErr) throw new Error(equipeErr.message);
+        // Fetch costs references (Shared for both modes)
+        const { data: refGerais } = await client.from("ref_encargos_complementares").select("*");
+        const { data: cargosSalariosTenant } = await client.from("tenant_cargos_salarios").select("*");
+        const { data: cargosSalariosRef } = await client.from("ref_cargos_salarios").select("*");
+        const cargosSalarios = (cargosSalariosTenant && cargosSalariosTenant.length > 0) ? cargosSalariosTenant : (cargosSalariosRef || []);
 
-          // 3. Fetch costs references
-          const { data: refGerais } = await client.from("ref_encargos_complementares").select("*");
-          const { data: cargosSalariosTenant } = await client.from("tenant_cargos_salarios").select("*");
-          const { data: cargosSalariosRef } = await client.from("ref_cargos_salarios").select("*");
-          const cargosSalarios = (cargosSalariosTenant && cargosSalariosTenant.length > 0) ? cargosSalariosTenant : (cargosSalariosRef || []);
+        const pcmsoAdmissional = (refGerais || []).find((r: any) => r.categoria === 'Exames (PCMSO)');
+        const rescisaoDemissional = (refGerais || []).find((r: any) => r.categoria === 'Rescisão');
 
-          if (equipeMembros && equipeMembros.length > 0) {
-             const pcmsoAdmissional = (refGerais || []).find((r: any) => r.categoria === 'Exames (PCMSO)');
-             const rescisaoDemissional = (refGerais || []).find((r: any) => r.categoria === 'Rescisão');
+        const pcmsoValue = pcmsoAdmissional ? Number(pcmsoAdmissional.custo_mensalista_ref || 0) : 0;
+        const demissaoValue = rescisaoDemissional ? Number(rescisaoDemissional.custo_mensalista_ref || 0) : 0;
 
-             const pcmsoValue = pcmsoAdmissional ? Number(pcmsoAdmissional.custo_mensalista_ref || 0) : 0;
-             const demissaoValue = rescisaoDemissional ? Number(rescisaoDemissional.custo_mensalista_ref || 0) : 0;
+        if (pcmsoValue === 0) pendencias.push("Custo Admissional (Exames PCMSO) não configurado.");
+        if (demissaoValue === 0) pendencias.push("Custo Demissional (Rescisão) não configurado.");
 
-             if (pcmsoValue === 0) {
-               pendencias.push("Custo Admissional (Exames PCMSO) não configurado ou zerado nas referências gerais.");
-             }
-             if (demissaoValue === 0) {
-               pendencias.push("Custo Demissional (Rescisão) não configurado ou zerado nas referências gerais.");
-             }
+        const geraisHora = (refGerais || [])
+          .filter((r: any) => r.categoria !== 'Exames (PCMSO)' && r.categoria !== 'Rescisão')
+          .reduce((acc: number, curr: any) => acc + Number(curr.custo_horista_ref || 0), 0);
 
-             for (const membro of equipeMembros) {
-                totalAdmissionCosts += pcmsoValue;
-                totalDismissalCosts += demissaoValue;
-                
-                const cargoStr = (membro.funcionarios as any).cargo;
-                if (!cargoStr) {
-                  pendencias.push(`Membro da equipe (ID: ${membro.id}) não possui cargo definido.`);
-                  continue;
-                }
-
-                const cargo = cargosSalarios.find((c: any) => c.nome_cargo === cargoStr);
-                const salarioBaseMensal = cargo ? Number(cargo.salario_base_adotado || cargo.salario_medio || 0) : 0;
-                
-                if (salarioBaseMensal === 0) {
-                  pendencias.push(`Salário base não encontrado ou zerado para o cargo: ${cargoStr}`);
-                }
-
-                const encargosPerc = cargo && cargo.encargos_sociais_perc ? Number(cargo.encargos_sociais_perc) : 85.0;
-                
-                const salarioHora = salarioBaseMensal / horas_mes;
-                const encargosSociaisHora = salarioHora * (encargosPerc / 100);
-                
-                const geraisHora = (refGerais || [])
-                  .filter((r: any) => r.categoria !== 'Exames (PCMSO)' && r.categoria !== 'Rescisão')
-                  .reduce((acc: number, curr: any) => acc + Number(curr.custo_horista_ref || 0), 0);
-                
-                totalHourlyCosts += (salarioHora + encargosSociaisHora + geraisHora);
-             }
-          } else {
-             pendencias.push("A equipe designada não possui membros cadastrados (histograma vazio).");
+        // ===============================================
+        // MODO 1: ORÇAMENTAÇÃO PARAMÉTRICA (SIMULAÇÃO)
+        // ===============================================
+        if (modo_simulacao === 'true') {
+          let composicao: any[] = [];
+          if (composicao_simulada) {
+            try { composicao = JSON.parse(composicao_simulada as string); } catch(e) {}
+          } else if (os_id) {
+            const { data: osData } = await client.from("ordens_servico").select("composicao_simulada").eq("id", os_id).single();
+            if (osData?.composicao_simulada) composicao = osData.composicao_simulada;
           }
-        } else {
-           pendencias.push("Nenhuma equipe executora mapeada para esta OS ou Projeto.");
+
+          if (composicao.length > 0) {
+            for (const item of composicao) {
+              const qtd = item.quantidade || 1;
+              totalAdmissionCosts += (pcmsoValue * qtd);
+              totalDismissalCosts += (demissaoValue * qtd);
+
+              const cargo = cargosSalarios.find((c: any) => c.nome_cargo === item.especialidade);
+              const salarioBaseMensal = cargo ? Number(cargo.salario_base_adotado || cargo.salario_medio || 0) : 0;
+              if (salarioBaseMensal === 0) {
+                pendencias.push(`Salário base não encontrado para a especialidade: ${item.especialidade}`);
+              }
+
+              const encargosPerc = cargo && cargo.encargos_sociais_perc ? Number(cargo.encargos_sociais_perc) : 85.0;
+              const salarioHora = salarioBaseMensal / horas_mes;
+              const encargosSociaisHora = salarioHora * (encargosPerc / 100);
+
+              totalHourlyCosts += ((salarioHora + encargosSociaisHora + geraisHora) * qtd);
+            }
+          } else {
+            pendencias.push("Nenhuma composição simulada fornecida para estimativa.");
+          }
+        }
+        // ===============================================
+        // MODO 2: APROPRIAÇÃO REAL (EXECUTIVA)
+        // ===============================================
+        else {
+          let equipesToFetch: string[] = [];
+          if (equipe_id) {
+            equipesToFetch = [equipe_id as string];
+          } else if (os_id) {
+            const { data: osData } = await client.from("ordens_servico").select("equipe_id").eq("id", os_id).single();
+            if (osData?.equipe_id) equipesToFetch = [osData.equipe_id];
+          } else if (projeto_id) {
+            const { data: osList } = await client.from("ordens_servico").select("equipe_id").eq("projeto_id", projeto_id);
+            if (osList) {
+               const uniqueEquipes = new Set(osList.map(os => os.equipe_id).filter(Boolean));
+               equipesToFetch = Array.from(uniqueEquipes);
+            }
+          }
+
+          if (equipesToFetch.length > 0) {
+            const { data: equipeMembros, error: equipeErr } = await client.from("equipe_membros").select(`
+                id, adicionado_em,
+                funcionarios!inner(id, cargo)
+              `).in("equipe_id", equipesToFetch);
+            
+            if (equipeErr) throw new Error(equipeErr.message);
+
+            if (equipeMembros && equipeMembros.length > 0) {
+               for (const membro of equipeMembros) {
+                  totalAdmissionCosts += pcmsoValue;
+                  totalDismissalCosts += demissaoValue;
+                  
+                  const cargoStr = (membro.funcionarios as any).cargo;
+                  if (!cargoStr) {
+                    pendencias.push(`Membro da equipe (ID: ${membro.id}) não possui cargo definido.`);
+                    continue;
+                  }
+
+                  const cargo = cargosSalarios.find((c: any) => c.nome_cargo === cargoStr);
+                  const salarioBaseMensal = cargo ? Number(cargo.salario_base_adotado || cargo.salario_medio || 0) : 0;
+                  
+                  if (salarioBaseMensal === 0) {
+                    pendencias.push(`Salário base não encontrado ou zerado para o cargo: ${cargoStr}`);
+                  }
+
+                  const encargosPerc = cargo && cargo.encargos_sociais_perc ? Number(cargo.encargos_sociais_perc) : 85.0;
+                  
+                  const salarioHora = salarioBaseMensal / horas_mes;
+                  const encargosSociaisHora = salarioHora * (encargosPerc / 100);
+                  
+                  totalHourlyCosts += (salarioHora + encargosSociaisHora + geraisHora);
+               }
+            } else {
+               pendencias.push("A equipe designada não possui membros cadastrados (histograma vazio).");
+            }
+          } else {
+             pendencias.push("Nenhuma equipe executora mapeada para esta OS ou Projeto. (Dica: Use modo_simulacao para orçamentos paramétricos)");
+          }
         }
 
         return res.json({ 

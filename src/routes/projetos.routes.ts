@@ -156,12 +156,18 @@ const router = Router();
         const client = getSupabaseClient(req);
         if (!client) return res.status(401).json({ error: "Unauthorized" });
 
+        const page = parseInt(req.query.page as string) || 1;
+        const limit = parseInt(req.query.limit as string) || 100;
+        const from = (page - 1) * limit;
+        const to = from + limit - 1;
+
         const { data, error } = await client
           .from("projetos")
           .select(
             "*, empresas_fornecedores!projetos_empresa_id_tenant_id_fkey(nome), calendarios(nome)",
           )
-          .order("created_at", { ascending: false });
+          .order("created_at", { ascending: false })
+          .range(from, to);
 
         if (error) {
           console.warn(
@@ -171,7 +177,8 @@ const router = Router();
           const { data: fallbackData, error: fallbackErr } = await client
             .from("projetos")
             .select("*")
-            .order("created_at", { ascending: false });
+            .order("created_at", { ascending: false })
+            .range(from, to);
           if (fallbackErr)
             return res.status(500).json({ error: fallbackErr.message });
           return res.json({ projetos: fallbackData || [] });
@@ -261,6 +268,32 @@ const router = Router();
           if (error) return res.status(500).json({ error: error.message });
           return res.json({ success: true, data });
         }
+      } catch (err: any) {
+        return res.status(500).json({ error: err.message });
+      }
+    }
+  );
+
+  // DELETE /api/simulacoes/:id
+  router.delete(
+    "/api/simulacoes/:id",
+    verifyFirebaseJWT,
+    async (req: AuthenticatedRequest, res) => {
+      try {
+        const client = getSupabaseClient(req);
+        if (!client) return res.status(401).json({ error: "Unauthorized" });
+
+        const tenantId = req.decodedToken?.contrato_id;
+        const simId = req.params.id;
+
+        const { error } = await client
+          .from("simulacoes_projetos")
+          .delete()
+          .eq("id", simId)
+          .eq("tenant_id", tenantId);
+
+        if (error) return res.status(500).json({ error: error.message });
+        return res.json({ success: true });
       } catch (err: any) {
         return res.status(500).json({ error: err.message });
       }

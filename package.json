@@ -21,7 +21,8 @@
     "check:integrity": "node scripts/check-integrity.mjs",
     "lint": "node scripts/check-integrity.mjs",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "ai:document": "node scripts/ai-document-agent.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
@@ -38,13 +39,16 @@
     "dotenv": "^17.2.3",
     "exceljs": "^4.4.0",
     "express": "^4.21.2",
+    "express-rate-limit": "^8.6.2",
     "firebase": "^12.17.0",
     "firebase-admin": "^12.3.0",
+    "helmet": "^8.3.0",
     "iconv-lite": "^0.7.3",
     "jsonwebtoken": "^9.0.3",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
     "multer": "^2.2.0",
+    "node-cache": "^5.1.2",
     "nodemailer": "^9.0.5",
     "pdf-parse": "^2.4.5",
     "react": "^19.0.1",

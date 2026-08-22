@@ -464,13 +464,14 @@ router.get("/equipe-composicao", verifyFirebaseJWT, async (req: AuthenticatedReq
     const client = getSupabaseClient(req);
     if (!client) return res.status(401).json({ error: "Unauthorized" });
 
-    const { equipe_id } = req.query;
-    if (!equipe_id) return res.status(400).json({ error: "equipe_id is required" });
+    const { equipe_id, os_id } = req.query;
+    if (!equipe_id || !os_id) return res.status(400).json({ error: "equipe_id and os_id are required" });
 
     const { data, error } = await client
       .from("equipe_composicao_especialidades")
       .select("*, especialidades(nome, valor_hora)")
-      .eq("equipe_id", equipe_id);
+      .eq("equipe_id", equipe_id)
+      .eq("os_id", os_id);
 
     if (error) return res.status(500).json({ error: error.message });
     return res.json({ success: true, data });
@@ -485,17 +486,18 @@ router.post("/equipe-composicao", verifyFirebaseJWT, async (req: AuthenticatedRe
     const tenantId = req.decodedToken?.contrato_id;
     if (!client || !tenantId) return res.status(401).json({ error: "Unauthorized" });
 
-    const { equipe_id, composicao } = req.body;
-    if (!equipe_id || !Array.isArray(composicao)) {
-      return res.status(400).json({ error: "equipe_id and composicao array are required" });
+    const { equipe_id, os_id, composicao } = req.body;
+    if (!equipe_id || !os_id || !Array.isArray(composicao)) {
+      return res.status(400).json({ error: "equipe_id, os_id and composicao array are required" });
     }
 
-    await client.from("equipe_composicao_especialidades").delete().eq("equipe_id", equipe_id);
+    await client.from("equipe_composicao_especialidades").delete().eq("equipe_id", equipe_id).eq("os_id", os_id);
 
     if (composicao.length > 0) {
       const payload = composicao.map((item: any) => ({
         tenant_id: tenantId,
         equipe_id,
+        os_id,
         especialidade_id: item.especialidade_id,
         quantidade: item.quantidade,
         valor_hora_projetado: item.valor_hora_projetado || 0

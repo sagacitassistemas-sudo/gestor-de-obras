@@ -174,6 +174,14 @@ function buildQuery(tableName: string) {
       return q; // chainable
     },
 
+    range(from: number, to: number) {
+      return q; // chainable mock
+    },
+
+    order(column: string, options?: any) {
+      return q; // chainable mock
+    },
+
     or(query: string) {
       // Basic mock: does nothing for now but prevents crashing
       return q; 

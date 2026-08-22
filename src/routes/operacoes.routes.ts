@@ -157,6 +157,87 @@ router.patch("/ordens-servico/:id", verifyFirebaseJWT, async (req: Authenticated
   }
 });
 
+// ─── POST /api/ordens-servico/:id/aprovar ──────────────────────────────────────
+router.post("/ordens-servico/:id/aprovar", verifyFirebaseJWT, async (req: AuthenticatedRequest, res) => {
+  try {
+    if (!(await checkPermission(req, "os_editar"))) {
+      return res.status(403).json({ error: "Acesso negado. Permissão necessária." });
+    }
+
+    const client = getSupabaseClient(req);
+    if (!client) return res.status(401).json({ error: "Unauthorized" });
+
+    const tenantId = req.decodedToken?.contrato_id;
+    const osId = req.params.id;
+    
+    // 1. Fetch OS and validate
+    const { data: osData, error: osErr } = await client
+      .from("ordens_servico")
+      .select("*, equipes(lider_id)")
+      .eq("id", osId)
+      .eq("tenant_id", tenantId)
+      .single();
+
+    if (osErr || !osData) return res.status(404).json({ error: "OS não encontrada." });
+    if (osData.status === "Em Execução" || osData.status === "Concluída") {
+      return res.status(400).json({ error: "OS já está aprovada ou concluída." });
+    }
+
+    // 2. Validate Team Leader
+    const liderId = osData.responsavel_rdo_id || osData.equipes?.lider_id;
+    if (!liderId) {
+      return res.status(400).json({ 
+        error: "Para iniciar a execução da OS, é obrigatório definir pelo menos o Responsável (Líder da Equipe)." 
+      });
+    }
+
+    // 3. Freeze Simulation (Snapshot)
+    const snapshot = osData.composicao_simulada || {};
+    
+    // 4. Update OS Status and Snapshot
+    const { data: updatedOs, error: updateErr } = await client
+      .from("ordens_servico")
+      .update({
+        status: "Em Execução",
+        custo_aprovado_snapshot_jsonb: snapshot,
+        data_inicio_confirmada: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      })
+      .eq("id", osId)
+      .select()
+      .single();
+
+    if (updateErr) throw new Error(updateErr.message);
+
+    // 5. Register Compliance Audit
+    await client.from("os_aprovacoes_compliance").insert({
+      tenant_id: tenantId,
+      ordem_servico_id: osId,
+      aprovador_email: req.decodedToken?.email || "unknown",
+      snapshot_congelado: snapshot,
+      metadata_seguranca: {
+        ip: req.ip,
+        userAgent: req.headers["user-agent"]
+      }
+    });
+
+    await logAudit(client, {
+      contrato_id: tenantId,
+      usuario_uid: req.decodedToken?.uid,
+      usuario_email: req.decodedToken?.email,
+      cod_evento: "OS_APROVADA",
+      descricao: `A OS ${osData.numero_os} foi aprovada para execução.`,
+      entidade_tipo: "ordem_servico",
+      entidade_id: osId,
+    });
+
+    return res.json({ success: true, message: "OS aprovada e em execução.", data: updatedOs });
+  } catch (err: any) {
+    console.error("[POST /api/ordens-servico/:id/aprovar] Exception:", err);
+    return res.status(500).json({ error: "Erro interno no servidor." });
+  }
+});
+
 // ─── DELETE /api/ordens-servico/:id ──────────────────────────────────────────
 router.delete("/ordens-servico/:id", verifyFirebaseJWT, async (req: AuthenticatedRequest, res) => {
   try {

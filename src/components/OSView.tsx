@@ -10,6 +10,7 @@ interface Projeto {
   id: string;
   nome_projeto: string;
   codigo_contrato: string;
+  empresa_id?: string;
 }
 
 interface ItemEAP {
@@ -36,6 +37,7 @@ interface OS {
   valor_equipamentos?: number;
   responsavel_rdo_id?: string;
   created_at: string;
+  custo_aprovado_snapshot_jsonb?: any;
   itens_eap?: {
     descricao_servico: string;
     unidade_medida: string;
@@ -70,13 +72,15 @@ export const OSView: React.FC<OSViewProps> = ({ authSession }) => {
 
   // Modal de Dimensionamento de Equipe
   const [equipeModalOpen, setEquipeModalOpen] = useState(false);
-  const [equipeModalId, setEquipeModalId] = useState<string>('');
-  const [equipeModalNome, setEquipeModalNome] = useState<string>('');
+  const [equipeModalId, setEquipeModalId] = useState("");
+  const [equipeModalNome, setEquipeModalNome] = useState("");
+  const [equipeModalOsId, setEquipeModalOsId] = useState("");
 
-  const handleOpenEquipeModal = (id?: string, nome?: string) => {
-    if (!id || !nome) return;
+  const handleOpenEquipeModal = (id?: string, nome?: string, osId?: string) => {
+    if (!id || !osId) return;
     setEquipeModalId(id);
-    setEquipeModalNome(nome);
+    setEquipeModalNome(nome || "Equipe");
+    setEquipeModalOsId(osId);
     setEquipeModalOpen(true);
   };
 
@@ -143,7 +147,7 @@ export const OSView: React.FC<OSViewProps> = ({ authSession }) => {
         fetchRealHours(selectedOs.itens_eap.data_inicio, selectedOs.itens_eap.data_fim);
         
         // NOVO: Buscar custo da equipe alocada na OS através do motor dinâmico
-        const equipeQuery = selectedOs.equipe_id ? `&equipe_id=${selectedOs.equipe_id}` : '';
+        const equipeQuery = selectedOs.equipe_id ? `&equipe_id=${selectedOs.equipe_id}` : '&modo_simulacao=true';
         fetch(`/api/custos/simulacao-mao-obra?projeto_id=${selectedProjetoId}&os_id=${selectedOs.id}${equipeQuery}`, {
              headers: { 'Authorization': `Bearer ${authSession?.idToken}` }
         })
@@ -382,6 +386,51 @@ export const OSView: React.FC<OSViewProps> = ({ authSession }) => {
     }
   };
 
+  const handleAprovarOs = async () => {
+    if (!selectedOs) return;
+    
+    // Validar se tem líder ou responsável
+    const temResponsavel = selectedOs.responsavel_rdo_id || (selectedOs.equipes && (selectedOs.equipes as any).lider_id);
+    if (!temResponsavel) {
+      alert('Para iniciar a execução da OS, é obrigatório definir pelo menos o Responsável (Líder da Equipe). Edite a OS e selecione o Responsável pelo RDO.');
+      return;
+    }
+
+    const confirmAprovacao = window.confirm(`ATENÇÃO: Deseja APROVAR a Ordem de Serviço ${selectedOs.numero_os}?\n\nIsso irá congelar o orçamento simulado como META (Baseline) e iniciar a execução oficial. Esta ação não pode ser desfeita.`);
+    if (!confirmAprovacao) return;
+    
+    try {
+      const response = await fetch(`/api/ordens-servico/${selectedOs.id}/aprovar`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authSession?.idToken}`
+        }
+      });
+      const resData = await response.json();
+      
+      if (resData.success) {
+        alert('Ordem de Serviço aprovada e em execução!');
+        fetch(`/api/ordens-servico?projeto_id=${selectedProjetoId}`, {
+          headers: { Authorization: `Bearer ${authSession?.idToken}` }
+        })
+        .then(res => res.json())
+        .then(data => {
+          if (data.success && data.data) {
+            setOrdensServico(data.data);
+            setSelectedOs(resData.data);
+          }
+        });
+      } else {
+        alert(`Erro: ${resData.error}`);
+      }
+    } catch (err) {
+      alert('Erro ao aprovar OS');
+    }
+  };
+
+  const isOSLocked = selectedOs?.status === 'Em Execução' || selectedOs?.status === 'Concluída';
+
   return (
     <div className="flex flex-col h-full min-h-[calc(100vh-80px)] space-y-4">
       
@@ -473,179 +522,264 @@ export const OSView: React.FC<OSViewProps> = ({ authSession }) => {
           {/* VIEW: CRIAÇÃO OU EDIÇÃO DE OS */}
           {(isCreating || isEditing) && (
             <div className="p-6">
-              <h3 className="text-lg font-bold text-[#191c1e] border-b pb-3 mb-5 flex items-center gap-2">
-                <span className="material-symbols-outlined text-[#005daa]">
-                  {isEditing ? 'edit_document' : 'post_add'}
-                </span>
-                {isEditing ? `Editar Ordem de Serviço: ${selectedOs?.numero_os}` : 'Emitir Nova Ordem de Serviço'}
-              </h3>
+              <div className="flex justify-between items-start border-b border-[#e1e2e8] pb-4 mb-5">
+                <div>
+                  <h3 className="text-2xl font-bold text-[#191c1e] flex items-center gap-2">
+                    <span className="material-symbols-outlined text-[#005daa]">
+                      {isEditing ? 'edit_document' : 'post_add'}
+                    </span>
+                    {isEditing ? `Editar Ordem de Serviço: ${selectedOs?.numero_os}` : 'Emitir Nova Ordem de Serviço'}
+                  </h3>
+                  <p className="text-sm text-[#707785] mt-1">Preencha os dados abaixo para o planejamento executivo da atividade.</p>
+                </div>
+              </div>
               
-              <div className="grid grid-cols-2 gap-4 mb-4">
-                <div>
-                  <label className="block text-xs font-bold text-[#707785] uppercase mb-1">Número da OS</label>
-                  <input 
-                    type="text" 
-                    disabled
-                    value={isEditing ? selectedOs?.numero_os : ''}
-                    placeholder={isEditing ? '' : "Gerado Automaticamente"}
-                    className="w-full border border-[#e1e2e8] bg-[#f8fafc] text-[#707785] rounded-lg p-2.5 outline-none text-sm cursor-not-allowed font-medium italic" 
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-[#707785] uppercase mb-1">Data de Emissão *</label>
-                  <input 
-                    type="date" 
-                    value={dataEmissao} 
-                    onChange={e => setDataEmissao(e.target.value)} 
-                    className="w-full border border-[#c0c7d6] rounded-lg p-2.5 outline-none focus:border-[#005daa] text-sm" 
-                  />
-                </div>
-              </div>
-
-              <div className="mb-4">
-                <label className="block text-xs font-bold text-[#707785] uppercase mb-1">Item da EAP (Atividade) *</label>
-                <select 
-                  value={selectedEapId} 
-                  onChange={e => setSelectedEapId(e.target.value)} 
-                  className="w-full border border-[#c0c7d6] rounded-lg p-2.5 outline-none focus:border-[#005daa] text-sm"
-                >
-                  <option value="">Selecione o serviço a ser executado...</option>
-                  {itensEap.map((item: any) => {
-                      const uid = item.id || item.item_eap_id;
-                      const linkedOs = ordensServico.find(os => os.item_eap_id === uid);
-                      const isLinkedToCurrentEditing = isEditing && selectedOs?.item_eap_id === uid;
-                      return (
-                        <option key={uid} value={uid} disabled={!!linkedOs && !isLinkedToCurrentEditing} className={linkedOs && !isLinkedToCurrentEditing ? 'text-gray-400 italic' : ''}>
-                          {item.eap_codigo} - {item.descricao_servico} ({item.unidade_medida})
-                          {(linkedOs && !isLinkedToCurrentEditing) ? ` [VINCULADA: ${linkedOs.numero_os} - ${linkedOs.status}]` : ''}
-                        </option>
-                      );
-                    })}
-                </select>
-              </div>
-
-              <div className="mb-4">
-                <label className="block text-xs font-bold text-[#707785] uppercase mb-1">Equipe Responsável de Execução (Opcional)</label>
-                <select 
-                  value={selectedEquipeId} 
-                  onChange={e => {
-                    setSelectedEquipeId(e.target.value);
-                    setResponsavelRdoId(''); // Reset RDO responsible when team changes
-                  }} 
-                  className="w-full border border-[#c0c7d6] rounded-lg p-2.5 outline-none focus:border-[#005daa] text-sm"
-                >
-                  <option value="">Selecione a equipe alocada...</option>
-                  {equipes.map((eq: any) => (
-                    <option key={eq.id} value={eq.id}>
-                      {eq.nome} ({eq.empresa_nome})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {selectedEquipeId && (
-                <div className="mb-4">
-                  <label className="block text-xs font-bold text-[#707785] uppercase mb-1">Responsável pelo RDO (Opcional)</label>
-                  <select 
-                    value={responsavelRdoId} 
-                    onChange={e => setResponsavelRdoId(e.target.value)} 
-                    className="w-full border border-[#c0c7d6] rounded-lg p-2.5 outline-none focus:border-[#005daa] text-sm"
-                  >
-                    <option value="">Selecione quem emitirá os relatórios (RDO)...</option>
-                    {equipes.find(eq => eq.id === selectedEquipeId)?.membros?.map((m: any) => (
-                      <option key={m.funcionario_id} value={m.funcionario_id}>
-                        {m.nome} - {m.cargo} ({m.funcao_na_equipe})
-                      </option>
-                    ))}
-                  </select>
+              {isEditing && isOSLocked && (
+                <div className="mb-5 bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-center gap-3">
+                  <div className="p-2 bg-amber-100 rounded-full flex items-center justify-center">
+                    <span className="material-symbols-outlined text-amber-700 text-[20px]">lock</span>
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-amber-800 text-sm">Ordem de Serviço Congelada</h4>
+                    <p className="text-xs text-amber-700">Esta OS já está em execução. Alguns campos não podem ser alterados para preservar a integridade do planejamento (Baseline).</p>
+                  </div>
                 </div>
               )}
 
-              <div className="grid grid-cols-4 gap-4 mb-4">
-                <div>
-                  <label className="block text-xs font-bold text-[#707785] uppercase mb-1">Mão de Obra</label>
-                  <div className="flex flex-col gap-2">
+              {/* Container Principal: Meta, EAP e Equipe */}
+              <div className="bg-[#f8fafc] border border-[#e1e2e8] rounded-xl p-5 mb-6 space-y-5">
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-xs font-bold text-[#707785] uppercase tracking-wider mb-2">Número da OS</label>
+                    <input 
+                      type="text" 
+                      disabled
+                      value={isEditing ? selectedOs?.numero_os : ''}
+                      placeholder={isEditing ? '' : "Gerado Automaticamente"}
+                      className="w-full border border-[#e1e2e8] bg-white text-[#707785] rounded-lg p-2.5 outline-none text-sm cursor-not-allowed font-medium italic shadow-sm" 
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-[#707785] uppercase tracking-wider mb-2">Data de Emissão *</label>
+                    <input 
+                      type="date" 
+                      value={dataEmissao} 
+                      onChange={e => setDataEmissao(e.target.value)} 
+                      className="w-full border border-[#c0c7d6] bg-white rounded-lg p-2.5 outline-none focus:border-[#005daa] focus:ring-1 focus:ring-[#005daa] text-sm shadow-sm transition-all" 
+                    />
+                  </div>
+                </div>
+
+                <div className="pt-5 border-t border-[#e1e2e8]">
+                  <label className="block text-xs font-bold text-[#707785] uppercase tracking-wider mb-2">Serviço Autorizado (EAP) *</label>
+                  <select 
+                    value={selectedEapId} 
+                    onChange={e => setSelectedEapId(e.target.value)} 
+                    disabled={isEditing && isOSLocked}
+                    className="w-full border border-[#c0c7d6] bg-white rounded-lg p-2.5 outline-none focus:border-[#005daa] focus:ring-1 focus:ring-[#005daa] text-sm shadow-sm transition-all disabled:bg-gray-100 disabled:cursor-not-allowed"
+                  >
+                    <option value="">Selecione o serviço a ser executado...</option>
+                    {itensEap.map((item: any) => {
+                        const uid = item.id || item.item_eap_id;
+                        const linkedOs = ordensServico.find(os => os.item_eap_id === uid);
+                        const isLinkedToCurrentEditing = isEditing && selectedOs?.item_eap_id === uid;
+                        return (
+                          <option key={uid} value={uid} disabled={!!linkedOs && !isLinkedToCurrentEditing} className={linkedOs && !isLinkedToCurrentEditing ? 'text-gray-400 italic' : ''}>
+                            {item.eap_codigo} - {item.descricao_servico} ({item.unidade_medida})
+                            {(linkedOs && !isLinkedToCurrentEditing) ? ` [VINCULADA: ${linkedOs.numero_os} - ${linkedOs.status}]` : ''}
+                          </option>
+                        );
+                      })}
+                  </select>
+                </div>
+
+                <div className="pt-5 border-t border-[#e1e2e8] grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-xs font-bold text-[#707785] uppercase tracking-wider mb-2 flex items-center gap-1">
+                      <span className="material-symbols-outlined text-[14px]">groups</span>
+                      Equipe Executora Designada
+                    </label>
+                    <select 
+                      value={selectedEquipeId} 
+                      onChange={e => {
+                        setSelectedEquipeId(e.target.value);
+                        setResponsavelRdoId('');
+                      }} 
+                      disabled={isEditing && isOSLocked}
+                      className="w-full border border-[#c0c7d6] bg-white rounded-lg p-2.5 outline-none focus:border-[#005daa] focus:ring-1 focus:ring-[#005daa] text-sm shadow-sm transition-all disabled:bg-gray-100 disabled:cursor-not-allowed"
+                    >
+                      <option value="">Selecione a equipe alocada...</option>
+                      {equipes
+                        .filter(eq => {
+                          const proj = projetos.find(p => p.id === selectedProjetoId);
+                          if (proj?.empresa_id) {
+                            return eq.empresa_id === proj.empresa_id;
+                          }
+                          return true;
+                        })
+                        .map((eq: any) => (
+                        <option key={eq.id} value={eq.id}>
+                          {eq.nome} ({eq.empresa_nome || 'Sem empresa'})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-[#707785] uppercase tracking-wider mb-2 flex items-center gap-1">
+                      <span className="material-symbols-outlined text-[14px]">person_check</span>
+                      Responsável pelo RDO
+                    </label>
+                    <select 
+                      value={responsavelRdoId} 
+                      onChange={e => setResponsavelRdoId(e.target.value)} 
+                      disabled={!selectedEquipeId}
+                      className="w-full border border-[#c0c7d6] bg-white rounded-lg p-2.5 outline-none focus:border-[#005daa] focus:ring-1 focus:ring-[#005daa] text-sm shadow-sm transition-all disabled:bg-gray-100 disabled:cursor-not-allowed"
+                    >
+                      <option value="">Selecione quem emitirá os relatórios...</option>
+                      {selectedEquipeId && equipes.find(eq => eq.id === selectedEquipeId)?.membros?.map((m: any) => (
+                        <option key={m.funcionario_id} value={m.funcionario_id}>
+                          {m.nome} - {m.cargo} ({m.funcao_na_equipe})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* 4 Cards de Decomposição de Custos */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                
+                {/* Mão de Obra */}
+                <div className="bg-white border-2 border-[#005daa] rounded-xl p-4 shadow-sm flex flex-col transition-all hover:shadow-md">
+                  <h4 className="text-xs font-bold text-[#005daa] uppercase tracking-wider flex items-center gap-1.5 mb-3">
+                    <span className="material-symbols-outlined text-[16px]">engineering</span>
+                    Mão de Obra
+                  </h4>
+                  <div className="flex-1 flex flex-col justify-end">
+                    <label className="block text-[10px] text-slate-500 font-bold mb-1">Valor Estimado (R$)</label>
                     <input 
                       type="number" 
                       step="0.01"
                       value={valorMaoObra} 
                       onChange={e => setValorMaoObra(e.target.value)} 
-                      className="w-full border border-[#c0c7d6] rounded-lg p-2.5 outline-none focus:border-[#005daa] text-sm font-medium bg-[#f0f9ff]"
-                      placeholder="Valor Estimado (R$)"
+                      disabled={isEditing && isOSLocked}
+                      className="w-full border border-[#c0c7d6] rounded-lg p-2 outline-none focus:border-[#005daa] text-sm font-bold bg-[#f0f9ff] text-[#005daa] disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
+                      placeholder="0.00"
                     />
-                    {/* Placeholder para alinhar o layout se necessário */}
-                    <div className="h-[46px] hidden"></div> 
                   </div>
                 </div>
-                <div>
-                  <label className="block text-xs font-bold text-[#707785] uppercase mb-1">Materiais</label>
+
+                {/* Materiais */}
+                <div className="bg-white border border-rose-200 rounded-xl p-4 shadow-sm flex flex-col transition-all hover:shadow-md hover:border-rose-300">
+                  <h4 className="text-xs font-bold text-rose-600 uppercase tracking-wider flex items-center gap-1.5 mb-3">
+                    <span className="material-symbols-outlined text-[16px]">inventory_2</span>
+                    Materiais
+                  </h4>
                   <div className="flex flex-col gap-2">
-                    <input 
-                      type="number" 
-                      step="0.01"
-                      value={valorMateriais} 
-                      onChange={e => setValorMateriais(e.target.value)} 
-                      className="w-full border border-[#c0c7d6] rounded-lg p-2.5 outline-none focus:border-[#005daa] text-sm font-medium"
-                      placeholder="Valor Estimado (R$)"
-                    />
-                    <textarea 
-                      rows={2}
-                      value={materiais} 
-                      onChange={e => setMateriais(e.target.value)} 
-                      className="w-full border border-[#c0c7d6] rounded-lg p-2.5 outline-none focus:border-[#005daa] text-sm resize-none"
-                      placeholder="Descrição dos Materiais..."
-                    />
+                    <div>
+                      <label className="block text-[10px] text-slate-500 font-bold mb-1">Valor Estimado (R$)</label>
+                      <input 
+                        type="number" 
+                        step="0.01"
+                        value={valorMateriais} 
+                        onChange={e => setValorMateriais(e.target.value)}
+                        disabled={isEditing && isOSLocked} 
+                        className="w-full border border-[#c0c7d6] rounded-lg p-2 outline-none focus:border-rose-400 focus:ring-1 focus:ring-rose-400 text-sm font-bold text-rose-700 disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
+                        placeholder="0.00"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] text-slate-500 font-bold mb-1">Descrição</label>
+                      <textarea 
+                        rows={2}
+                        value={materiais} 
+                        onChange={e => setMateriais(e.target.value)} 
+                        disabled={isEditing && isOSLocked}
+                        className="w-full border border-[#c0c7d6] rounded-lg p-2 outline-none focus:border-rose-400 focus:ring-1 focus:ring-rose-400 text-xs resize-none disabled:bg-gray-100 disabled:cursor-not-allowed"
+                        placeholder="Lista de materiais principais..."
+                      />
+                    </div>
                   </div>
                 </div>
-                <div>
-                  <label className="block text-xs font-bold text-[#707785] uppercase mb-1">Ferramentas</label>
+
+                {/* Ferramentas */}
+                <div className="bg-white border border-amber-200 rounded-xl p-4 shadow-sm flex flex-col transition-all hover:shadow-md hover:border-amber-300">
+                  <h4 className="text-xs font-bold text-amber-600 uppercase tracking-wider flex items-center gap-1.5 mb-3">
+                    <span className="material-symbols-outlined text-[16px]">handyman</span>
+                    Ferramentas
+                  </h4>
                   <div className="flex flex-col gap-2">
-                    <input 
-                      type="number" 
-                      step="0.01"
-                      value={valorFerramentas} 
-                      onChange={e => setValorFerramentas(e.target.value)} 
-                      className="w-full border border-[#c0c7d6] rounded-lg p-2.5 outline-none focus:border-[#005daa] text-sm font-medium"
-                      placeholder="Valor Estimado (R$)"
-                    />
-                    <textarea 
-                      rows={2}
-                      value={ferramentas} 
-                      onChange={e => setFerramentas(e.target.value)} 
-                      className="w-full border border-[#c0c7d6] rounded-lg p-2.5 outline-none focus:border-[#005daa] text-sm resize-none"
-                      placeholder="Descrição das Ferramentas..."
-                    />
+                    <div>
+                      <label className="block text-[10px] text-slate-500 font-bold mb-1">Valor Estimado (R$)</label>
+                      <input 
+                        type="number" 
+                        step="0.01"
+                        value={valorFerramentas} 
+                        onChange={e => setValorFerramentas(e.target.value)} 
+                        disabled={isEditing && isOSLocked}
+                        className="w-full border border-[#c0c7d6] rounded-lg p-2 outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400 text-sm font-bold text-amber-700 disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
+                        placeholder="0.00"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] text-slate-500 font-bold mb-1">Descrição</label>
+                      <textarea 
+                        rows={2}
+                        value={ferramentas} 
+                        onChange={e => setFerramentas(e.target.value)} 
+                        disabled={isEditing && isOSLocked}
+                        className="w-full border border-[#c0c7d6] rounded-lg p-2 outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400 text-xs resize-none disabled:bg-gray-100 disabled:cursor-not-allowed"
+                        placeholder="Ferramentas específicas..."
+                      />
+                    </div>
                   </div>
                 </div>
-                <div>
-                  <label className="block text-xs font-bold text-[#707785] uppercase mb-1">Equipamentos</label>
+
+                {/* Equipamentos */}
+                <div className="bg-white border border-indigo-200 rounded-xl p-4 shadow-sm flex flex-col transition-all hover:shadow-md hover:border-indigo-300">
+                  <h4 className="text-xs font-bold text-indigo-600 uppercase tracking-wider flex items-center gap-1.5 mb-3">
+                    <span className="material-symbols-outlined text-[16px]">precision_manufacturing</span>
+                    Equipamentos
+                  </h4>
                   <div className="flex flex-col gap-2">
-                    <input 
-                      type="number" 
-                      step="0.01"
-                      value={valorEquipamentos} 
-                      onChange={e => setValorEquipamentos(e.target.value)} 
-                      className="w-full border border-[#c0c7d6] rounded-lg p-2.5 outline-none focus:border-[#005daa] text-sm font-medium"
-                      placeholder="Valor Estimado (R$)"
-                    />
-                    <textarea 
-                      rows={2}
-                      value={equipamentos} 
-                      onChange={e => setEquipamentos(e.target.value)} 
-                      className="w-full border border-[#c0c7d6] rounded-lg p-2.5 outline-none focus:border-[#005daa] text-sm resize-none"
-                      placeholder="Descrição dos Equipamentos..."
-                    />
+                    <div>
+                      <label className="block text-[10px] text-slate-500 font-bold mb-1">Valor Estimado (R$)</label>
+                      <input 
+                        type="number" 
+                        step="0.01"
+                        value={valorEquipamentos} 
+                        onChange={e => setValorEquipamentos(e.target.value)} 
+                        disabled={isEditing && isOSLocked}
+                        className="w-full border border-[#c0c7d6] rounded-lg p-2 outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400 text-sm font-bold text-indigo-700 disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
+                        placeholder="0.00"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] text-slate-500 font-bold mb-1">Descrição</label>
+                      <textarea 
+                        rows={2}
+                        value={equipamentos} 
+                        onChange={e => setEquipamentos(e.target.value)} 
+                        disabled={isEditing && isOSLocked}
+                        className="w-full border border-[#c0c7d6] rounded-lg p-2 outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400 text-xs resize-none disabled:bg-gray-100 disabled:cursor-not-allowed"
+                        placeholder="Máquinas pesadas, guindastes..."
+                      />
+                    </div>
                   </div>
                 </div>
+
               </div>
 
-              <div className="mb-8">
-                <label className="block text-xs font-bold text-[#707785] uppercase mb-1">Descrição / Instruções (Opcional)</label>
+              {/* Instruções */}
+              <div className="bg-white border border-[#e1e2e8] rounded-xl p-5 mb-8 shadow-sm">
+                <label className="block text-xs font-bold text-[#707785] uppercase tracking-wider mb-2">Instruções / Descrição de Escopo (Opcional)</label>
                 <textarea 
                   rows={4}
                   value={descricao} 
                   onChange={e => setDescricao(e.target.value)} 
-                  className="w-full border border-[#c0c7d6] rounded-lg p-2.5 outline-none focus:border-[#005daa] text-sm resize-none"
+                  className="w-full border border-[#c0c7d6] rounded-lg p-3 outline-none focus:border-[#005daa] focus:ring-1 focus:ring-[#005daa] text-sm resize-none transition-all"
                   placeholder="Detalhes ou instruções para a equipe de execução..."
                 />
               </div>
@@ -693,12 +827,25 @@ export const OSView: React.FC<OSViewProps> = ({ authSession }) => {
                 </div>
                 <div className="flex items-center gap-3">
                   <span className={`px-3 py-1 font-bold text-xs rounded-full uppercase ${
-                    selectedOs.status === 'Emitida' ? 'bg-sky-100 text-sky-800' : 
-                    selectedOs.status === 'Em Andamento' ? 'bg-amber-100 text-amber-800' : 
-                    'bg-emerald-100 text-emerald-800'
+                    selectedOs.status === 'Emitida' || selectedOs.status === 'Simulada' ? 'bg-sky-100 text-sky-800' : 
+                    selectedOs.status === 'Planejada' ? 'bg-indigo-100 text-indigo-800' : 
+                    selectedOs.status === 'Em Andamento' || selectedOs.status === 'Em Execução' ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 
+                    'bg-slate-200 text-slate-700'
                   }`}>
                     {selectedOs.status}
                   </span>
+                  
+                  {/* BOTÃO DE APROVAR (Apenas para status inicial) */}
+                  {(selectedOs.status === 'Emitida' || selectedOs.status === 'Simulada' || selectedOs.status === 'Planejada') && (
+                    <button 
+                      onClick={handleAprovarOs}
+                      className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg transition-colors flex items-center gap-1.5 shadow-sm ml-2"
+                    >
+                      <span className="material-symbols-outlined text-[18px]">verified</span>
+                      Aprovar para Execução
+                    </button>
+                  )}
+
                   <button 
                     onClick={() => {
                       setDataEmissao(selectedOs.data_emissao.split('T')[0]);
@@ -715,10 +862,10 @@ export const OSView: React.FC<OSViewProps> = ({ authSession }) => {
                       setResponsavelRdoId(selectedOs.responsavel_rdo_id || '');
                       setIsEditing(true);
                     }} 
-                    className="p-1.5 text-slate-400 hover:text-[#005daa] hover:bg-blue-50 rounded-md transition-all cursor-pointer" 
-                    title="Editar OS"
+                    className="p-1.5 text-slate-400 hover:text-[#005daa] hover:bg-blue-50 rounded-md transition-all cursor-pointer ml-2" 
+                    title={isOSLocked ? "Ver/Editar Parcial" : "Editar OS"}
                   >
-                    <span className="material-symbols-outlined text-[20px]">edit</span>
+                    <span className="material-symbols-outlined text-[20px]">{isOSLocked ? 'visibility' : 'edit'}</span>
                   </button>
                   {(authSession?.decodedToken?.role === 'GESTOR' || authSession?.decodedToken?.role === 'ADMIN') && (
                     <button 
@@ -731,6 +878,18 @@ export const OSView: React.FC<OSViewProps> = ({ authSession }) => {
                   )}
                 </div>
               </div>
+              
+              {isOSLocked && (
+                <div className="mb-5 bg-emerald-50 border border-emerald-200 rounded-lg p-3 flex items-center gap-3">
+                  <div className="p-2 bg-emerald-100 rounded-full flex items-center justify-center">
+                    <span className="material-symbols-outlined text-emerald-700 text-[20px]">lock_clock</span>
+                  </div>
+                  <div>
+                    <h4 className="text-emerald-800 font-bold text-sm">Orçamento Aprovado (Meta Prevista)</h4>
+                    <p className="text-emerald-700 text-xs">Esta OS está em execução. Os valores de orçamento representam a linha de base (baseline) congelada e servirão para apuração do Planejado x Realizado.</p>
+                  </div>
+                </div>
+              )}
 
               <div className="bg-[#f8fafc] border border-[#e1e2e8] rounded-xl p-5 mb-6 space-y-4">
                 <div>
@@ -749,8 +908,8 @@ export const OSView: React.FC<OSViewProps> = ({ authSession }) => {
                       <p className="text-xs font-bold text-[#707785] uppercase tracking-wider mb-1">Equipe Executora Designada</p>
                       <div className="flex items-center gap-2">
                         <button 
-                          onClick={() => handleOpenEquipeModal(selectedOs.equipes?.id, selectedOs.equipes?.nome)}
-                          className="px-4 py-1.5 bg-blue-50 border border-blue-200 text-[#005daa] font-bold text-xs rounded-lg flex items-center gap-1.5 hover:bg-blue-100 transition-colors cursor-pointer"
+                          onClick={() => handleOpenEquipeModal(selectedOs.equipes?.id, selectedOs.equipes?.nome, selectedOs.id)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg text-sm font-medium transition-colors"
                         >
                           <span className="material-symbols-outlined text-sm">groups</span>
                           {selectedOs.equipes.nome}
@@ -773,10 +932,10 @@ export const OSView: React.FC<OSViewProps> = ({ authSession }) => {
                 )}
               </div>
 
-              <div className="grid grid-cols-4 gap-4 mb-6">
+              <div className="grid grid-cols-1 xl:grid-cols-2 2xl:grid-cols-4 gap-4 mb-6">
                 {/* MÃO DE OBRA */}
                 <div className={`bg-white border rounded-lg p-4 ${(!selectedOs.equipe_id || !selectedOs.itens_eap?.data_inicio || !selectedOs.itens_eap?.data_fim) ? 'border-red-300 bg-red-50' : 'border-[#005daa] bg-[#f0f9ff]'}`}>
-                  <div className="flex justify-between items-start mb-2">
+                  <div className="flex flex-wrap justify-between items-start gap-2 mb-2">
                     <h4 className={`font-bold text-xs uppercase tracking-wide flex items-center gap-1 ${(!selectedOs.equipe_id || !selectedOs.itens_eap?.data_inicio || !selectedOs.itens_eap?.data_fim) ? 'text-red-700' : 'text-[#005daa]'}`}>
                       <span className="material-symbols-outlined text-[16px]">groups</span> Mão de Obra
                     </h4>
@@ -829,7 +988,7 @@ export const OSView: React.FC<OSViewProps> = ({ authSession }) => {
 
                 {/* MATERIAIS */}
                 <div className={`bg-white border rounded-lg p-4 ${!selectedOs.valor_materiais ? 'border-red-300' : 'border-[#e1e2e8]'}`}>
-                  <div className="flex justify-between items-start mb-2">
+                  <div className="flex flex-wrap justify-between items-start gap-2 mb-2">
                     <h4 className={`font-bold text-xs uppercase tracking-wide flex items-center gap-1 ${!selectedOs.valor_materiais ? 'text-red-700' : 'text-[#191c1e]'}`}>
                       <span className="material-symbols-outlined text-[16px] text-slate-500">inventory_2</span> Materiais
                     </h4>
@@ -852,7 +1011,7 @@ export const OSView: React.FC<OSViewProps> = ({ authSession }) => {
 
                 {/* FERRAMENTAS */}
                 <div className={`bg-white border rounded-lg p-4 ${!selectedOs.valor_ferramentas ? 'border-red-300' : 'border-[#e1e2e8]'}`}>
-                  <div className="flex justify-between items-start mb-2">
+                  <div className="flex flex-wrap justify-between items-start gap-2 mb-2">
                     <h4 className={`font-bold text-xs uppercase tracking-wide flex items-center gap-1 ${!selectedOs.valor_ferramentas ? 'text-red-700' : 'text-[#191c1e]'}`}>
                       <span className="material-symbols-outlined text-[16px] text-slate-500">handyman</span> Ferramentas
                     </h4>
@@ -875,7 +1034,7 @@ export const OSView: React.FC<OSViewProps> = ({ authSession }) => {
 
                 {/* EQUIPAMENTOS */}
                 <div className={`bg-white border rounded-lg p-4 ${!selectedOs.valor_equipamentos ? 'border-red-300' : 'border-[#e1e2e8]'}`}>
-                  <div className="flex justify-between items-start mb-2">
+                  <div className="flex flex-wrap justify-between items-start gap-2 mb-2">
                     <h4 className={`font-bold text-xs uppercase tracking-wide flex items-center gap-1 ${!selectedOs.valor_equipamentos ? 'text-red-700' : 'text-[#191c1e]'}`}>
                       <span className="material-symbols-outlined text-[16px] text-slate-500">precision_manufacturing</span> Equipamentos
                     </h4>
@@ -934,6 +1093,7 @@ export const OSView: React.FC<OSViewProps> = ({ authSession }) => {
           authSession={authSession}
           equipeId={equipeModalId}
           equipeNome={equipeModalNome}
+          osId={equipeModalOsId}
           onClose={() => setEquipeModalOpen(false)}
           onSaved={() => {
             // Pode adicionar notificação aqui se desejar

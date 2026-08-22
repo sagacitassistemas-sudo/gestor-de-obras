@@ -6,6 +6,7 @@ interface DimensionamentoEquipeModalProps {
   authSession: AuthSession | null;
   equipeId: string;
   equipeNome: string;
+  osId: string;
   onClose: () => void;
   onSaved: () => void;
 }
@@ -27,6 +28,7 @@ export function DimensionamentoEquipeModal({
   authSession,
   equipeId,
   equipeNome,
+  osId,
   onClose,
   onSaved
 }: DimensionamentoEquipeModalProps) {
@@ -38,7 +40,7 @@ export function DimensionamentoEquipeModal({
 
   useEffect(() => {
     fetchData();
-  }, [equipeId]);
+  }, [equipeId, osId]);
 
   const fetchData = async () => {
     if (!authSession) return;
@@ -52,7 +54,7 @@ export function DimensionamentoEquipeModal({
       if (!dataEsp.success) throw new Error(dataEsp.error);
       
       // Fetch current composicao
-      const resComp = await fetch(`/api/equipe-composicao?equipe_id=${equipeId}`, {
+      const resComp = await fetch(`/api/equipe-composicao?equipe_id=${equipeId}&os_id=${osId}`, {
         headers: { Authorization: `Bearer ${authSession.idToken}` }
       });
       const dataComp = await resComp.json();
@@ -111,6 +113,7 @@ export function DimensionamentoEquipeModal({
         },
         body: JSON.stringify({
           equipe_id: equipeId,
+          os_id: osId,
           composicao: composicao.map(c => ({
             especialidade_id: c.especialidade_id,
             quantidade: c.quantidade,

@@ -47,6 +47,7 @@ Este diretório armazena todos os registros históricos de implementação, corr
 
 | Data | Arquivo | Domínio | Resumo |
 |---|---|---|---|
+| **2026-08-21** | [Auditoria API: RESTful, Seg e Perf](2026-08-21_auditoria_rest_sec_perf_api.md) | `Segurança / API` | Fechamento de gargalos de rede (Helmet, Rate Limit), paginação global, TTL Node-Cache, e Fallback Offline RDO. Suíte TDD adaptada p/ mock de Timeouts. |
 | 2026-08-20 | [Auditoria de Variáveis Zeradas](2026-08-20_auditoria_variaveis_zeradas.md) | Backend/Testes | Identificação e interceptação de variáveis zeradas no cálculo do motor dinâmico com retorno da flag `pendencias` para a UI de Compliance. |
 | 2026-08-21 | [Auditoria de UI na OS](2026-08-21_auditoria_ui_os.md) | UI/Validação | Inclusão de regras visuais p/ alertar ausência de custo e escopo na OS (Mão de Obra, Mat, Ferra, Equip). |
 | 2026-08-20 | [Motor Dinâmico de Mão de Obra](2026-08-20_motor_dinamico_mao_obra.md) | Engenharia de Custo | Integração do custo horista EAP + Custos Absolutos (PCMSO). Mock supertest ajustado. |

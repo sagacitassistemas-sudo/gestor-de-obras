@@ -270,19 +270,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 {!isCollapsed && <span className="font-label-bold text-label-bold">Importação CUB</span>}
               </button>
               <button
+                onClick={() => handleNavClick('bases_referenciais')}
+                className={`w-full text-left ${navItemClass('bases_referenciais')}`}
+              >
+                <span className="material-symbols-outlined" style={{ fontVariationSettings: activeTab === 'bases_referenciais' ? "'FILL' 1" : "'FILL' 0" }}>account_tree</span>
+                {!isCollapsed && <span className="font-label-bold text-label-bold">Bases Analíticas</span>}
+              </button>
+              <button
                 onClick={() => handleNavClick('orcamento_base')}
                 className={`w-full text-left ${navItemClass('orcamento_base')}`}
               >
                 <span className="material-symbols-outlined" style={{ fontVariationSettings: activeTab === 'orcamento_base' ? "'FILL' 1" : "'FILL' 0" }}>calculate</span>
                 {!isCollapsed && <span className="font-label-bold text-label-bold">Orçamento Base</span>}
               </button>
-              <button
-                onClick={() => handleNavClick('orcamentacao')}
-                className={`w-full text-left ${navItemClass('orcamentacao')}`}
-              >
-                <span className="material-symbols-outlined" style={{ fontVariationSettings: activeTab === 'orcamentacao' ? "'FILL' 1" : "'FILL' 0" }}>analytics</span>
-                {!isCollapsed && <span className="font-label-bold text-label-bold">Simulador Obra</span>}
-              </button>
+
               </div> {/* Close accordion */}
             </div>
           )}

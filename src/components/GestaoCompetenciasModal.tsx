@@ -13,13 +13,16 @@ export const GestaoCompetenciasModal: React.FC<GestaoCompetenciasModalProps> = (
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [editingComp, setEditingComp] = useState<any>(null);
 
-  const [formData, setFormData] = useState({
+  const defaultFormData = {
     eixo: 'Tecnicas',
     descricao: '',
     peso_esperado: 3,
     treinamento_obrigatorio: ''
-  });
+  };
+
+  const [formData, setFormData] = useState(defaultFormData);
 
   const showNotification = (type: 'success' | 'error', message: string) => {
     setNotification({ type, message });
@@ -63,6 +66,7 @@ export const GestaoCompetenciasModal: React.FC<GestaoCompetenciasModalProps> = (
       const token = authSession?.idToken;
       
       const payload = {
+        id: editingComp ? editingComp.id : undefined,
         especialidade_id: especialidade.id,
         ...formData
       };
@@ -77,8 +81,9 @@ export const GestaoCompetenciasModal: React.FC<GestaoCompetenciasModalProps> = (
       });
 
       if (res.ok) {
-        showNotification('success', 'Competência adicionada com sucesso!');
-        setFormData({ ...formData, descricao: '', treinamento_obrigatorio: '' });
+        showNotification('success', editingComp ? 'Competência atualizada com sucesso!' : 'Competência adicionada com sucesso!');
+        setFormData(defaultFormData);
+        setEditingComp(null);
         fetchCompetencias();
       } else {
         const err = await res.json();
@@ -110,6 +115,16 @@ export const GestaoCompetenciasModal: React.FC<GestaoCompetenciasModalProps> = (
     } catch (err) {
       showNotification('error', 'Erro de conexão.');
     }
+  };
+
+  const handleEdit = (comp: any) => {
+    setEditingComp(comp);
+    setFormData({
+      eixo: comp.eixo,
+      descricao: comp.descricao,
+      peso_esperado: comp.peso_esperado,
+      treinamento_obrigatorio: comp.treinamento_obrigatorio || ''
+    });
   };
 
   const agrupadas = competencias.reduce((acc: any, c: any) => {
@@ -179,13 +194,22 @@ export const GestaoCompetenciasModal: React.FC<GestaoCompetenciasModalProps> = (
                                   )}
                                 </div>
                               </div>
-                              <button 
-                                onClick={() => handleDelete(comp.id)}
-                                className="text-gray-300 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
-                                title="Remover competência"
-                              >
-                                <span className="material-symbols-outlined text-[20px]">delete</span>
-                              </button>
+                              <div className="flex items-center gap-1">
+                                <button 
+                                  onClick={() => handleEdit(comp)}
+                                  className="text-gray-300 hover:text-blue-500 transition-colors opacity-0 group-hover:opacity-100"
+                                  title="Editar competência"
+                                >
+                                  <span className="material-symbols-outlined text-[20px]">edit</span>
+                                </button>
+                                <button 
+                                  onClick={() => handleDelete(comp.id)}
+                                  className="text-gray-300 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
+                                  title="Remover competência"
+                                >
+                                  <span className="material-symbols-outlined text-[20px]">delete</span>
+                                </button>
+                              </div>
                             </li>
                           ))}
                         </ul>
@@ -200,10 +224,23 @@ export const GestaoCompetenciasModal: React.FC<GestaoCompetenciasModalProps> = (
           {/* Right Column: Add Form */}
           <div className="w-full md:w-80 shrink-0">
             <div className="bg-blue-50 border border-blue-100 rounded-xl p-5 sticky top-0">
-              <h3 className="font-bold text-blue-800 text-sm mb-4 flex items-center gap-2">
-                <span className="material-symbols-outlined text-[18px]">add_task</span>
-                Adicionar Competência
-              </h3>
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="font-bold text-blue-800 text-sm flex items-center gap-2">
+                  <span className="material-symbols-outlined text-[18px]">{editingComp ? 'edit' : 'add_task'}</span>
+                  {editingComp ? 'Editar Competência' : 'Adicionar Competência'}
+                </h3>
+                {editingComp && (
+                  <button 
+                    onClick={() => {
+                      setEditingComp(null);
+                      setFormData(defaultFormData);
+                    }}
+                    className="text-blue-500 hover:text-blue-700 text-xs font-bold"
+                  >
+                    Cancelar Edição
+                  </button>
+                )}
+              </div>
               
               <form onSubmit={handleAdd} className="space-y-4 text-sm">
                 <div>
@@ -249,25 +286,23 @@ export const GestaoCompetenciasModal: React.FC<GestaoCompetenciasModalProps> = (
                   </div>
                 </div>
 
-                {formData.eixo === 'SSMA' && (
-                  <div>
-                    <label className="block font-semibold text-gray-700 mb-1 text-xs">NR / Curso Obrigatório (Opcional)</label>
-                    <input
-                      type="text"
-                      value={formData.treinamento_obrigatorio}
-                      onChange={(e) => setFormData({ ...formData, treinamento_obrigatorio: e.target.value })}
-                      placeholder="Ex: NR-18, NR-35"
-                      className="w-full p-2 border border-blue-200 rounded-lg focus:border-blue-500 outline-none bg-white"
-                    />
-                  </div>
-                )}
+                <div>
+                  <label className="block font-semibold text-gray-700 mb-1 text-xs">NR / Curso Obrigatório (Opcional)</label>
+                  <input
+                    type="text"
+                    value={formData.treinamento_obrigatorio}
+                    onChange={(e) => setFormData({ ...formData, treinamento_obrigatorio: e.target.value })}
+                    placeholder="Ex: NR-18, NR-35, Curso de Eletricista..."
+                    className="w-full p-2 border border-blue-200 rounded-lg focus:border-blue-500 outline-none bg-white"
+                  />
+                </div>
 
                 <button
                   type="submit"
                   disabled={saving}
                   className="w-full py-2 bg-[#005daa] hover:bg-[#004a88] text-white rounded-lg font-bold transition-colors disabled:opacity-50"
                 >
-                  {saving ? 'Adicionando...' : 'Incluir no Catálogo'}
+                  {saving ? 'Salvando...' : (editingComp ? 'Salvar Edição' : 'Incluir no Catálogo')}
                 </button>
               </form>
             </div>

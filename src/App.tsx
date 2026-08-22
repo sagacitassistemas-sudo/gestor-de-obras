@@ -42,7 +42,8 @@ import { CalendariosView } from './components/CalendariosView';
 import { CustosFinanceiroView } from './components/CustosFinanceiroView';
 import { EquipesView } from './components/EquipesView';
 import { DispositivosView } from './components/DispositivosView';
-import { OrcamentacaoView } from './components/OrcamentacaoView';
+
+import { ImportacaoBasesAnaliticasView } from './components/ImportacaoBasesAnaliticasView';
 import { OrcamentoBaseView } from './components/OrcamentoBaseView';
 import { ImportacaoCUBView } from './components/ImportacaoCUBView';
 
@@ -148,6 +149,37 @@ export default function App() {
     });
 
     return () => unsubscribe();
+  }, []);
+
+  // Global fetch interceptor para eventos de bloqueio (401, 403, 429)
+  React.useEffect(() => {
+    const originalFetch = window.fetch;
+    window.fetch = async (...args) => {
+      const response = await originalFetch(...args);
+      const url = typeof args[0] === 'string' ? args[0] : (args[0] as Request).url;
+      
+      if (url.startsWith('/api/') && [401, 403, 429].includes(response.status)) {
+        // Ignora endpoints de auth para evitar loops de interceptação ao tentar logar
+        if (!url.includes('/api/auth/oauth-login') && !url.includes('/api/auth/login-mfa')) {
+          try {
+            const cloned = response.clone();
+            const json = await cloned.json();
+            const msg = json.error || 'Sessão expirada ou bloqueada.';
+            alert(`⚠️ Controle de Acesso:\n${msg}\n\nPor favor, faça login novamente para continuar.`);
+          } catch {
+            alert('⚠️ Controle de Acesso:\nSessão expirada ou acesso bloqueado pelo servidor.\n\nPor favor, faça login novamente para continuar.');
+          }
+          // Força o relogin no estado do React
+          setAuthSession(null);
+          setIsAuthenticated(false);
+          setActiveTab('login');
+        }
+      }
+      return response;
+    };
+    return () => {
+      window.fetch = originalFetch;
+    };
   }, []);
 
   // Save activeTab to localStorage removido a pedido do usuário (sempre iniciar na home)
@@ -502,13 +534,6 @@ export default function App() {
             </div>
           )}
 
-          {activeTab === 'orcamentacao' && (
-            <OrcamentacaoView 
-              authSession={authSession} 
-              onNavigateTab={setActiveTab} 
-            />
-          )}
-
           {activeTab === 'orcamento_base' && (
             <OrcamentoBaseView 
               authSession={authSession} 
@@ -519,6 +544,12 @@ export default function App() {
           {activeTab === 'importacao_cub' && (
             hasAccess('projetos_eap') ? (
               <ImportacaoCUBView authSession={authSession} />
+            ) : <div className="p-8 text-center bg-white rounded-xl border border-gray-200">Acesso Restrito: Sem permissão aos Projetos/Orçamentos</div>
+          )}
+
+          {activeTab === 'bases_referenciais' && (
+            hasAccess('projetos_eap') ? (
+              <ImportacaoBasesAnaliticasView authSession={authSession} />
             ) : <div className="p-8 text-center bg-white rounded-xl border border-gray-200">Acesso Restrito: Sem permissão aos Projetos/Orçamentos</div>
           )}
 

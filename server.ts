@@ -1,5 +1,7 @@
 import express from "express";
 import cors from "cors";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
 import operacoesRouter from "./src/routes/operacoes.routes";
 import path from "path";
 import rdoRouter from "./src/routes/rdo.routes";
@@ -16,6 +18,7 @@ import empresasRouter from "./src/routes/empresas.routes";
 import permissoesRouter from "./src/routes/permissoes.routes";
 import projetosRouter from "./src/routes/projetos.routes";
 import usuariosRouter from "./src/routes/usuarios.routes";
+import basesReferenciaisRouter from "./src/routes/bases_referenciais.routes";
 import fs from "fs";
 import { GoogleGenAI } from "@google/genai";
 import {
@@ -219,31 +222,63 @@ function startServer() {
   const app = express();
   let PORT = Number(process.env.PORT) || 8500;
 
-  // Header de política de abertura de janelas (COOP) para compatibilidade com Firebase Auth Popup (Google / Microsoft SSO)
-  app.use((_req, res, next) => {
-    res.setHeader("Cross-Origin-Opener-Policy", "unsafe-none");
-    next();
+  // Configuração do Helmet para headers de segurança
+  app.use(helmet({
+    crossOriginOpenerPolicy: { policy: "unsafe-none" }, // Firebase Auth Popup compatibilidade
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://apis.google.com", "https://www.gstatic.com"],
+        connectSrc: ["'self'", "ws://localhost:*", "ws://127.0.0.1:*", "http://localhost:*", "http://127.0.0.1:*", "https://identitytoolkit.googleapis.com", "https://securetoken.googleapis.com", "https://*.supabase.co"],
+        styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+        fontSrc: ["'self'", "data:", "http://localhost:*", "http://127.0.0.1:*", "https://fonts.gstatic.com", "https://fonts.googleapis.com"],
+        imgSrc: ["'self'", "data:", "https://*", "http://*"],
+      },
+    },
+  }));
+
+  // Limiter genérico
+  const apiLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutos
+    max: 500, // Limite de 500 requisições por IP
+    message: { error: "Muitas requisições deste IP. Tente novamente mais tarde." }
   });
 
-  // Habilita requisições do App Mobile
+  // Limiter restrito para rotas de autenticação
+  const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 20,
+    message: { error: "Tentativas de autenticação excessivas. Bloqueado por 15 minutos." }
+  });
+
+  app.use('/api/auth', authLimiter);
+  app.use('/api', apiLimiter);
+
+  // Habilita CORS com abrangência para Frontend e App Mobile
   app.use(cors({
     origin: [
       'http://localhost:15000',
       'http://127.0.0.1:15000',
+      'http://localhost:5173',
+      'http://127.0.0.1:5173',
+      'http://localhost:54641',
+      'http://127.0.0.1:54641',
       'https://rdo-wm.vercel.app',
       'https://rdo-wm-puce.vercel.app'
     ],
-    methods: ['GET', 'POST', 'PATCH'],
+    methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Device-ID']
   }));
 
-  app.use(express.json());
+  // Limite o tamanho do JSON para prevenir Out Of Memory. 10MB para tolerar payloads maiores como EAP.
+  app.use(express.json({ limit: '10mb' }));
   
   app.use('/api/cronograma', cronogramaRouter);
-  app.use('/', financeiroRouter); // Fase 1: Custos / Encargos / BDI
+  app.use('/api', financeiroRouter); // Fase 1: Custos / Encargos / BDI
   app.use('/api/cub', cubRouter); // Fase 4: CUB
-  app.use('/', operacoesRouter); // Fase 2: Ordens de Serviço
-  app.use('/', recursosRouter); // Fase 2: Recursos (Funcionários, Equipes, etc)
+  app.use('/api/bases-referenciais', basesReferenciaisRouter); // Bases Analíticas
+  app.use('/api', operacoesRouter); // Fase 2: Ordens de Serviço
+  app.use('/api', recursosRouter); // Fase 2: Recursos (Funcionários, Equipes, etc)
   app.use('/', eapRouter); // Fase 3: EAP e Cronograma
   app.use('/', sistemaRouter); // Fase 3: Validações e Auditoria
   app.use('/', rdoRouter); // Fase 3: RDO
@@ -264,6 +299,7 @@ function startServer() {
   // ==========================================
 
   // ==========================================
+  app.use("/", empresasRouter); // Fase 5: Empresas
 
   app.use("/", permissoesRouter); // Fase 5: Permissoes
   app.use("/", projetosRouter); // Fase 5: Projetos

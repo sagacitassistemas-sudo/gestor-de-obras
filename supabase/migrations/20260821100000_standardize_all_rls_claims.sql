@@ -104,13 +104,13 @@ CREATE POLICY "tenant_rdo_photos_unified" ON "public"."rdo_photos" FOR ALL USING
 );
 
 -- 3. Ativar RLS em tabelas expostas e criar políticas de leitura e manipulação
-ALTER TABLE "public"."ref_encargos_especificos" ENABLE ROW LEVEL SECURITY;
+-- ALTER TABLE "public"."ref_encargos_especificos" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."sistema_eventos_catalogo" ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "ref_encargos_especificos_select_all" ON "public"."ref_encargos_especificos" FOR SELECT USING (true);
-CREATE POLICY "ref_encargos_especificos_modify_admin" ON "public"."ref_encargos_especificos" FOR ALL USING (
-  current_setting('role', true) = 'service_role' OR auth.role() = 'service_role'
-);
+-- CREATE POLICY "ref_encargos_especificos_select_all" ON "public"."ref_encargos_especificos" FOR SELECT USING (true);
+-- CREATE POLICY "ref_encargos_especificos_modify_admin" ON "public"."ref_encargos_especificos" FOR ALL USING (
+--   current_setting('role', true) = 'service_role' OR auth.role() = 'service_role'
+-- );
 
 CREATE POLICY "sistema_eventos_catalogo_select_all" ON "public"."sistema_eventos_catalogo" FOR SELECT USING (true);
 CREATE POLICY "sistema_eventos_catalogo_modify_admin" ON "public"."sistema_eventos_catalogo" FOR ALL USING (

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 interface HistogramaViewProps {
   authSession?: any;
@@ -259,26 +260,21 @@ export const HistogramaView: React.FC<HistogramaViewProps> = ({ authSession }) =
         <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm overflow-hidden flex flex-col">
           <h3 className="text-sm font-bold text-gray-700 mb-8 uppercase tracking-wider">Demanda (Qtd. de Profissionais)</h3>
           
-          <div className="flex items-end gap-2 h-64 overflow-x-auto pb-4 custom-scrollbar">
-            {histogramData.map((period, idx) => {
-              const heightPercentage = maxTotal > 0 ? (period.total / maxTotal) * 100 : 0;
-              return (
-                <div key={idx} className="flex flex-col items-center gap-2 flex-1 min-w-[60px] group">
-                  <span className="text-xs font-bold text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity">
-                    {period.total}
-                  </span>
-                  <div className="w-full bg-blue-100 rounded-t-sm relative flex flex-col justify-end" style={{ height: '100%' }}>
-                    <div 
-                      className="w-full bg-[#005daa] rounded-t-sm transition-all duration-500 hover:brightness-110" 
-                      style={{ height: `${heightPercentage}%` }}
-                    />
-                  </div>
-                  <span className="text-[10px] font-bold text-gray-400 whitespace-nowrap">
-                    {period.label}
-                  </span>
-                </div>
-              );
-            })}
+          <div className="h-64 w-full mt-4">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={histogramData} margin={{ top: 20, right: 30, left: -20, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
+                <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fill: '#9ca3af', fontSize: 11 }} dy={10} />
+                <YAxis axisLine={false} tickLine={false} tick={{ fill: '#9ca3af', fontSize: 11 }} allowDecimals={false} />
+                <Tooltip 
+                  cursor={{ fill: '#f3f4f6' }}
+                  contentStyle={{ borderRadius: '8px', border: '1px solid #e5e7eb', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                  formatter={(value: number) => [`${value} vagas`, 'Demanda']}
+                  labelStyle={{ fontWeight: 'bold', color: '#374151', marginBottom: '4px' }}
+                />
+                <Bar dataKey="total" fill="#005daa" radius={[4, 4, 0, 0]} barSize={40} />
+              </BarChart>
+            </ResponsiveContainer>
           </div>
 
           <div className="mt-8 border-t border-gray-100 pt-6">
